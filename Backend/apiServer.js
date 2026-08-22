@@ -259,8 +259,12 @@ export function createApiServer(store, options = {}) {
         const method = request.method;
 
         try {
-            if (method === "GET" && pathname === "/api/health") {
-                send(response, 200, { ok: true, service: "SmartTransit API" });
+            if (method === "GET" && (pathname === "/" || pathname === "/api" || pathname === "/api/health")) {
+                send(response, 200, {
+                    ok: true,
+                    service: "SmartTransit API",
+                    health: "/api/health",
+                });
                 return;
             }
 
