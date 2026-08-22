@@ -1,0 +1,44 @@
+{
+  "name": "smart-transit",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite Frontend",
+    "backend": "node Backend/index.js",
+    "dev:full": "node Backend/scripts/dev-full.js",
+    "reset:data": "node Backend/scripts/reset-demo-data.js",
+    "start": "node Backend/index.js",
+    "build": "vite build Frontend",
+    "lint": "eslint .",
+    "test": "node --test Frontend/tests/*.test.js Backend/tests/*.test.js",
+    "test:frontend": "node --test Frontend/tests/*.test.js",
+    "test:backend": "node --test Backend/tests/*.test.js",
+    "check:production": "node Backend/scripts/check-production-config.js",
+    "check": "npm run lint && npm test && npm run build",
+    "preview": "vite preview Frontend"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "4.3.4",
+    "leaflet": "1.9.4",
+    "lucide-react": "0.468.0",
+    "mongodb": "^7.5.0",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "react-leaflet": "5.0.0",
+    "react-router-dom": "^7.18.2",
+    "recharts": "3.10.1",
+    "vite": "^6.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.17.0",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react": "7.37.5",
+    "eslint-plugin-react-hooks": "5.1.0",
+    "eslint-plugin-react-refresh": "0.4.16",
+    "globals": "15.14.0"
+  }
+}

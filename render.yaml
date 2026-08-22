@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: smarttransit-api
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: SMARTTRANSIT_STORAGE
+        value: mongodb
+      - key: SMARTTRANSIT_MONGODB_URI
+        sync: false
+      - key: SMARTTRANSIT_MONGODB_DB
+        value: smarttransit
+      - key: SMARTTRANSIT_MONGODB_COLLECTION
+        value: app_state
+      - key: SMARTTRANSIT_ALLOWED_ORIGIN
+        sync: false
+      - key: SMARTTRANSIT_SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMARTTRANSIT_SMTP_PORT
+        value: 465
+      - key: SMARTTRANSIT_SMTP_SECURE
+        value: true
+      - key: SMARTTRANSIT_SMTP_USER
+        sync: false
+      - key: SMARTTRANSIT_SMTP_PASS
+        sync: false
+      - key: SMARTTRANSIT_MAIL_FROM
+        sync: false
+      - key: SMARTTRANSIT_OTP_SECRET
+        sync: false
+      - key: SMARTTRANSIT_ALLOWED_SIGNUP_EMAIL_DOMAINS
+        value: ""

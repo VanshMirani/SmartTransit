@@ -1,0 +1,4 @@
+.env
+Frontend/dist/
+node_modules/
+Backend/data/smarttransit-db.json

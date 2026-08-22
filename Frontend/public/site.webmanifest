@@ -1,0 +1,17 @@
+{
+  "name": "SmartTransit",
+  "short_name": "SmartTransit",
+  "description": "Indus University transport platform with live tracking, OTP signup and role-based portals.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#087e7a",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "64x64",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-label="SmartTransit Indus University Transport">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#071d2f"/>
+      <stop offset="62%" stop-color="#102a43"/>
+      <stop offset="100%" stop-color="#087e7a"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="22" stdDeviation="24" flood-color="#03111d" flood-opacity=".32"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <circle cx="980" cy="120" r="170" fill="#16a6a1" opacity=".15"/>
+  <circle cx="1050" cy="520" r="240" fill="#ffb547" opacity=".11"/>
+  <g transform="translate(92 84)">
+    <rect width="86" height="86" rx="22" fill="#16a6a1"/>
+    <path d="M26 28c0-5 4-9 9-9h16c5 0 9 4 9 9v29c0 3-1.8 5.7-4.4 7.1V69a2.4 2.4 0 0 1-2.4 2.4h-3.4a2.4 2.4 0 0 1-2.4-2.4v-3.8H38.6V69a2.4 2.4 0 0 1-2.4 2.4h-3.4a2.4 2.4 0 0 1-2.4-2.4v-4.9A8 8 0 0 1 26 57V28Z" fill="#071d2f"/>
+    <path d="M32 31c0-2 1.6-3.6 3.6-3.6h14.8c2 0 3.6 1.6 3.6 3.6v8.6H32V31Z" fill="#dff6f4"/>
+    <circle cx="35" cy="56" r="3.8" fill="#dff6f4"/>
+    <circle cx="51" cy="56" r="3.8" fill="#dff6f4"/>
+  </g>
+  <text x="205" y="138" fill="#ffffff" font-family="Manrope, Arial, sans-serif" font-size="54" font-weight="800">Smart<tspan fill="#16a6a1">Transit</tspan></text>
+  <text x="94" y="250" fill="#ffffff" font-family="Manrope, Arial, sans-serif" font-size="78" font-weight="800">Indus University</text>
+  <text x="94" y="334" fill="#ffffff" font-family="Manrope, Arial, sans-serif" font-size="78" font-weight="800">Transport Platform</text>
+  <text x="98" y="410" fill="#c5d7e2" font-family="DM Sans, Arial, sans-serif" font-size="31">Live bus tracking, OTP signup, seat updates, alerts and role-based portals.</text>
+  <g transform="translate(92 482)" font-family="DM Sans, Arial, sans-serif" font-size="24" font-weight="700">
+    <rect width="214" height="62" rx="16" fill="#ffffff" opacity=".11"/>
+    <text x="28" y="40" fill="#dff6f4">8 route corridors</text>
+    <rect x="236" width="218" height="62" rx="16" fill="#ffffff" opacity=".11"/>
+    <text x="264" y="40" fill="#dff6f4">4 role portals</text>
+    <rect x="476" width="218" height="62" rx="16" fill="#ffffff" opacity=".11"/>
+    <text x="504" y="40" fill="#dff6f4">Real OTP signup</text>
+  </g>
+  <g transform="translate(860 128)" filter="url(#shadow)">
+    <rect width="230" height="396" rx="34" fill="#f7fafc"/>
+    <rect x="16" y="18" width="198" height="42" rx="16" fill="#102a43"/>
+    <rect x="28" y="82" width="174" height="116" rx="18" fill="#dff6f4"/>
+    <path d="M45 151c34-42 76-42 126-8" fill="none" stroke="#16a6a1" stroke-width="9" stroke-linecap="round"/>
+    <circle cx="78" cy="151" r="9" fill="#087e7a"/>
+    <circle cx="150" cy="137" r="9" fill="#087e7a"/>
+    <rect x="28" y="220" width="174" height="58" rx="14" fill="#ffffff"/>
+    <rect x="28" y="292" width="80" height="62" rx="14" fill="#ffffff"/>
+    <rect x="122" y="292" width="80" height="62" rx="14" fill="#ffffff"/>
+    <rect x="28" y="368" width="174" height="12" rx="6" fill="#102a43" opacity=".18"/>
+  </g>
+</svg>
