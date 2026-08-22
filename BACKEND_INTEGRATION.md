@@ -43,7 +43,7 @@ Use `npm run reset:data` to restore the local JSON store to the original demo st
   - Body: `{ email }`
   - Email must be an institute subdomain address, for example `name@iite.indusuni.ac.in`.
   - Response: `{ ok, expiresInMinutes }`
-  - The backend sends this OTP through the configured Gmail/SMTP account and never returns the code to the frontend.
+  - The backend sends this OTP through the configured email provider and never returns the code to the frontend.
 - `POST /auth/register/student`
   - Body: `{ fullName, email, phone, password, otp }`
   - Response: `{ token, user: { id, name, email, role, initials } }`
@@ -52,10 +52,11 @@ Use `npm run reset:data` to restore the local JSON store to the original demo st
 
 ### OTP email sending
 
-The included API sends signup OTPs by SMTP. Create `.env` from `.env.example` and set:
+The included API can send signup OTPs through local SMTP or a production email API. Create `.env` from `.env.example` and set:
 
 ```bash
 VITE_ALLOWED_SIGNUP_EMAIL_DOMAINS=
+SMARTTRANSIT_EMAIL_PROVIDER=smtp
 SMARTTRANSIT_SMTP_HOST=smtp.gmail.com
 SMARTTRANSIT_SMTP_PORT=465
 SMARTTRANSIT_SMTP_SECURE=true
@@ -66,7 +67,16 @@ SMARTTRANSIT_OTP_SECRET=replace-with-a-long-random-secret
 SMARTTRANSIT_ALLOWED_SIGNUP_EMAIL_DOMAINS=
 ```
 
-For Gmail, use a Google App Password. Keep both allowed-domain values empty for the final deployment; signup will then accept only Indus University addresses ending with `indusuni.ac.in`. The API stores only a hashed OTP with an expiry time in the configured backend store, so the real code is not exposed in frontend responses.
+For Gmail, use a Google App Password. Render Free blocks SMTP ports, so production can use Brevo instead:
+
+```bash
+SMARTTRANSIT_EMAIL_PROVIDER=brevo
+SMARTTRANSIT_BREVO_API_KEY=your-brevo-api-key
+SMARTTRANSIT_MAIL_FROM="SmartTransit <your.verified.sender@gmail.com>"
+SMARTTRANSIT_OTP_SECRET=replace-with-a-long-random-secret
+```
+
+Keep both allowed-domain values empty for the final deployment; signup will then accept only Indus University addresses ending with `indusuni.ac.in`. The API stores only a hashed OTP with an expiry time in the configured backend store, so the real code is not exposed in frontend responses.
 
 ### Student
 

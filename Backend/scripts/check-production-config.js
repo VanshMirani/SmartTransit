@@ -1,5 +1,6 @@
 import { loadEnvFile } from "../env.js";
 import { createSmartTransitStore } from "../store.js";
+import { getMissingMailSettings } from "../emailService.js";
 
 loadEnvFile();
 
@@ -10,15 +11,10 @@ const required = [
     "SMARTTRANSIT_MONGODB_URI",
     "SMARTTRANSIT_MONGODB_DB",
     "SMARTTRANSIT_ALLOWED_ORIGIN",
-    "SMARTTRANSIT_SMTP_HOST",
-    "SMARTTRANSIT_SMTP_PORT",
-    "SMARTTRANSIT_SMTP_USER",
-    "SMARTTRANSIT_SMTP_PASS",
-    "SMARTTRANSIT_MAIL_FROM",
-    "SMARTTRANSIT_OTP_SECRET",
 ];
 
 const missing = required.filter((key) => !process.env[key]?.trim());
+missing.push(...getMissingMailSettings());
 
 if (process.env.VITE_USE_BACKEND !== "true") {
     missing.push("VITE_USE_BACKEND must be true");

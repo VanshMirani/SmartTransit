@@ -116,7 +116,7 @@ When MongoDB is enabled, accounts, OTP records, sessions, complaints, notificati
 | Conductor        | `conductor@transport.indusuni.ac.in` | `Conductor@123` | `/conductor`  |
 | Admin / Operator | `admin@transport.indusuni.ac.in`     | `Admin@123`     | `/admin`      |
 
-These accounts are seeded for presentation and testing. Students can create an account at `/signup` using any email ending with `indusuni.ac.in`, such as `name@iite.indusuni.ac.in` or `zoom1@indusuni.ac.in`, plus OTP verification. Real OTP delivery uses the backend SMTP settings in `.env`; for Gmail, use a Gmail App Password. New student registrations are stored in JSON during local development and in MongoDB when production storage is enabled. The active authentication session is stored in `sessionStorage`. Driver, conductor and operator accounts remain transport-office provisioned.
+These accounts are seeded for presentation and testing. Students can create an account at `/signup` using any email ending with `indusuni.ac.in`, such as `name@iite.indusuni.ac.in` or `zoom1@indusuni.ac.in`, plus OTP verification. Real OTP delivery uses the configured backend email provider. Local Gmail SMTP needs a Gmail App Password; Render Free should use Brevo. New student registrations are stored in JSON during local development and in MongoDB when production storage is enabled. The active authentication session is stored in `sessionStorage`. Driver, conductor and operator accounts remain transport-office provisioned.
 
 ## Real OTP email setup
 
@@ -124,6 +124,7 @@ Create `.env` from `.env.example`, then set these backend email values:
 
 ```bash
 VITE_ALLOWED_SIGNUP_EMAIL_DOMAINS=
+SMARTTRANSIT_EMAIL_PROVIDER=smtp
 SMARTTRANSIT_SMTP_HOST=smtp.gmail.com
 SMARTTRANSIT_SMTP_PORT=465
 SMARTTRANSIT_SMTP_SECURE=true
@@ -134,7 +135,16 @@ SMARTTRANSIT_OTP_SECRET=replace-with-a-long-random-secret
 SMARTTRANSIT_ALLOWED_SIGNUP_EMAIL_DOMAINS=
 ```
 
-For Gmail, the password should be a Google App Password, not your normal Gmail password. Keep both allowed-domain lines empty to allow only Indus University addresses ending with `indusuni.ac.in`. Without the SMTP values, real signup OTP sending will be blocked with a clear configuration message.
+For Gmail, the password should be a Google App Password, not your normal Gmail password. Render Free blocks SMTP ports, so use Brevo in production:
+
+```bash
+SMARTTRANSIT_EMAIL_PROVIDER=brevo
+SMARTTRANSIT_BREVO_API_KEY=your-brevo-api-key
+SMARTTRANSIT_MAIL_FROM="SmartTransit <your.verified.sender@gmail.com>"
+SMARTTRANSIT_OTP_SECRET=replace-with-a-long-random-secret
+```
+
+Keep both allowed-domain lines empty to allow only Indus University addresses ending with `indusuni.ac.in`. Without the selected email-provider values, real signup OTP sending will be blocked with a clear configuration message.
 
 ## Main routes
 

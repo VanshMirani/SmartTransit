@@ -12,7 +12,7 @@ Important values:
 - `VITE_API_BASE_URL=https://your-backend-domain.com/api`
 - `SMARTTRANSIT_STORAGE=mongodb`
 - `SMARTTRANSIT_MONGODB_URI=your MongoDB Atlas connection string`
-- SMTP values for OTP email
+- Brevo values for OTP email on Render Free
 - `SMARTTRANSIT_OTP_SECRET` with a long random secret
 - keep `VITE_ALLOWED_SIGNUP_EMAIL_DOMAINS` and `SMARTTRANSIT_ALLOWED_SIGNUP_EMAIL_DOMAINS` empty so signup accepts only `indusuni.ac.in` emails
 
@@ -55,9 +55,9 @@ Required Render values:
 
 - `SMARTTRANSIT_MONGODB_URI`: your MongoDB Atlas connection string
 - `SMARTTRANSIT_ALLOWED_ORIGIN`: your Vercel frontend URL
-- `SMARTTRANSIT_SMTP_USER`: Gmail sender address
-- `SMARTTRANSIT_SMTP_PASS`: Gmail App Password
-- `SMARTTRANSIT_MAIL_FROM`: `SmartTransit <your.sender@gmail.com>`
+- `SMARTTRANSIT_EMAIL_PROVIDER`: `brevo`
+- `SMARTTRANSIT_BREVO_API_KEY`: your Brevo transactional email API key
+- `SMARTTRANSIT_MAIL_FROM`: `SmartTransit <your verified Brevo sender email>`
 - `SMARTTRANSIT_OTP_SECRET`: a long random text value
 
 The backend automatically creates the initial SmartTransit data in MongoDB when the database is empty.

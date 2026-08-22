@@ -2,14 +2,31 @@ import tls from "node:tls";
 
 const smtpTimeoutMs = 15000;
 
+function getMailProvider(env = process.env) {
+    return (env.SMARTTRANSIT_EMAIL_PROVIDER ?? (env.SMARTTRANSIT_BREVO_API_KEY?.trim() ? "brevo" : "smtp")).trim().toLowerCase();
+}
+
 function requiredMailSettings(env = process.env) {
-    return [
-        ["SMARTTRANSIT_SMTP_HOST", env.SMARTTRANSIT_SMTP_HOST],
-        ["SMARTTRANSIT_SMTP_USER", env.SMARTTRANSIT_SMTP_USER],
-        ["SMARTTRANSIT_SMTP_PASS", env.SMARTTRANSIT_SMTP_PASS],
+    const provider = getMailProvider(env);
+    const base = [
         ["SMARTTRANSIT_MAIL_FROM", env.SMARTTRANSIT_MAIL_FROM],
         ["SMARTTRANSIT_OTP_SECRET", env.SMARTTRANSIT_OTP_SECRET],
-    ].filter(([, value]) => !value?.trim()).map(([key]) => key);
+    ];
+    if (provider === "brevo") {
+        return [
+            ...base,
+            ["SMARTTRANSIT_BREVO_API_KEY", env.SMARTTRANSIT_BREVO_API_KEY],
+        ].filter(([, value]) => !value?.trim()).map(([key]) => key);
+    }
+    if (provider === "smtp") {
+        return [
+            ["SMARTTRANSIT_SMTP_HOST", env.SMARTTRANSIT_SMTP_HOST],
+            ["SMARTTRANSIT_SMTP_USER", env.SMARTTRANSIT_SMTP_USER],
+            ["SMARTTRANSIT_SMTP_PASS", env.SMARTTRANSIT_SMTP_PASS],
+            ...base,
+        ].filter(([, value]) => !value?.trim()).map(([key]) => key);
+    }
+    return ["SMARTTRANSIT_EMAIL_PROVIDER must be smtp or brevo"];
 }
 
 export function getMissingMailSettings(env = process.env) {
@@ -17,7 +34,7 @@ export function getMissingMailSettings(env = process.env) {
 }
 
 function getSmtpConfig(env = process.env) {
-    const missing = getMissingMailSettings(env);
+    const missing = requiredMailSettings({ ...env, SMARTTRANSIT_EMAIL_PROVIDER: "smtp" });
     if (missing.length) {
         throw new Error(`Email service is not configured. Missing: ${missing.join(", ")}.`);
     }
@@ -33,6 +50,17 @@ function getSmtpConfig(env = process.env) {
     };
 }
 
+function getBrevoConfig(env = process.env) {
+    const missing = requiredMailSettings({ ...env, SMARTTRANSIT_EMAIL_PROVIDER: "brevo" });
+    if (missing.length) {
+        throw new Error(`Email service is not configured. Missing: ${missing.join(", ")}.`);
+    }
+    return {
+        apiKey: env.SMARTTRANSIT_BREVO_API_KEY.trim(),
+        from: env.SMARTTRANSIT_MAIL_FROM.trim(),
+    };
+}
+
 function encodeHeader(value) {
     return `=?UTF-8?B?${Buffer.from(value, "utf8").toString("base64")}?=`;
 }
@@ -40,6 +68,19 @@ function encodeHeader(value) {
 function envelopeAddress(value) {
     const match = value.match(/<([^>]+)>/);
     return `<${(match?.[1] ?? value).trim()}>`;
+}
+
+function parseMailFrom(value) {
+    const trimmed = value.trim();
+    const match = trimmed.match(/^(.*?)<([^>]+)>$/);
+    if (!match) {
+        return { email: trimmed, name: "SmartTransit" };
+    }
+    const name = match[1].trim().replace(/^"|"$/g, "");
+    return {
+        email: match[2].trim(),
+        name: name || "SmartTransit",
+    };
 }
 
 function escapeDataLines(message) {
@@ -172,8 +213,6 @@ function createSmtpClient(config) {
 }
 
 export async function sendSignupOtpEmail({ to, otp, expiresInMinutes }) {
-    const config = getSmtpConfig();
-    const client = createSmtpClient(config);
     const subject = "Your SmartTransit signup OTP";
     const text = [
         `Your SmartTransit OTP is ${otp}.`,
@@ -186,5 +225,38 @@ export async function sendSignupOtpEmail({ to, otp, expiresInMinutes }) {
         `<p>This code expires in ${expiresInMinutes} minutes.</p>`,
         "<p>If you did not request this, ignore this email.</p>",
     ].join("");
-    await client.send({ to, subject, text, html });
+    const message = { to, subject, text, html };
+    const provider = getMailProvider();
+    if (provider === "brevo") {
+        await sendBrevoEmail(getBrevoConfig(), message);
+        return;
+    }
+    if (provider === "smtp") {
+        const client = createSmtpClient(getSmtpConfig());
+        await client.send(message);
+        return;
+    }
+    throw new Error("Email service is not configured. SMARTTRANSIT_EMAIL_PROVIDER must be smtp or brevo.");
+}
+
+async function sendBrevoEmail(config, message) {
+    const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+        method: "POST",
+        headers: {
+            accept: "application/json",
+            "api-key": config.apiKey,
+            "content-type": "application/json",
+        },
+        body: JSON.stringify({
+            sender: parseMailFrom(config.from),
+            to: [{ email: message.to }],
+            subject: message.subject,
+            textContent: message.text,
+            htmlContent: message.html,
+        }),
+    });
+    if (!response.ok) {
+        const details = await response.text().catch(() => "");
+        throw new Error(`Brevo email API failed with status ${response.status}: ${details.slice(0, 300)}`);
+    }
 }

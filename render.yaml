@@ -19,15 +19,9 @@ services:
         value: app_state
       - key: SMARTTRANSIT_ALLOWED_ORIGIN
         sync: false
-      - key: SMARTTRANSIT_SMTP_HOST
-        value: smtp.gmail.com
-      - key: SMARTTRANSIT_SMTP_PORT
-        value: 465
-      - key: SMARTTRANSIT_SMTP_SECURE
-        value: true
-      - key: SMARTTRANSIT_SMTP_USER
-        sync: false
-      - key: SMARTTRANSIT_SMTP_PASS
+      - key: SMARTTRANSIT_EMAIL_PROVIDER
+        value: brevo
+      - key: SMARTTRANSIT_BREVO_API_KEY
         sync: false
       - key: SMARTTRANSIT_MAIL_FROM
         sync: false

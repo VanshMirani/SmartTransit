@@ -46,7 +46,7 @@ function serviceUnavailable(response, message) {
 
 function otpEmailErrorMessage(error) {
     if (error instanceof Error && error.message.startsWith("Email service is not configured")) {
-        return "OTP email service is not configured yet. Ask the transport office administrator to set Gmail/SMTP credentials.";
+        return "OTP email service is not configured yet. Ask the transport office administrator to set email provider credentials.";
     }
     return "Unable to send OTP email right now. Try again later.";
 }
