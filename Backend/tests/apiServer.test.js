@@ -62,6 +62,107 @@ test("student can login and load transit data", async () => {
     }
 });
 
+test("driver phone GPS updates student and admin live tracking", async () => {
+    const app = await startTestServer();
+    try {
+        const driverLogin = await fetch(`${app.baseUrl}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "driver@transport.indusuni.ac.in", password: "Driver@123" }),
+        });
+        assert.equal(driverLogin.status, 200);
+        const { token: driverToken } = await json(driverLogin);
+
+        const blockedBeforeStart = await fetch(`${app.baseUrl}/driver/trips/TRIP-2026-0821-IU-R4/location`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${driverToken}` },
+            body: JSON.stringify({ latitude: 23.021111, longitude: 72.511111 }),
+        });
+        assert.equal(blockedBeforeStart.status, 400);
+
+        const startTrip = await fetch(`${app.baseUrl}/driver/trips/TRIP-2026-0821-IU-R4/start`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${driverToken}` },
+        });
+        assert.equal(startTrip.status, 200);
+
+        const invalidLocation = await fetch(`${app.baseUrl}/driver/trips/TRIP-2026-0821-IU-R4/location`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${driverToken}` },
+            body: JSON.stringify({ latitude: 230, longitude: 72.511111 }),
+        });
+        assert.equal(invalidLocation.status, 400);
+
+        const locationUpdate = await fetch(`${app.baseUrl}/driver/trips/TRIP-2026-0821-IU-R4/location`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${driverToken}` },
+            body: JSON.stringify({
+                latitude: 23.021111,
+                longitude: 72.511111,
+                accuracy: 14.4,
+                speedMetersPerSecond: 9.8,
+                heading: 82,
+                timestamp: new Date().toISOString(),
+            }),
+        });
+        assert.equal(locationUpdate.status, 201);
+        const locationPayload = await json(locationUpdate);
+        assert.equal(locationPayload.location.source, "driver-phone");
+        assert.deepEqual(locationPayload.location.coordinates, [23.021111, 72.511111]);
+
+        const studentLogin = await fetch(`${app.baseUrl}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "student@iite.indusuni.ac.in", password: "Student@123" }),
+        });
+        const { token: studentToken } = await json(studentLogin);
+        const transit = await fetch(`${app.baseUrl}/student/transit`, {
+            headers: { Authorization: `Bearer ${studentToken}` },
+        });
+        assert.equal(transit.status, 200);
+        const transitData = await json(transit);
+        assert.equal(transitData.bus.gpsStatus, "live");
+        assert.equal(transitData.bus.locationSource, "driver-phone");
+        assert.deepEqual(transitData.bus.coordinates, [23.021111, 72.511111]);
+        assert.equal(transitData.bus.speed, 35);
+
+        const liveLocation = await fetch(`${app.baseUrl}/student/live-location`, {
+            headers: { Authorization: `Bearer ${studentToken}` },
+        });
+        assert.equal(liveLocation.status, 200);
+        assert.equal((await json(liveLocation)).gpsStatus, "live");
+
+        const adminLogin = await fetch(`${app.baseUrl}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "admin@transport.indusuni.ac.in", password: "Admin@123" }),
+        });
+        const { token: adminToken } = await json(adminLogin);
+        const bootstrap = await fetch(`${app.baseUrl}/admin/bootstrap`, {
+            headers: { Authorization: `Bearer ${adminToken}` },
+        });
+        const adminData = await json(bootstrap);
+        const liveBus = adminData.fleetVehicles.find((bus) => bus.route === "IU-R4");
+        assert.equal(liveBus.gpsStatus, "live");
+        assert.deepEqual(liveBus.coordinates, [23.021111, 72.511111]);
+
+        const endTrip = await fetch(`${app.baseUrl}/driver/trips/TRIP-2026-0821-IU-R4/end`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${driverToken}` },
+        });
+        assert.equal(endTrip.status, 200);
+
+        const hiddenAfterTrip = await fetch(`${app.baseUrl}/student/live-location`, {
+            headers: { Authorization: `Bearer ${studentToken}` },
+        });
+        assert.equal(hiddenAfterTrip.status, 200);
+        assert.equal((await json(hiddenAfterTrip)).gpsStatus, "not-sharing");
+    }
+    finally {
+        await app.close();
+    }
+});
+
 test("session endpoint validates saved backend tokens", async () => {
     const app = await startTestServer();
     try {

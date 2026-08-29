@@ -17,9 +17,16 @@ const selectedIcon = L.divIcon({
     iconSize: [30, 30],
     iconAnchor: [15, 15],
 });
+function trackingStateForBus(bus) {
+    if (bus.gpsStatus === "not-sharing")
+        return "no-trip";
+    if (bus.gpsStatus === "stale" || bus.gpsStatus === "waiting")
+        return "stale";
+    return "live";
+}
 export function LiveTrackingPage() {
-    const { data, loading, error, retry } = useStudentData();
-    const [state, setState] = useState("live");
+    const { data, loading, error, retry } = useStudentData({ pollIntervalMs: 15000 });
+    const [previewState, setPreviewState] = useState("live");
     const [recenterToken, setRecenterToken] = useState(0);
     const showDemoControls = import.meta.env.VITE_SHOW_DEMO_CONTROLS === "true";
     if (loading)
@@ -39,9 +46,11 @@ export function LiveTrackingPage() {
     const busPosition = data.bus.coordinates ?? selectedStop.coordinates;
     const routePoints = data.route.stops.map((stop) => stop.coordinates);
     const mapCenter = data.route.mapCenter ?? routePoints[0];
+    const state = showDemoControls ? previewState : trackingStateForBus(data.bus);
+    const gpsWaiting = data.bus.gpsStatus === "waiting";
     if (state === "no-trip")
         return (<>
-        <PageHeading title="Live tracking" description="Location is shared only during active trips." action={showDemoControls ? <StateDemo state={state} setState={setState}/> : undefined}/>
+        <PageHeading title="Live tracking" description="Location is shared only during active trips." action={showDemoControls ? <StateDemo state={previewState} setState={setPreviewState}/> : undefined}/>
         <section className="state-card state-card--large">
           <span className="state-card__icon">
             <BusFront />
@@ -51,20 +60,21 @@ export function LiveTrackingPage() {
             Your assigned bus is not currently on a live trip. The next
             scheduled service is tomorrow at {selectedStop.scheduledTime}.
           </p>
-          <button className="button button--secondary" onClick={() => setState("live")}>
+          <button className="button button--secondary" onClick={() => showDemoControls ? setPreviewState("live") : retry()}>
             <RefreshCw /> Refresh status
           </button>
         </section>
       </>);
     return (<div className="tracking-page">
-      <PageHeading eyebrow={`Route ${data.route.code}`} title="Live tracking" description={`Follow bus ${data.bus.number} as it approaches your stop.`} action={showDemoControls ? <StateDemo state={state} setState={setState}/> : undefined}/>
+      <PageHeading eyebrow={`Route ${data.route.code}`} title="Live tracking" description={`Follow bus ${data.bus.number} as it approaches your stop.`} action={showDemoControls ? <StateDemo state={previewState} setState={setPreviewState}/> : undefined}/>
       {state === "stale" && (<div className="app-alert app-alert--warning" role="status">
           <AlertTriangle />
           <div>
-            <strong>Location update delayed</strong>
+            <strong>{gpsWaiting ? "Waiting for driver GPS" : "Location update delayed"}</strong>
             <span>
-              The last GPS update was 6 minutes ago. The marker shows the last
-              known location.
+              {gpsWaiting
+            ? "The driver has started the trip, but phone GPS has not synced yet."
+            : "The marker shows the last known location until the next phone GPS update arrives."}
             </span>
           </div>
         </div>)}
@@ -85,7 +95,7 @@ export function LiveTrackingPage() {
               {state === "live"
             ? "GPS live"
             : state === "stale"
-                ? "GPS stale"
+                ? gpsWaiting ? "GPS waiting" : "GPS stale"
                 : "Offline copy"}
             </span>
             <button onClick={() => setRecenterToken((value) => value + 1)} aria-label="Center map on bus" title="Center map on bus">
@@ -114,7 +124,7 @@ export function LiveTrackingPage() {
           </MapContainer>
           <div className="map-updated">
             <i /> Last GPS update:{" "}
-            {state === "live" ? data.bus.gpsUpdatedAt : "6 minutes ago"}
+            {state === "live" ? data.bus.gpsUpdatedAt : data.bus.gpsUpdatedAt ?? "Waiting for driver phone"}
           </div>
         </section>
         <aside className="tracking-details">

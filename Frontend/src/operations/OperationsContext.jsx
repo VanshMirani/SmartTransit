@@ -1,12 +1,40 @@
-import { createContext, useContext, useEffect, useMemo, useState, } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, } from "react";
 import { apiRequest, backendConfig } from "../services/apiClient";
 import { activeStaffTrip as fallbackActiveTrip, operationalCurrentStopId as fallbackCurrentStopId, operationalStops as fallbackStops } from "../services/operationsData";
 import { calculateSeatUpdate } from "../utils/seatCalculation";
 const DriverContext = createContext(null);
+const driverGpsSendIntervalMs = 10000;
 function syncBackend(path, options) {
     if (!backendConfig.enabled)
         return;
     void apiRequest(path, options).catch(() => undefined);
+}
+function geolocationErrorMessage(error) {
+    if (error?.code === 1)
+        return "Location permission is blocked. Allow location access for SmartTransit to share live GPS.";
+    if (error?.code === 2)
+        return "Your phone could not detect a reliable location yet.";
+    if (error?.code === 3)
+        return "Location request timed out. Keep GPS and mobile data enabled.";
+    return "Unable to read phone GPS right now.";
+}
+function locationPayload(position) {
+    return {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy: position.coords.accuracy,
+        speedMetersPerSecond: position.coords.speed,
+        heading: position.coords.heading,
+        timestamp: new Date(position.timestamp).toISOString(),
+    };
+}
+function locationSnapshot(position) {
+    return {
+        coordinates: [position.coords.latitude, position.coords.longitude],
+        accuracy: position.coords.accuracy,
+        speedKmh: Number.isFinite(position.coords.speed) ? position.coords.speed * 3.6 : undefined,
+        updatedAt: new Date().toISOString(),
+    };
 }
 export function DriverOperationsProvider({ children, }) {
     const [activeTrip, setActiveTrip] = useState(fallbackActiveTrip);
@@ -14,7 +42,11 @@ export function DriverOperationsProvider({ children, }) {
     const [tripStatus, setTripStatus] = useState("not-started");
     const [checklist, setChecklist] = useState([]);
     const [gpsUpdatedAt, setGpsUpdatedAt] = useState("Not sharing");
+    const [gpsSharingStatus, setGpsSharingStatus] = useState("idle");
+    const [gpsError, setGpsError] = useState("");
+    const [lastGpsLocation, setLastGpsLocation] = useState(null);
     const [emergency, setEmergency] = useState(null);
+    const lastGpsSentAt = useRef(0);
     useEffect(() => {
         if (!backendConfig.enabled)
             return;
@@ -27,6 +59,7 @@ export function DriverOperationsProvider({ children, }) {
             setStops(data.operationalStops ?? fallbackStops);
             setTripStatus(data.tripStatus ?? "not-started");
             setGpsUpdatedAt(data.gpsUpdatedAt ?? "Not sharing");
+            setLastGpsLocation(data.liveLocation ?? null);
             setEmergency(data.emergencies?.[0] ?? null);
         })
             .catch(() => undefined);
@@ -34,40 +67,119 @@ export function DriverOperationsProvider({ children, }) {
             cancelled = true;
         };
     }, []);
+    useEffect(() => {
+        if (tripStatus !== "active") {
+            setGpsSharingStatus("idle");
+            setGpsError("");
+            setLastGpsLocation(null);
+            return undefined;
+        }
+        if (!backendConfig.enabled) {
+            setGpsSharingStatus("demo");
+            return undefined;
+        }
+        if (!("geolocation" in navigator)) {
+            setGpsSharingStatus("unsupported");
+            setGpsError("This device or browser does not support GPS sharing.");
+            return undefined;
+        }
+        let cancelled = false;
+        setGpsSharingStatus("requesting");
+        setGpsError("");
+        const watchId = navigator.geolocation.watchPosition((position) => {
+            if (cancelled)
+                return;
+            setLastGpsLocation(locationSnapshot(position));
+            const now = Date.now();
+            if (lastGpsSentAt.current && now - lastGpsSentAt.current < driverGpsSendIntervalMs)
+                return;
+            lastGpsSentAt.current = now;
+            apiRequest(`/driver/trips/${activeTrip.id}/location`, {
+                method: "POST",
+                body: locationPayload(position),
+            })
+                .then((payload) => {
+                if (cancelled)
+                    return;
+                setGpsSharingStatus("sharing");
+                setGpsError("");
+                setGpsUpdatedAt(payload.gpsUpdatedAt ?? "Just now");
+                if (payload.activeStaffTrip)
+                    setActiveTrip(payload.activeStaffTrip);
+            })
+                .catch(() => {
+                if (cancelled)
+                    return;
+                setGpsSharingStatus("error");
+                setGpsError("Phone GPS was detected, but SmartTransit could not sync it to the server.");
+            });
+        }, (error) => {
+            if (cancelled)
+                return;
+            setGpsSharingStatus("error");
+            setGpsError(geolocationErrorMessage(error));
+        }, {
+            enableHighAccuracy: true,
+            maximumAge: 10000,
+            timeout: 15000,
+        });
+        return () => {
+            cancelled = true;
+            navigator.geolocation.clearWatch(watchId);
+        };
+    }, [activeTrip.id, tripStatus]);
     const value = useMemo(() => ({
         tripStatus,
         activeTrip,
         stops,
         checklist,
         gpsUpdatedAt,
+        gpsSharingStatus,
+        gpsError,
+        lastGpsLocation,
         emergency,
         toggleCheck: (id) => setChecklist((items) => items.includes(id)
             ? items.filter((item) => item !== id)
             : [...items, id]),
-        startTrip: () => {
+        startTrip: async () => {
+            if (backendConfig.enabled) {
+                const data = await apiRequest(`/driver/trips/${activeTrip.id}/start`, { method: "POST" });
+                setActiveTrip(data.activeStaffTrip ?? activeTrip);
+                setTripStatus(data.tripStatus ?? "active");
+                setGpsUpdatedAt(data.gpsUpdatedAt ?? "Waiting for driver phone");
+                return;
+            }
             setTripStatus("active");
             setGpsUpdatedAt("Just now");
-            syncBackend(`/driver/trips/${activeTrip.id}/start`, { method: "POST" });
         },
-        endTrip: () => {
-            setTripStatus("completed");
-            setGpsUpdatedAt("Sharing stopped");
-            syncBackend(`/driver/trips/${activeTrip.id}/end`, { method: "POST" });
+        endTrip: async () => {
+            if (backendConfig.enabled) {
+                const data = await apiRequest(`/driver/trips/${activeTrip.id}/end`, { method: "POST" });
+                setTripStatus(data.tripStatus ?? "completed");
+                setGpsUpdatedAt(data.gpsUpdatedAt ?? "Sharing stopped");
+            }
+            else {
+                setTripStatus("completed");
+                setGpsUpdatedAt("Sharing stopped");
+            }
+            setGpsSharingStatus("idle");
+            setLastGpsLocation(null);
         },
         submitEmergency: (type, note) => {
+            const liveCoordinates = lastGpsLocation?.coordinates;
             const report = {
                 id: `EMG-${Date.now().toString().slice(-6)}`,
                 type,
                 note,
-                location: `Near ${activeTrip.nextStopName}, Ahmedabad`,
-                coordinates: stops.find((stop) => stop.id === activeTrip.nextStopId)?.coordinates,
+                location: liveCoordinates ? "Driver phone GPS location" : `Near ${activeTrip.nextStopName}, Ahmedabad`,
+                coordinates: liveCoordinates ?? stops.find((stop) => stop.id === activeTrip.nextStopId)?.coordinates,
                 submittedAt: "Just now",
             };
             setEmergency(report);
             syncBackend("/staff/emergencies", { method: "POST", body: report });
             return report;
         },
-    }), [activeTrip, stops, tripStatus, checklist, gpsUpdatedAt, emergency]);
+    }), [activeTrip, stops, tripStatus, checklist, gpsUpdatedAt, gpsSharingStatus, gpsError, lastGpsLocation, emergency]);
     return (<DriverContext.Provider value={value}>{children}</DriverContext.Provider>);
 }
 // eslint-disable-next-line react-refresh/only-export-components

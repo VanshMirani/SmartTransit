@@ -8,7 +8,7 @@ import { currentDisplayDate } from "../../utils/dateLabels";
 export function StudentDashboardPage() {
     const { user } = useAuth();
     const { notifications } = useCommunications();
-    const { data, loading, error, retry } = useStudentData();
+    const { data, loading, error, retry } = useStudentData({ pollIntervalMs: 30000 });
     if (loading)
         return (<>
         <PageHeading title={`Good morning, ${user?.name.split(" ")[0] ?? "Student"}`} description="Here’s your commute at a glance."/>
@@ -26,8 +26,9 @@ export function StudentDashboardPage() {
     </div>);
     const selectedStop = data.route.stops.find((stop) => stop.id === data.route.selectedStopId) ?? data.route.stops[0];
     const currentStop = data.route.stops.find((stop) => stop.status === "current") ?? selectedStop;
+    const tripActive = data.bus.tripActive !== false;
     return (<div className="student-dashboard">
-      <PageHeading eyebrow={currentDisplayDate()} title={`Good morning, ${user?.name.split(" ")[0]} 👋`} description="Your bus is active and moving toward your stop." action={<Link className="button button--primary desktop-action" to="/student/track">
+      <PageHeading eyebrow={currentDisplayDate()} title={`Good morning, ${user?.name.split(" ")[0]} 👋`} description={tripActive ? "Your bus is active and moving toward your stop." : "Your route is assigned. Live tracking starts when the driver begins the trip."} action={<Link className="button button--primary desktop-action" to="/student/track">
             <Navigation /> Track live
           </Link>}/>
       <div className="dashboard-grid">
@@ -107,10 +108,11 @@ export function StudentDashboardPage() {
           <section className="traffic-note">
             <AlertTriangle />
             <div>
-              <strong>Traffic update</strong>
+              <strong>{tripActive ? "Traffic update" : "Trip status"}</strong>
               <p>
-                Moderate traffic near {currentStop.name}. ETA already includes the
-                delay.
+                {tripActive
+            ? `Moderate traffic near ${currentStop.name}. ETA already includes the delay.`
+            : "Driver phone GPS will become visible here after the trip is started."}
               </p>
             </div>
           </section>

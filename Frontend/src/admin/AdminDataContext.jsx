@@ -1,7 +1,13 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { apiRequest, backendConfig } from '../services/apiClient';
 import { adminActivity, fleetVehicles, initialAdminRecords, initialRoutes } from '../services/adminData';
 const AdminDataContext = createContext(null);
+function applyAdminBootstrap(data, setters) {
+    setters.setRecords(data.records ?? initialAdminRecords);
+    setters.setRoutes(data.routes ?? initialRoutes);
+    setters.setFleet(data.fleetVehicles ?? fleetVehicles);
+    setters.setActivity(data.adminActivity ?? adminActivity);
+}
 function syncBackend(path, options) {
     if (!backendConfig.enabled)
         return;
@@ -17,24 +23,28 @@ export function AdminDataProvider({ children }) {
     const [routes, setRoutes] = useState(initialRoutes);
     const [fleet, setFleet] = useState(fleetVehicles);
     const [activity, setActivity] = useState(adminActivity);
+    const refreshData = useCallback(async () => {
+        if (!backendConfig.enabled)
+            return null;
+        const data = await apiRequest('/admin/bootstrap');
+        applyAdminBootstrap(data, { setRecords, setRoutes, setFleet, setActivity });
+        return data;
+    }, []);
     useEffect(() => {
         if (!backendConfig.enabled)
-            return;
+            return undefined;
         let cancelled = false;
         apiRequest('/admin/bootstrap').then((data) => {
             if (cancelled)
                 return;
-            setRecords(data.records ?? initialAdminRecords);
-            setRoutes(data.routes ?? initialRoutes);
-            setFleet(data.fleetVehicles ?? fleetVehicles);
-            setActivity(data.adminActivity ?? adminActivity);
+            applyAdminBootstrap(data, { setRecords, setRoutes, setFleet, setActivity });
         }).catch(() => undefined);
         return () => {
             cancelled = true;
         };
     }, []);
     const value = useMemo(() => ({
-        records, routes, fleet, activity,
+        records, routes, fleet, activity, refreshData,
         upsertRecord: async (kind, record) => {
             if (backendConfig.enabled) {
                 const saved = await apiRequest(`/admin/${kind}/${record.id}`, { method: 'PUT', body: record });
@@ -68,7 +78,7 @@ export function AdminDataProvider({ children }) {
                 return next;
             });
         },
-    }), [activity, fleet, records, routes]);
+    }), [activity, fleet, records, refreshData, routes]);
     return <AdminDataContext.Provider value={value}>{children}</AdminDataContext.Provider>;
 }
 // eslint-disable-next-line react-refresh/only-export-components

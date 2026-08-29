@@ -8,6 +8,7 @@ import { hashPassword, verifyPassword } from "./passwords.js";
 const signupOtpExpiryMinutes = 10;
 const passwordResetOtpExpiryMinutes = 10;
 const defaultSessionHours = 8;
+const defaultGpsStaleMinutes = 2;
 
 const jsonHeaders = {
     "Content-Type": "application/json",
@@ -468,6 +469,220 @@ function routeForUser(data, user) {
         null;
 }
 
+function gpsStaleMs() {
+    const minutes = Number(process.env.SMARTTRANSIT_GPS_STALE_MINUTES ?? defaultGpsStaleMinutes);
+    return (Number.isFinite(minutes) && minutes > 0 ? minutes : defaultGpsStaleMinutes) * 60 * 1000;
+}
+
+function liveLocationMap(data) {
+    return data.operations?.liveLocations && typeof data.operations.liveLocations === "object" && !Array.isArray(data.operations.liveLocations)
+        ? data.operations.liveLocations
+        : {};
+}
+
+function ensureLiveLocations(data) {
+    if (!data.operations)
+        data.operations = {};
+    if (!data.operations.liveLocations || typeof data.operations.liveLocations !== "object" || Array.isArray(data.operations.liveLocations))
+        data.operations.liveLocations = {};
+    return data.operations.liveLocations;
+}
+
+function roundCoordinate(value) {
+    return Number(Number(value).toFixed(6));
+}
+
+function roundMetric(value, decimals = 1) {
+    return Number(Number(value).toFixed(decimals));
+}
+
+function locationAgeLabel(updatedAt) {
+    const timestamp = Date.parse(updatedAt ?? "");
+    if (!Number.isFinite(timestamp))
+        return "Not sharing";
+    const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+    if (seconds < 45)
+        return "Just now";
+    if (seconds < 90)
+        return "1 min ago";
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 60)
+        return `${minutes} min ago`;
+    const hours = Math.round(minutes / 60);
+    return `${hours} hr ago`;
+}
+
+function liveLocationStatus(location) {
+    if (!location)
+        return "waiting";
+    const timestamp = Date.parse(location.updatedAt ?? "");
+    if (!Number.isFinite(timestamp))
+        return "waiting";
+    return Date.now() - timestamp > gpsStaleMs() ? "stale" : "live";
+}
+
+function liveLocationForRoute(data, routeCode) {
+    return Object.values(liveLocationMap(data)).find((location) => location.routeCode === routeCode) ?? null;
+}
+
+function isDriverTripRoute(data, routeCode) {
+    return data.operations?.activeStaffTrip?.routeCode === routeCode;
+}
+
+function tripIsSharingLocation(data, routeCode) {
+    return isDriverTripRoute(data, routeCode) && data.operations?.tripStatus === "active";
+}
+
+function busWithLiveLocation(data, bus, routeCode) {
+    if (!isDriverTripRoute(data, routeCode)) {
+        return {
+            ...bus,
+            gpsStatus: bus.status === "stale-gps" ? "stale" : bus.tripActive ? "live" : "not-sharing",
+            gpsUpdatedAt: bus.gpsUpdated ?? bus.gpsUpdatedAt,
+        };
+    }
+    const tripActive = tripIsSharingLocation(data, routeCode);
+    const location = tripActive ? liveLocationForRoute(data, routeCode) : null;
+    const gpsStatus = tripActive ? liveLocationStatus(location) : "not-sharing";
+    const gpsUpdated = location ? locationAgeLabel(location.updatedAt) : tripActive ? "Waiting for driver phone" : "Not sharing";
+    const speed = Number.isFinite(location?.speedKmh)
+        ? Math.round(location.speedKmh)
+        : tripActive && !location
+            ? 0
+            : bus.speed;
+    return {
+        ...bus,
+        tripActive,
+        coordinates: location?.coordinates ?? bus.coordinates,
+        speed,
+        gpsUpdated,
+        gpsUpdatedAt: gpsUpdated,
+        gpsStatus,
+        gpsAccuracy: location?.accuracy,
+        lastLocationAt: location?.updatedAt,
+        locationSource: location?.source,
+        status: !tripActive ? "stopped" : gpsStatus === "live" ? bus.status === "stopped" || bus.status === "stale-gps" ? "on-trip" : bus.status : "stale-gps",
+    };
+}
+
+function adminDataWithLiveLocations(data) {
+    return {
+        ...data.admin,
+        fleetVehicles: data.admin.fleetVehicles.map((bus) => busWithLiveLocation(data, bus, bus.route)),
+    };
+}
+
+function operationsWithLiveLocation(data) {
+    const trip = data.operations?.activeStaffTrip;
+    const location = data.operations?.tripStatus === "active" && trip ? liveLocationMap(data)[trip.id] : null;
+    return {
+        ...data.operations,
+        gpsUpdatedAt: location ? locationAgeLabel(location.updatedAt) : data.operations?.gpsUpdatedAt,
+        liveLocation: location
+            ? {
+                ...location,
+                gpsStatus: liveLocationStatus(location),
+                gpsUpdatedAt: locationAgeLabel(location.updatedAt),
+            }
+            : null,
+        activeStaffTrip: location
+            ? {
+                ...trip,
+                currentCoordinates: location.coordinates,
+                currentSpeed: location.speedKmh,
+                gpsUpdatedAt: locationAgeLabel(location.updatedAt),
+            }
+            : trip,
+    };
+}
+
+function validateLocationPayload(body) {
+    const latitude = Number(body.latitude);
+    const longitude = Number(body.longitude);
+    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90)
+        return { error: "Latitude must be a valid number between -90 and 90." };
+    if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180)
+        return { error: "Longitude must be a valid number between -180 and 180." };
+    const accuracy = body.accuracy === undefined || body.accuracy === null ? null : Number(body.accuracy);
+    if (accuracy !== null && (!Number.isFinite(accuracy) || accuracy < 0 || accuracy > 10000))
+        return { error: "GPS accuracy must be a positive value." };
+    const speedKmhInput = body.speedKmh === undefined || body.speedKmh === null || body.speedKmh === ""
+        ? null
+        : Number(body.speedKmh);
+    const speedMpsInput = body.speedMetersPerSecond === undefined || body.speedMetersPerSecond === null || body.speedMetersPerSecond === ""
+        ? null
+        : Number(body.speedMetersPerSecond);
+    const speedKmh = Number.isFinite(speedKmhInput)
+        ? Math.max(0, Math.min(160, speedKmhInput))
+        : Number.isFinite(speedMpsInput)
+            ? Math.max(0, Math.min(160, speedMpsInput * 3.6))
+            : null;
+    const headingInput = body.heading === undefined || body.heading === null || body.heading === "" ? null : Number(body.heading);
+    const heading = Number.isFinite(headingInput) ? Math.max(0, Math.min(360, headingInput)) : null;
+    const phoneTimestamp = Date.parse(body.timestamp ?? "");
+    const now = Date.now();
+    return {
+        location: {
+            coordinates: [roundCoordinate(latitude), roundCoordinate(longitude)],
+            accuracy: accuracy === null ? undefined : roundMetric(accuracy),
+            speedKmh: speedKmh === null ? undefined : roundMetric(speedKmh),
+            heading: heading === null ? undefined : roundMetric(heading, 0),
+            reportedAt: Number.isFinite(phoneTimestamp) && phoneTimestamp <= now + 60 * 1000
+                ? new Date(phoneTimestamp).toISOString()
+                : new Date(now).toISOString(),
+        },
+    };
+}
+
+function validateDriverTripUpdate(data, user, tripId) {
+    const trip = data.operations?.activeStaffTrip;
+    if (!trip || trip.id !== tripId)
+        return "Trip not found.";
+    if (data.operations?.tripStatus !== "active")
+        return "Start the trip before sharing phone GPS.";
+    if (user.role === "driver" && user.routeCode && user.routeCode !== trip.routeCode)
+        return "This trip is not assigned to your account.";
+    return "";
+}
+
+function storeDriverLocation(data, user, tripId, locationInput) {
+    const trip = data.operations.activeStaffTrip;
+    const updatedAt = new Date().toISOString();
+    const location = {
+        tripId,
+        routeCode: trip.routeCode,
+        busNumber: trip.busNumber,
+        driverId: user.id,
+        driverName: user.name,
+        source: "driver-phone",
+        updatedAt,
+        ...locationInput,
+    };
+    ensureLiveLocations(data)[tripId] = location;
+    data.operations.gpsUpdatedAt = "Just now";
+    data.operations.activeStaffTrip = {
+        ...trip,
+        currentCoordinates: location.coordinates,
+        currentSpeed: location.speedKmh,
+        gpsUpdatedAt: "Just now",
+    };
+    const fleetBus = data.admin?.fleetVehicles?.find((bus) => bus.route === trip.routeCode || bus.number === trip.busNumber);
+    if (fleetBus) {
+        fleetBus.coordinates = location.coordinates;
+        fleetBus.speed = Number.isFinite(location.speedKmh) ? Math.round(location.speedKmh) : fleetBus.speed;
+        fleetBus.gpsUpdated = "Just now";
+        fleetBus.tripActive = true;
+        if (fleetBus.status === "stopped" || fleetBus.status === "stale-gps")
+            fleetBus.status = "on-trip";
+    }
+    return {
+        ok: true,
+        location,
+        gpsUpdatedAt: "Just now",
+        activeStaffTrip: data.operations.activeStaffTrip,
+    };
+}
+
 function buildUnassignedTransitData(data) {
     return {
         ...data.studentTransitData,
@@ -483,6 +698,8 @@ function buildUnassignedTransitData(data) {
             speed: 0,
             gpsUpdatedAt: "Not available",
             seatsUpdatedAt: "Not available",
+            gpsStatus: "unassigned",
+            tripActive: false,
         },
         route: {
             id: "unassigned",
@@ -519,20 +736,23 @@ function buildStudentTransitData(data, user) {
                 : {}),
     }));
     const fleetBus = data.admin?.fleetVehicles?.find((bus) => bus.route === route.code);
+    const bus = busWithLiveLocation(data, {
+        ...data.studentTransitData.bus,
+        id: fleetBus?.id ?? `bus-${route.primaryBusNumber}`,
+        number: fleetBus?.number ?? route.primaryBusNumber,
+        capacity: fleetBus?.capacity ?? data.studentTransitData.bus.capacity,
+        occupiedSeats: fleetBus?.occupancy ?? data.studentTransitData.bus.occupiedSeats,
+        status: fleetBus?.status === "delayed" ? "delayed" : data.studentTransitData.bus.status,
+        speed: fleetBus?.speed ?? data.studentTransitData.bus.speed,
+        gpsUpdatedAt: fleetBus?.gpsUpdated ?? data.studentTransitData.bus.gpsUpdatedAt,
+        gpsUpdated: fleetBus?.gpsUpdated ?? data.studentTransitData.bus.gpsUpdatedAt,
+        tripActive: fleetBus?.tripActive ?? true,
+        coordinates: fleetBus?.coordinates ?? data.studentTransitData.bus.coordinates,
+    }, route.code);
     return {
         ...data.studentTransitData,
         assignmentStatus: "assigned",
-        bus: {
-            ...data.studentTransitData.bus,
-            id: fleetBus?.id ?? `bus-${route.primaryBusNumber}`,
-            number: fleetBus?.number ?? route.primaryBusNumber,
-            capacity: fleetBus?.capacity ?? data.studentTransitData.bus.capacity,
-            occupiedSeats: fleetBus?.occupancy ?? data.studentTransitData.bus.occupiedSeats,
-            status: fleetBus?.status === "delayed" ? "delayed" : data.studentTransitData.bus.status,
-            speed: fleetBus?.speed ?? data.studentTransitData.bus.speed,
-            gpsUpdatedAt: fleetBus?.gpsUpdated ?? data.studentTransitData.bus.gpsUpdatedAt,
-            coordinates: fleetBus?.coordinates ?? data.studentTransitData.bus.coordinates,
-        },
+        bus,
         route: {
             id: route.id,
             code: route.code,
@@ -899,6 +1119,34 @@ export function createApiServer(store, options = {}) {
                 return;
             }
 
+            if (method === "GET" && pathname === "/api/student/live-location") {
+                if (!requireRole(user, ["student", "admin"])) {
+                    send(response, 403, { message: "Only students can view assigned live location." });
+                    return;
+                }
+                const data = await store.get();
+                if (isPendingStudent(user)) {
+                    send(response, 200, { gpsStatus: "unassigned", location: null });
+                    return;
+                }
+                const route = routeForUser(data, user);
+                if (!route) {
+                    send(response, 200, { gpsStatus: "unassigned", location: null });
+                    return;
+                }
+                if (!tripIsSharingLocation(data, route.code)) {
+                    send(response, 200, { gpsStatus: "not-sharing", location: null });
+                    return;
+                }
+                const location = liveLocationForRoute(data, route.code);
+                send(response, 200, {
+                    gpsStatus: liveLocationStatus(location),
+                    gpsUpdatedAt: location ? locationAgeLabel(location.updatedAt) : "Waiting for driver phone",
+                    location,
+                });
+                return;
+            }
+
             if (method === "GET" && pathname === "/api/student/complaints") {
                 if (!requireRole(user, ["student", "admin"])) {
                     send(response, 403, { message: "Only students can view student complaints." });
@@ -1015,7 +1263,22 @@ export function createApiServer(store, options = {}) {
                     return;
                 }
                 const data = await store.get();
-                send(response, 200, data.admin);
+                send(response, 200, adminDataWithLiveLocations(data));
+                return;
+            }
+
+            if (method === "GET" && pathname === "/api/admin/live-locations") {
+                if (!requireRole(user, ["admin"])) {
+                    send(response, 403, { message: "Only admins can view live fleet locations." });
+                    return;
+                }
+                const data = await store.get();
+                const locations = Object.values(liveLocationMap(data)).map((location) => ({
+                    ...location,
+                    gpsStatus: liveLocationStatus(location),
+                    gpsUpdatedAt: locationAgeLabel(location.updatedAt),
+                }));
+                send(response, 200, { locations });
                 return;
             }
 
@@ -1086,7 +1349,7 @@ export function createApiServer(store, options = {}) {
                     return;
                 }
                 const data = await store.get();
-                send(response, 200, data.operations);
+                send(response, 200, operationsWithLiveLocation(data));
                 return;
             }
 
@@ -1097,10 +1360,44 @@ export function createApiServer(store, options = {}) {
                 }
                 const data = await store.update((db) => {
                     db.operations.tripStatus = "active";
-                    db.operations.gpsUpdatedAt = "Just now";
+                    db.operations.gpsUpdatedAt = "Waiting for driver phone";
+                    delete ensureLiveLocations(db)[db.operations.activeStaffTrip.id];
+                    const fleetBus = db.admin?.fleetVehicles?.find((bus) => bus.route === db.operations.activeStaffTrip.routeCode || bus.number === db.operations.activeStaffTrip.busNumber);
+                    if (fleetBus) {
+                        fleetBus.tripActive = true;
+                        fleetBus.gpsUpdated = "Waiting for driver phone";
+                        if (fleetBus.status === "stopped")
+                            fleetBus.status = "stale-gps";
+                    }
                     return db.operations;
                 });
                 send(response, 200, data);
+                return;
+            }
+
+            const driverLocationMatch = pathname.match(/^\/api\/driver\/trips\/([^/]+)\/location$/);
+            if (method === "POST" && driverLocationMatch) {
+                if (!requireRole(user, ["driver", "admin"])) {
+                    send(response, 403, { message: "Only drivers can share trip location." });
+                    return;
+                }
+                const body = await readBody(request);
+                const parsed = validateLocationPayload(body);
+                if (parsed.error) {
+                    badRequest(response, parsed.error);
+                    return;
+                }
+                const saved = await store.update((data) => {
+                    const error = validateDriverTripUpdate(data, user, driverLocationMatch[1]);
+                    if (error)
+                        return { error };
+                    return storeDriverLocation(data, user, driverLocationMatch[1], parsed.location);
+                });
+                if (saved.error) {
+                    badRequest(response, saved.error);
+                    return;
+                }
+                send(response, 201, saved);
                 return;
             }
 
@@ -1112,6 +1409,13 @@ export function createApiServer(store, options = {}) {
                 const data = await store.update((db) => {
                     db.operations.tripStatus = "completed";
                     db.operations.gpsUpdatedAt = "Sharing stopped";
+                    delete ensureLiveLocations(db)[db.operations.activeStaffTrip.id];
+                    const fleetBus = db.admin?.fleetVehicles?.find((bus) => bus.route === db.operations.activeStaffTrip.routeCode || bus.number === db.operations.activeStaffTrip.busNumber);
+                    if (fleetBus) {
+                        fleetBus.tripActive = false;
+                        fleetBus.gpsUpdated = "Not sharing";
+                        fleetBus.status = "stopped";
+                    }
                     return db.operations;
                 });
                 send(response, 200, data);
@@ -1124,7 +1428,7 @@ export function createApiServer(store, options = {}) {
                     return;
                 }
                 const data = await store.get();
-                send(response, 200, data.operations);
+                send(response, 200, operationsWithLiveLocation(data));
                 return;
             }
 

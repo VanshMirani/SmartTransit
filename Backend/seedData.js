@@ -40,6 +40,7 @@ export function createSeedData() {
             driverTripHistory,
             tripStatus: "not-started",
             gpsUpdatedAt: "Not sharing",
+            liveLocations: {},
             seatUpdates: [
                 {
                     id: "SEAT-001",

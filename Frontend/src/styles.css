@@ -4446,6 +4446,18 @@ svg {
   background: #2bb47a;
   box-shadow: 0 0 0 5px rgba(43, 180, 122, 0.12);
 }
+.gps-card--warning {
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+.gps-card--warning > div > svg,
+.gps-card--warning strong {
+  color: #c2410c;
+}
+.gps-card--warning i {
+  background: #f97316;
+  box-shadow: 0 0 0 5px rgba(249, 115, 22, 0.14);
+}
 .staff-avatar-circle {
   width: 44px;
   height: 44px;

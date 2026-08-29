@@ -1,5 +1,5 @@
 import { AlertTriangle, BusFront, Clock3, Gauge, MapPin, Radio, Route, Search, Users, } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MapContainer, Marker, Polyline, Popup, TileLayer, } from "react-leaflet";
 import L from "leaflet";
 import { useAdminData } from "../../admin/AdminDataContext";
@@ -12,7 +12,7 @@ const liveIcon = (status, selected) => L.divIcon({
     iconAnchor: selected ? [23, 23] : [19, 19],
 });
 export function AdminLiveOperationsPage() {
-    const { fleet, routes } = useAdminData();
+    const { fleet, routes, refreshData } = useAdminData();
     const [selectedId, setSelectedId] = useState("");
     const [query, setQuery] = useState("");
     const [status, setStatus] = useState("all");
@@ -31,6 +31,11 @@ export function AdminLiveOperationsPage() {
     const emergencyBus = fleet.find((bus) => bus.status === "stale-gps") ?? fleet[0];
     const emergencyRoute = routes.find((item) => item.code === emergencyBus?.route) ?? fallbackRoute;
     const emergencyLocation = emergencyRoute?.stops?.at(-2)?.name ?? emergencyRoute?.startPoint ?? "the assigned route";
+    useEffect(() => {
+        refreshData?.();
+        const timer = window.setInterval(() => refreshData?.(), 15000);
+        return () => window.clearInterval(timer);
+    }, [refreshData]);
     if (!selected) {
         return (<div>
       <AdminPageHeading eyebrow="Real-time monitoring" title="Live operations" description="Monitor active buses, service health and emergencies from one view." actions={<span className="admin-last-updated">
@@ -111,7 +116,7 @@ export function AdminLiveOperationsPage() {
                 </Marker>))}
           </MapContainer>
           <div className="live-map-updated">
-            <i /> Last fleet update: just now
+            <i /> Last fleet update: {selected.gpsUpdatedAt ?? selected.gpsUpdated ?? "just now"}
           </div>
         </section>
         <aside className="live-bus-detail">
