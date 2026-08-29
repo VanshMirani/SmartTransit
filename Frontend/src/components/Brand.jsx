@@ -6,3 +6,7 @@ export function Brand({ light = false }) {
       <span>Smart<span>Transit</span></span>
     </Link>);
 }
+
+export function BrandLogo({ className = "" }) {
+    return (<img className={`brand-logo ${className}`.trim()} src="/brand/smarttransit-indus-logo.jpeg" alt="SmartTransit logo with Indus University branding" decoding="async"/>);
+}

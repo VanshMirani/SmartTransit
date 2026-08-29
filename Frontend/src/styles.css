@@ -95,6 +95,31 @@ svg {
   color: var(--navy-900);
   background: var(--teal-500);
 }
+.brand-logo {
+  display: block;
+  width: min(240px, 100%);
+  height: auto;
+  padding: 8px;
+  border: 1px solid rgba(8, 33, 55, 0.08);
+  border-radius: 8px;
+  background: white;
+  object-fit: contain;
+  box-shadow: 0 18px 45px rgba(2, 18, 32, 0.14);
+}
+.hero__official-logo {
+  width: min(260px, 58vw);
+  margin-bottom: 20px;
+}
+.auth-story__logo {
+  width: min(250px, 100%);
+}
+.auth-page-logo {
+  width: min(230px, 72vw);
+}
+.simple-auth__brand .brand-logo,
+.auth-mobile-brand .brand-logo {
+  margin-inline: auto;
+}
 .site-header {
   position: absolute;
   inset: 0 0 auto;

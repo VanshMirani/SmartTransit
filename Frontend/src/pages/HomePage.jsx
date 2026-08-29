@@ -1,5 +1,6 @@
 import { ArrowRight, BellRing, BusFront, CircleCheck, ClipboardCheck, Clock3, Gauge, HeartHandshake, LayoutDashboard, LocateFixed, LockKeyhole, MailCheck, MapPin, MessageCircleQuestion, MonitorCheck, RadioTower, Route, ServerCog, ShieldCheck, Smartphone, UserRoundCheck, Users } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { BrandLogo } from '../components/Brand';
 import { Footer } from '../components/Footer';
 import { PhonePreview } from '../components/PhonePreview';
 import { PublicHeader } from '../components/PublicHeader';
@@ -34,6 +35,7 @@ export function HomePage() {
           <div className="hero__glow"/>
           <div className="container hero__inner">
             <div className="hero__copy">
+              <BrandLogo className="hero__official-logo"/>
               <div className="campus-pill"><ShieldCheck /> Indus University transport platform</div>
               <h1>Your College Bus, <span>Live.</span></h1>
               <p className="hero__lead">A professional campus transport system for students, drivers, conductors and transport operators, with live tracking, verified signup and route operations in one place.</p>

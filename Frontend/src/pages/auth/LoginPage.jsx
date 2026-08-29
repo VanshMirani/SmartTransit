@@ -1,7 +1,7 @@
 import { AlertCircle, BusFront, CheckCircle2, Eye, EyeOff, LoaderCircle, LockKeyhole, ShieldCheck, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { Brand } from '../../components/Brand';
+import { BrandLogo } from '../../components/Brand';
 import { useAuth } from '../../auth/AuthContext';
 import { demoAccounts, getDemoAccountPassword, roleHome } from '../../services/authService';
 const showDemoControls = import.meta.env.DEV &&
@@ -66,10 +66,10 @@ export function LoginPage() {
     };
     return (<main className="auth-page">
       <section className="auth-story">
-        <div className="auth-story__inner"><Brand light/><div className="auth-story__copy"><span className="auth-story__icon"><BusFront /></span><h1>Welcome back to a smarter commute.</h1><p>One secure place for live tracking, trip operations and campus transport management.</p><div className="auth-benefits"><span><ShieldCheck /> Role-based access</span><span><CheckCircle2 /> University verified</span></div></div><small>SmartTransit · Indus University</small></div>
+        <div className="auth-story__inner"><BrandLogo className="auth-story__logo"/><div className="auth-story__copy"><span className="auth-story__icon"><BusFront /></span><h1>Welcome back to a smarter commute.</h1><p>One secure place for live tracking, trip operations and campus transport management.</p><div className="auth-benefits"><span><ShieldCheck /> Role-based access</span><span><CheckCircle2 /> University verified</span></div></div><small>SmartTransit · Indus University</small></div>
       </section>
       <section className="auth-form-wrap">
-        <div className="auth-mobile-brand"><Brand /></div>
+        <div className="auth-mobile-brand"><BrandLogo className="auth-page-logo"/></div>
         <form className="auth-card" onSubmit={submit} noValidate>
           <div className="auth-heading"><span className="auth-lock"><LockKeyhole /></span><h2>Sign in to SmartTransit</h2><p>Enter your credentials. SmartTransit will open the correct portal for your account.</p></div>
           {registeredEmail && <div className="form-alert form-alert--success" role="status"><CheckCircle2 /><span><strong>Account created</strong>{registration?.registeredName ? `Welcome, ${registration.registeredName}. ` : ''}Enter your new password to sign in.</span></div>}

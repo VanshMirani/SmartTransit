@@ -2,7 +2,7 @@ import { AlertCircle, CheckCircle2, Eye, EyeOff, KeyRound, LoaderCircle, LockKey
 import { useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
-import { Brand } from "../../components/Brand";
+import { BrandLogo } from "../../components/Brand";
 import { roleHome } from "../../services/authService";
 import { normalizeIndianPhone, validateStudentRegistration, } from "../../utils/registrationValidation";
 const initialValues = {
@@ -122,7 +122,7 @@ export function SignupPage() {
       </main>);
     }
     return (<main className="simple-auth signup-page">
-      <Brand />
+      <BrandLogo className="auth-page-logo"/>
       <form className="auth-card signup-card" onSubmit={submit} noValidate>
         <div className="auth-heading">
           <span className="auth-lock">

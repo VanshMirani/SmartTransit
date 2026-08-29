@@ -1,7 +1,7 @@
 import { AlertCircle, ArrowLeft, CheckCircle2, Eye, EyeOff, KeyRound, LoaderCircle, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Brand } from "../../components/Brand";
+import { BrandLogo } from "../../components/Brand";
 import { authService } from "../../services/authService";
 import { isInstituteEmail, isValidOtp, normalizeEmail, validatePassword } from "../../utils/registrationValidation";
 
@@ -100,7 +100,7 @@ export function ForgotPasswordPage() {
 
     if (step === "complete") {
         return (<main className="simple-auth">
-            <div className="simple-auth__brand"><Brand /></div>
+            <div className="simple-auth__brand"><BrandLogo className="auth-page-logo"/></div>
             <section className="auth-card auth-card--compact auth-success" aria-live="polite">
                 <span><CheckCircle2 /></span>
                 <h1>Password updated</h1>
@@ -113,7 +113,7 @@ export function ForgotPasswordPage() {
     }
 
     return (<main className="simple-auth">
-        <div className="simple-auth__brand"><Brand /></div>
+        <div className="simple-auth__brand"><BrandLogo className="auth-page-logo"/></div>
         <section className="auth-card auth-card--compact">
             <div className="auth-heading">
                 <span className="auth-lock"><Mail /></span>
