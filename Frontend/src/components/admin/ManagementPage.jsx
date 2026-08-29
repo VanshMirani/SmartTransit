@@ -88,7 +88,7 @@ function stopIdFromAssignment(route, assignment) {
 function prepareEditableRecord(record, kind, routes) {
     if (kind !== "students")
         return { ...record };
-    const routeCode = record.routeCode || routeCodeFromAssignment(record.assignment) || (!record.id ? routes[0]?.code ?? "" : "");
+    const routeCode = record.routeCode || routeCodeFromAssignment(record.assignment);
     const route = routes.find((item) => item.code === routeCode);
     const stopId = route?.stops?.some((stop) => stop.id === record.stopId)
         ? record.stopId
@@ -153,8 +153,6 @@ export function ManagementPage({ kind }) {
             next.code = `${config.code} is required.`;
         if (!recordToSave.detail.trim())
             next.detail = `${config.detail} is required.`;
-        if (kind === "students" && !recordToSave.routeCode)
-            next.assignment = "Select a route for this student.";
         if (records[kind].some((item) => item.code.toLowerCase() === recordToSave.code.toLowerCase() &&
             item.id !== recordToSave.id))
             next.code = `${config.code} already exists.`;
@@ -371,7 +369,7 @@ function StudentAssignmentFields({ student, setStudent, routes, error, }) {
     const stops = selectedRoute?.stops ?? [];
     return (<div className="admin-form-row">
       <label className="admin-form-field">
-        <span>Assigned route *</span>
+        <span>Assigned route</span>
         <select value={student.routeCode ?? ""} onChange={(event) => setStudent({
             ...student,
             routeCode: event.target.value,

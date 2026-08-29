@@ -17,8 +17,9 @@ export function ComplaintsPage() {
     const { data } = useStudentData();
     const { complaints, createComplaint } = useCommunications();
     const transit = data ?? studentTransitData;
-    const assignedService = `${transit.bus.number} / Route ${transit.route.code}`;
-    const routeOnlyService = `Route ${transit.route.code} only`;
+    const assignmentPending = transit.assignmentStatus === "unassigned" || !transit.route?.code || !transit.route?.stops?.length;
+    const assignedService = assignmentPending ? "Pending route assignment" : `${transit.bus.number} / Route ${transit.route.code}`;
+    const routeOnlyService = assignmentPending ? "" : `Route ${transit.route.code} only`;
     const [formOpen, setFormOpen] = useState(false);
     const [form, setForm] = useState(() => ({
         ...blankForm,
@@ -154,7 +155,7 @@ export function ComplaintsPage() {
               <div className="select-wrap">
                 <select id="service" value={form.relatedService} onChange={(event) => setForm({ ...form, relatedService: event.target.value })}>
                   <option>{assignedService}</option>
-                  <option>{routeOnlyService}</option>
+                  {!assignmentPending && <option>{routeOnlyService}</option>}
                   <option>Not related to a service</option>
                 </select>
                 <ChevronDown />

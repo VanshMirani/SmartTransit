@@ -251,7 +251,49 @@ test("student signup uses institute email OTP verification", async () => {
         assert.equal(created.status, 201);
         const session = await json(created);
         assert.equal(session.user.email, "new.student@iite.indusuni.ac.in");
+        assert.equal(session.user.routeCode, "");
+        assert.equal(session.user.stopId, "");
         assert.ok(session.token);
+
+        const pendingTransit = await fetch(`${app.baseUrl}/student/transit`, {
+            headers: { Authorization: `Bearer ${session.token}` },
+        });
+        assert.equal(pendingTransit.status, 200);
+        const pendingTransitData = await json(pendingTransit);
+        assert.equal(pendingTransitData.assignmentStatus, "unassigned");
+        assert.equal(pendingTransitData.route.code, "");
+        assert.equal(pendingTransitData.route.stops.length, 0);
+
+        const adminLogin = await fetch(`${app.baseUrl}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "admin@transport.indusuni.ac.in", password: "Admin@123" }),
+        });
+        const { token: adminToken } = await json(adminLogin);
+        const bootstrap = await fetch(`${app.baseUrl}/admin/bootstrap`, {
+            headers: { Authorization: `Bearer ${adminToken}` },
+        });
+        const data = await json(bootstrap);
+        const student = data.records.students.find((item) => item.contact === "new.student@iite.indusuni.ac.in");
+        const route = data.routes.find((item) => item.code === "IU-R2");
+        const stop = route.stops.find((item) => item.name === "Bopal");
+        assert.equal(student.assignment, "Unassigned");
+
+        const assigned = await fetch(`${app.baseUrl}/admin/students/${student.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+            body: JSON.stringify({ ...student, routeCode: route.code, stopId: stop.id }),
+        });
+        assert.equal(assigned.status, 200);
+
+        const assignedTransit = await fetch(`${app.baseUrl}/student/transit`, {
+            headers: { Authorization: `Bearer ${session.token}` },
+        });
+        assert.equal(assignedTransit.status, 200);
+        const assignedTransitData = await json(assignedTransit);
+        assert.equal(assignedTransitData.assignmentStatus, "assigned");
+        assert.equal(assignedTransitData.route.code, "IU-R2");
+        assert.equal(assignedTransitData.route.selectedStopId, stop.id);
     }
     finally {
         await app.close();

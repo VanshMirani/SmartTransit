@@ -30,6 +30,21 @@ export function ErrorState({ message, retry, }) {
       </button>
     </section>);
 }
+
+export function AssignmentPendingState({ action, }) {
+    return (<section className="state-card state-card--large" role="status">
+      <span className="state-card__icon">
+        <BusFront />
+      </span>
+      <h2>Route assignment pending</h2>
+      <p>
+        Your student account is active. The transport admin will assign your
+        route, bus and pickup stop from the Admin dashboard.
+      </p>
+      {action}
+    </section>);
+}
+
 export function BusOverviewCard({ bus, routeName, stopName, eta, }) {
     const available = bus.capacity - bus.occupiedSeats;
     return (<article className="assigned-bus-card">

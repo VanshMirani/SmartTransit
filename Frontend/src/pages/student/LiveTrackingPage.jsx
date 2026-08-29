@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { CircleMarker, MapContainer, Marker, Polyline, Popup, TileLayer, useMap, } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { ErrorState, LoadingCards, PageHeading, } from "../../components/student/StudentUI";
+import { AssignmentPendingState, ErrorState, LoadingCards, PageHeading, } from "../../components/student/StudentUI";
 import { useStudentData } from "../../hooks/useStudentData";
 const busIcon = L.divIcon({
     className: "smart-map-marker",
@@ -29,6 +29,12 @@ export function LiveTrackingPage() {
       </>);
     if (error || !data)
         return <ErrorState message={error} retry={retry}/>;
+    const assignmentPending = data.assignmentStatus === "unassigned" || !data.route?.code || !data.route?.stops?.length;
+    if (assignmentPending)
+        return (<>
+        <PageHeading title="Live tracking" description="Live bus tracking will be available after admin assigns your route."/>
+        <AssignmentPendingState />
+      </>);
     const selectedStop = data.route.stops.find((stop) => stop.id === data.route.selectedStopId) ?? data.route.stops[0];
     const busPosition = data.bus.coordinates ?? selectedStop.coordinates;
     const routePoints = data.route.stops.map((stop) => stop.coordinates);

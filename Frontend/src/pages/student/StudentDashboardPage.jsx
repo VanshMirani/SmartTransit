@@ -2,7 +2,7 @@ import { AlertTriangle, ArrowRight, BusFront, Clock3, MapPin, Navigation, PhoneC
 import { Link } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import { useCommunications } from "../../communications/CommunicationsContext";
-import { BusOverviewCard, ErrorState, LoadingCards, NotificationCard, PageHeading, } from "../../components/student/StudentUI";
+import { AssignmentPendingState, BusOverviewCard, ErrorState, LoadingCards, NotificationCard, PageHeading, } from "../../components/student/StudentUI";
 import { useStudentData } from "../../hooks/useStudentData";
 import { currentDisplayDate } from "../../utils/dateLabels";
 export function StudentDashboardPage() {
@@ -16,6 +16,14 @@ export function StudentDashboardPage() {
       </>);
     if (error || !data)
         return <ErrorState message={error} retry={retry}/>;
+    const assignmentPending = data.assignmentStatus === "unassigned" || !data.route?.code || !data.route?.stops?.length;
+    if (assignmentPending)
+        return (<div className="student-dashboard">
+      <PageHeading eyebrow={currentDisplayDate()} title={`Good morning, ${user?.name.split(" ")[0] ?? "Student"}`} description="Your account is ready. Route assignment is pending with the transport admin."/>
+      <AssignmentPendingState action={<Link className="button button--secondary" to="/student/help">
+            Contact transport support <ArrowRight />
+          </Link>}/>
+    </div>);
     const selectedStop = data.route.stops.find((stop) => stop.id === data.route.selectedStopId) ?? data.route.stops[0];
     const currentStop = data.route.stops.find((stop) => stop.status === "current") ?? selectedStop;
     return (<div className="student-dashboard">

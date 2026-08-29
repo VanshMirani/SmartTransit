@@ -292,10 +292,42 @@ function routeForUser(data, user) {
         null;
 }
 
+function buildUnassignedTransitData(data) {
+    return {
+        ...data.studentTransitData,
+        assignmentStatus: "unassigned",
+        bus: {
+            ...data.studentTransitData.bus,
+            id: "unassigned",
+            number: "Pending",
+            registration: "Not assigned",
+            capacity: 0,
+            occupiedSeats: 0,
+            status: "pending",
+            speed: 0,
+            gpsUpdatedAt: "Not available",
+            seatsUpdatedAt: "Not available",
+        },
+        route: {
+            id: "unassigned",
+            code: "",
+            name: "Route assignment pending",
+            startPoint: "",
+            destination: "Indus University",
+            distance: "-",
+            scheduledArrival: "-",
+            selectedStopId: "",
+            mapCenter: data.studentTransitData.route.mapCenter,
+            notes: "The transport office will assign a route and pickup stop.",
+            stops: [],
+        },
+    };
+}
+
 function buildStudentTransitData(data, user) {
     const route = routeForUser(data, user);
     if (!route) {
-        return data.studentTransitData;
+        return buildUnassignedTransitData(data);
     }
     const preferredStopId = user.stopId ?? data.studentTransitData.route.selectedStopId;
     const selectedStopId = route.stops.some((stop) => stop.id === preferredStopId)
@@ -313,6 +345,7 @@ function buildStudentTransitData(data, user) {
     const fleetBus = data.admin?.fleetVehicles?.find((bus) => bus.route === route.code);
     return {
         ...data.studentTransitData,
+        assignmentStatus: "assigned",
         bus: {
             ...data.studentTransitData.bus,
             id: fleetBus?.id ?? `bus-${route.primaryBusNumber}`,
@@ -477,7 +510,7 @@ export function createApiServer(store, options = {}) {
                         initials: body.fullName.trim().split(/\s+/).slice(0, 2).map((part) => part[0].toUpperCase()).join(""),
                         enrollment: studentCode,
                         phone: body.phone,
-                        routeCode: indusRoutes[3].code,
+                        routeCode: "",
                         stopId: "",
                     };
                     delete signupOtps[email];
@@ -490,7 +523,7 @@ export function createApiServer(store, options = {}) {
                         contact: user.email,
                         routeCode: user.routeCode,
                         stopId: user.stopId,
-                        assignment: `${user.routeCode} - Pending stop assignment`,
+                        assignment: "Unassigned",
                         status: "active",
                     });
                     const token = randomUUID();

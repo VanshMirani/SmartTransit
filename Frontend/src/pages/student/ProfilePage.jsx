@@ -2,14 +2,12 @@ import { Bell, BusFront, CheckCircle2, ChevronRight, LockKeyhole, Mail, MapPin, 
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
-import { PageHeading } from "../../components/student/StudentUI";
+import { ErrorState, LoadingCards, PageHeading } from "../../components/student/StudentUI";
 import { useStudentData } from "../../hooks/useStudentData";
 import { studentTransitData } from "../../services/mockData";
 export function ProfilePage() {
     const { user } = useAuth();
-    const { data } = useStudentData();
-    const { bus, route } = data ?? studentTransitData;
-    const selectedStop = route.stops.find((stop) => stop.id === route.selectedStopId) ?? route.stops[0];
+    const { data, loading, error, retry } = useStudentData();
     const studentCode = user?.enrollment ?? user?.email?.split("@")[0]?.toUpperCase() ?? "Assigned by transport office";
     const phone = user?.phone ? `+91 ${user.phone}` : "+91 98765 43210";
     const [saved, setSaved] = useState(false);
@@ -23,6 +21,13 @@ export function ProfilePage() {
         setSaved(true);
         window.setTimeout(() => setSaved(false), 2500);
     };
+    if (loading)
+        return <><PageHeading title="Profile & preferences"/><LoadingCards count={2}/></>;
+    if (error)
+        return <ErrorState message={error} retry={retry}/>;
+    const { bus, route } = data ?? studentTransitData;
+    const assignmentPending = data?.assignmentStatus === "unassigned" || !route?.code || !route?.stops?.length;
+    const selectedStop = assignmentPending ? null : route.stops.find((stop) => stop.id === route.selectedStopId) ?? route.stops[0];
     return (<div>
       <PageHeading eyebrow="Your account" title="Profile & preferences" description="Manage your personal details and commute notifications."/>
       {saved && (<div className="app-alert app-alert--success">
@@ -78,7 +83,7 @@ export function ProfilePage() {
                 <BusFront />
               <span>
                 <small>Assigned bus</small>
-                <strong>{bus.registration} · {bus.number}</strong>
+                <strong>{assignmentPending ? "Pending assignment" : `${bus.registration} · ${bus.number}`}</strong>
               </span>
               <ChevronRight />
             </div>
@@ -86,7 +91,7 @@ export function ProfilePage() {
               <MapPin />
               <span>
                 <small>Assigned route</small>
-                <strong>{route.code} · {route.name}</strong>
+                <strong>{assignmentPending ? "Pending assignment" : `${route.code} · ${route.name}`}</strong>
               </span>
               <ChevronRight />
             </div>
@@ -94,7 +99,7 @@ export function ProfilePage() {
               <MapPin />
               <span>
                 <small>Pickup stop</small>
-                <strong>{selectedStop.name} · {selectedStop.scheduledTime}</strong>
+                <strong>{assignmentPending ? "To be assigned by transport office" : `${selectedStop.name} · ${selectedStop.scheduledTime}`}</strong>
               </span>
               <ChevronRight />
             </div>
