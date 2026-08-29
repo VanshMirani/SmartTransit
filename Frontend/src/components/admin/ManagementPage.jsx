@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAdminData } from "../../admin/AdminDataContext";
 import { AdminFeedback, AdminModal, AdminPageHeading, AdminStatusBadge, } from "./AdminUI";
+import { isInstituteEmail, normalizeEmail, validatePassword } from "../../utils/registrationValidation";
 const labels = {
     buses: {
         singular: "bus",
@@ -63,11 +64,20 @@ const emptyRecord = (kind) => ({
     contact: "",
     assignment: kind === "students" ? "" : "Unassigned",
     ...(kind === "students" ? { routeCode: "", stopId: "" } : {}),
-    status: kind === "buses" ? "active" : "active",
+    ...(kind === "drivers" || kind === "conductors" ? { accountEmail: "", temporaryPassword: "" } : {}),
+    status: kind === "students" ? "pending" : "active",
 });
 
 function routeCodeFromAssignment(assignment) {
     return assignment?.match(/\bIU-R\d+\b/i)?.[0]?.toUpperCase() ?? "";
+}
+
+function isStaffKind(kind) {
+    return kind === "drivers" || kind === "conductors";
+}
+
+function nextRecordStatus(status) {
+    return status === "active" ? "inactive" : "active";
 }
 
 function assignmentForStudentRoute(routeCode, stopId, routes) {
@@ -107,6 +117,7 @@ function normalizeStudentRecord(record, routes) {
         routeCode: record.routeCode ?? "",
         stopId: record.stopId ?? "",
         assignment: assignmentForStudentRoute(record.routeCode, record.stopId, routes),
+        status: record.status ?? "pending",
     };
 }
 
@@ -124,6 +135,7 @@ export function ManagementPage({ kind }) {
     const [errors, setErrors] = useState({});
     const [feedback, setFeedback] = useState(null);
     const [savingRecord, setSavingRecord] = useState(false);
+    const [savingStatus, setSavingStatus] = useState(false);
     const pageSize = 5;
     useEffect(() => {
         setQuery(searchParams.get("search") ?? "");
@@ -146,6 +158,7 @@ export function ManagementPage({ kind }) {
         if (!editing || savingRecord)
             return;
         const recordToSave = kind === "students" ? normalizeStudentRecord(editing, routes) : editing;
+        const isNew = !recordToSave.id;
         const next = {};
         if (!recordToSave.name.trim())
             next.name = `${config.name} is required.`;
@@ -156,6 +169,27 @@ export function ManagementPage({ kind }) {
         if (records[kind].some((item) => item.code.toLowerCase() === recordToSave.code.toLowerCase() &&
             item.id !== recordToSave.id))
             next.code = `${config.code} already exists.`;
+        if (kind === "students" && recordToSave.status === "active") {
+            if (!recordToSave.routeCode)
+                next.assignment = "Assign a route before approving this student.";
+            else if (!recordToSave.stopId)
+                next.assignment = "Assign a pickup stop before approving this student.";
+        }
+        if (isStaffKind(kind)) {
+            const accountEmail = normalizeEmail(recordToSave.accountEmail ?? "");
+            if (isNew && !accountEmail)
+                next.accountEmail = "Enter the staff login email.";
+            else if (accountEmail && !isInstituteEmail(accountEmail))
+                next.accountEmail = "Use an Indus University email.";
+            if (isNew && !recordToSave.temporaryPassword?.trim()) {
+                next.temporaryPassword = "Enter a temporary password for this staff login.";
+            }
+            const passwordError = recordToSave.temporaryPassword?.trim()
+                ? validatePassword(recordToSave.temporaryPassword)
+                : "";
+            if (passwordError)
+                next.temporaryPassword = passwordError;
+        }
         setErrors(next);
         if (Object.keys(next).length) {
             setFeedback({
@@ -165,7 +199,6 @@ export function ManagementPage({ kind }) {
             });
             return;
         }
-        const isNew = !recordToSave.id;
         setSavingRecord(true);
         try {
             const saved = await upsertRecord(kind, {
@@ -212,6 +245,7 @@ export function ManagementPage({ kind }) {
         }} aria-label={`Filter ${kind} by status`}>
               <option value="all">All statuses</option>
               <option value="active">Active</option>
+              {kind === "students" && (<option value="pending">Pending approval</option>)}
               <option value="inactive">Inactive</option>
               {kind === "buses" && (<option value="maintenance">Maintenance</option>)}
             </select>
@@ -258,7 +292,7 @@ export function ManagementPage({ kind }) {
             }} aria-label={`Edit ${item.name}`}>
                         <Pencil />
                       </button>
-                      <button onClick={() => setConfirming(item)} aria-label={`${item.status === "active" ? "Deactivate" : "Activate"} ${item.name}`}>
+                      <button onClick={() => setConfirming(item)} aria-label={`${nextRecordStatus(item.status) === "inactive" ? "Deactivate" : "Activate"} ${item.name}`}>
                         {item.status === "active" ? (<ToggleRight />) : (<ToggleLeft />)}
                       </button>
                     </div>
@@ -303,12 +337,14 @@ export function ManagementPage({ kind }) {
             <AdminField label={config.detail} value={editing.detail} setValue={(value) => setEditing({ ...editing, detail: value })} error={errors.detail}/>
             <AdminField label={config.contact} value={editing.contact} setValue={(value) => setEditing({ ...editing, contact: value })}/>
             {kind === "students" ? (<StudentAssignmentFields student={editing} setStudent={setEditing} routes={routes} error={errors.assignment}/>) : (<AdminField label={config.assignment} value={editing.assignment} setValue={(value) => setEditing({ ...editing, assignment: value })}/>)}
+            {isStaffKind(kind) && (<StaffAccountFields record={editing} setRecord={setEditing} errors={errors} isNew={!editing.id}/>)}
             <label className="admin-form-field">
               <span>Status</span>
               <select value={editing.status} onChange={(e) => setEditing({
                 ...editing,
                 status: e.target.value,
             })}>
+                {kind === "students" && (<option value="pending">Pending approval</option>)}
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
                 {kind === "buses" && (<option value="maintenance">Maintenance</option>)}
@@ -334,6 +370,10 @@ export function ManagementPage({ kind }) {
               <dt>{config.assignment}</dt>
               <dd>{viewing.assignment}</dd>
             </div>
+            {isStaffKind(kind) && (<div>
+              <dt>Staff login email</dt>
+              <dd>{viewing.accountEmail || "Not issued"}</dd>
+            </div>)}
             <div>
               <dt>Status</dt>
               <dd>
@@ -342,20 +382,33 @@ export function ManagementPage({ kind }) {
             </div>
           </dl>
         </AdminModal>)}
-      {confirming && (<AdminModal title={`${confirming.status === "active" ? "Deactivate" : "Activate"} ${confirming.name}?`} description={`This will change access and availability for this ${config.singular}.`} close={() => setConfirming(null)} footer={<>
+      {confirming && (<AdminModal title={`${nextRecordStatus(confirming.status) === "inactive" ? "Deactivate" : "Activate"} ${confirming.name}?`} description={`This will change access and availability for this ${config.singular}.`} close={() => setConfirming(null)} footer={<>
               <button className="button button--secondary" onClick={() => setConfirming(null)}>
                 Cancel
               </button>
-              <button className="button admin-primary-button" onClick={() => {
-                    toggleRecord(kind, confirming.id);
-                    setFeedback({
-                        type: "success",
-                        title: "Status updated",
-                        message: `${confirming.name} is now ${confirming.status === "active" ? "inactive" : "active"}.`,
-                    });
-                    setConfirming(null);
+              <button className="button admin-primary-button" disabled={savingStatus} onClick={async () => {
+                    setSavingStatus(true);
+                    try {
+                        const saved = await toggleRecord(kind, confirming.id);
+                        setFeedback({
+                            type: "success",
+                            title: "Status updated",
+                            message: `${saved.name} is now ${saved.status}.`,
+                        });
+                        setConfirming(null);
+                    }
+                    catch (reason) {
+                        setFeedback({
+                            type: "error",
+                            title: "Status not changed",
+                            message: reason instanceof Error ? reason.message : "The status could not be updated.",
+                        });
+                    }
+                    finally {
+                        setSavingStatus(false);
+                    }
                 }}>
-                Confirm status change
+                {savingStatus ? "Updating..." : "Confirm status change"}
               </button>
             </>}>
           <p className="admin-confirm-copy">
@@ -364,6 +417,18 @@ export function ManagementPage({ kind }) {
         </AdminModal>)}
     </div>);
 }
+
+function StaffAccountFields({ record, setRecord, errors, isNew, }) {
+    return (<div className="admin-staff-account-fields">
+      <div className="admin-form-section-title">
+        <strong>Staff login</strong>
+        <small>{isNew ? "Admin issues the first password." : "Leave password blank unless resetting access."}</small>
+      </div>
+      <AdminField label="Login email" value={record.accountEmail ?? ""} setValue={(value) => setRecord({ ...record, accountEmail: value })} error={errors.accountEmail} required={isNew}/>
+      <AdminField label={isNew ? "Temporary password" : "Reset password"} value={record.temporaryPassword ?? ""} setValue={(value) => setRecord({ ...record, temporaryPassword: value })} error={errors.temporaryPassword} type="password" autoComplete="new-password" required={isNew}/>
+    </div>);
+}
+
 function StudentAssignmentFields({ student, setStudent, routes, error, }) {
     const selectedRoute = routes.find((route) => route.code === student.routeCode);
     const stops = selectedRoute?.stops ?? [];
@@ -398,10 +463,10 @@ function StudentAssignmentFields({ student, setStudent, routes, error, }) {
       </label>
     </div>);
 }
-function AdminField({ label, value, setValue, error, }) {
+function AdminField({ label, value, setValue, error, type = "text", autoComplete, required = true, }) {
     return (<label className="admin-form-field">
-      <span>{label} *</span>
-      <input value={value} onChange={(e) => setValue(e.target.value)} aria-invalid={Boolean(error)}/>
+      <span>{label}{required ? " *" : ""}</span>
+      <input type={type} autoComplete={autoComplete} value={value} onChange={(e) => setValue(e.target.value)} aria-invalid={Boolean(error)}/>
       {error && <small>{error}</small>}
     </label>);
 }

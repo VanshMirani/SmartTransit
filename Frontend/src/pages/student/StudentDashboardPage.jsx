@@ -19,7 +19,7 @@ export function StudentDashboardPage() {
     const assignmentPending = data.assignmentStatus === "unassigned" || !data.route?.code || !data.route?.stops?.length;
     if (assignmentPending)
         return (<div className="student-dashboard">
-      <PageHeading eyebrow={currentDisplayDate()} title={`Good morning, ${user?.name.split(" ")[0] ?? "Student"}`} description="Your account is ready. Route assignment is pending with the transport admin."/>
+      <PageHeading eyebrow={currentDisplayDate()} title={`Good morning, ${user?.name.split(" ")[0] ?? "Student"}`} description="Your student account is waiting for admin approval and route assignment."/>
       <AssignmentPendingState action={<Link className="button button--secondary" to="/student/help">
             Contact transport support <ArrowRight />
           </Link>}/>

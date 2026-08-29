@@ -253,6 +253,7 @@ test("student signup uses institute email OTP verification", async () => {
         assert.equal(session.user.email, "new.student@iite.indusuni.ac.in");
         assert.equal(session.user.routeCode, "");
         assert.equal(session.user.stopId, "");
+        assert.equal(session.user.status, "pending");
         assert.ok(session.token);
 
         const pendingTransit = await fetch(`${app.baseUrl}/student/transit`, {
@@ -278,11 +279,19 @@ test("student signup uses institute email OTP verification", async () => {
         const route = data.routes.find((item) => item.code === "IU-R2");
         const stop = route.stops.find((item) => item.name === "Bopal");
         assert.equal(student.assignment, "Unassigned");
+        assert.equal(student.status, "pending");
+
+        const blockedApproval = await fetch(`${app.baseUrl}/admin/students/${student.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+            body: JSON.stringify({ ...student, status: "active" }),
+        });
+        assert.equal(blockedApproval.status, 400);
 
         const assigned = await fetch(`${app.baseUrl}/admin/students/${student.id}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
-            body: JSON.stringify({ ...student, routeCode: route.code, stopId: stop.id }),
+            body: JSON.stringify({ ...student, routeCode: route.code, stopId: stop.id, status: "active" }),
         });
         assert.equal(assigned.status, 200);
 
@@ -294,6 +303,109 @@ test("student signup uses institute email OTP verification", async () => {
         assert.equal(assignedTransitData.assignmentStatus, "assigned");
         assert.equal(assignedTransitData.route.code, "IU-R2");
         assert.equal(assignedTransitData.route.selectedStopId, stop.id);
+    }
+    finally {
+        await app.close();
+    }
+});
+
+test("admin can issue staff accounts and staff can sign in", async () => {
+    const app = await startTestServer();
+    try {
+        const adminLogin = await fetch(`${app.baseUrl}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "admin@transport.indusuni.ac.in", password: "Admin@123" }),
+        });
+        const { token: adminToken } = await json(adminLogin);
+
+        const weakPassword = await fetch(`${app.baseUrl}/admin/drivers/driver-new`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+            body: JSON.stringify({
+                id: "driver-new",
+                name: "New Driver",
+                code: "DRV-999",
+                detail: "Licence GJ01-2026-9999",
+                contact: "+91 98765 44999",
+                assignment: "9468 - IU-R4",
+                accountEmail: "new.driver@transport.indusuni.ac.in",
+                temporaryPassword: "weakpass",
+                status: "active",
+            }),
+        });
+        assert.equal(weakPassword.status, 400);
+
+        const created = await fetch(`${app.baseUrl}/admin/drivers/driver-new`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+            body: JSON.stringify({
+                id: "driver-new",
+                name: "New Driver",
+                code: "DRV-999",
+                detail: "Licence GJ01-2026-9999",
+                contact: "+91 98765 44999",
+                assignment: "9468 - IU-R4",
+                accountEmail: "new.driver@transport.indusuni.ac.in",
+                temporaryPassword: "Driver@999",
+                status: "active",
+            }),
+        });
+        assert.equal(created.status, 200);
+        const driverRecord = await json(created);
+        assert.equal(driverRecord.accountEmail, "new.driver@transport.indusuni.ac.in");
+        assert.equal(driverRecord.temporaryPassword, undefined);
+
+        const staffLogin = await fetch(`${app.baseUrl}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "new.driver@transport.indusuni.ac.in", password: "Driver@999" }),
+        });
+        assert.equal(staffLogin.status, 200);
+        const staffSession = await json(staffLogin);
+        assert.equal(staffSession.user.role, "driver");
+        assert.equal(staffSession.user.status, "active");
+    }
+    finally {
+        await app.close();
+    }
+});
+
+test("auth endpoints rate limit repeated OTP and failed login attempts", async () => {
+    const app = await startTestServer({
+        otpEmailSender: async () => {},
+        passwordResetEmailSender: async () => {},
+    });
+    try {
+        for (let index = 0; index < 3; index += 1) {
+            const response = await fetch(`${app.baseUrl}/auth/signup-otp`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email: "limited.student@iite.indusuni.ac.in" }),
+            });
+            assert.equal(response.status, 200);
+        }
+        const limitedOtp = await fetch(`${app.baseUrl}/auth/signup-otp`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "limited.student@iite.indusuni.ac.in" }),
+        });
+        assert.equal(limitedOtp.status, 429);
+
+        for (let index = 0; index < 4; index += 1) {
+            const response = await fetch(`${app.baseUrl}/auth/login`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email: "student@iite.indusuni.ac.in", password: "Wrong@123" }),
+            });
+            assert.equal(response.status, 401);
+        }
+        const lockedLogin = await fetch(`${app.baseUrl}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "student@iite.indusuni.ac.in", password: "Wrong@123" }),
+        });
+        assert.equal(lockedLogin.status, 429);
     }
     finally {
         await app.close();

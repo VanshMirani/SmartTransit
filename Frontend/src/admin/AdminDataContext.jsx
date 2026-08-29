@@ -7,6 +7,11 @@ function syncBackend(path, options) {
         return;
     void apiRequest(path, options).catch(() => undefined);
 }
+
+function nextRecordStatus(status) {
+    return status === 'active' ? 'inactive' : 'active';
+}
+
 export function AdminDataProvider({ children }) {
     const [records, setRecords] = useState(initialAdminRecords);
     const [routes, setRoutes] = useState(initialRoutes);
@@ -39,12 +44,18 @@ export function AdminDataProvider({ children }) {
             setRecords((current) => ({ ...current, [kind]: current[kind].some((item) => item.id === record.id) ? current[kind].map((item) => item.id === record.id ? record : item) : [record, ...current[kind]] }));
             return record;
         },
-        toggleRecord: (kind, id) => {
-            setRecords((current) => {
-                const next = current[kind].map((item) => item.id === id ? { ...item, status: item.status === 'active' ? 'inactive' : 'active' } : item);
-                syncBackend(`/admin/${kind}/${id}/status`, { method: 'PATCH', body: next.find((item) => item.id === id) });
-                return { ...current, [kind]: next };
-            });
+        toggleRecord: async (kind, id) => {
+            const target = records[kind].find((item) => item.id === id);
+            if (!target)
+                throw new Error('Record not found.');
+            const patched = { ...target, status: nextRecordStatus(target.status) };
+            if (backendConfig.enabled) {
+                const saved = await apiRequest(`/admin/${kind}/${id}/status`, { method: 'PATCH', body: patched });
+                setRecords((current) => ({ ...current, [kind]: current[kind].map((item) => item.id === id ? saved : item) }));
+                return saved;
+            }
+            setRecords((current) => ({ ...current, [kind]: current[kind].map((item) => item.id === id ? patched : item) }));
+            return patched;
         },
         upsertRoute: (route) => {
             setRoutes((current) => current.some((item) => item.id === route.id) ? current.map((item) => item.id === route.id ? route : item) : [route, ...current]);

@@ -6,10 +6,10 @@ import { activeStaffTrip, driverTripHistory, operationalCurrentStopId, operation
 import { hashPassword } from "./passwords.js";
 
 export const demoUsers = [
-    { id: "stu-2023", name: "Aarav Shah", email: "student@iite.indusuni.ac.in", passwordHash: hashPassword("Student@123"), role: "student", initials: "AS", enrollment: "IU23CSE2023", routeCode: defaultStudentRoute.code },
-    { id: "drv-101", name: "Imran Hussain", email: "driver@transport.indusuni.ac.in", passwordHash: hashPassword("Driver@123"), role: "driver", initials: "IH", routeCode: defaultStudentRoute.code },
-    { id: "con-101", name: "Rahul Patel", email: "conductor@transport.indusuni.ac.in", passwordHash: hashPassword("Conductor@123"), role: "conductor", initials: "RP", routeCode: defaultStudentRoute.code },
-    { id: "adm-001", name: "Admin Operator", email: "admin@transport.indusuni.ac.in", passwordHash: hashPassword("Admin@123"), role: "admin", initials: "AO" },
+    { id: "stu-2023", name: "Aarav Shah", email: "student@iite.indusuni.ac.in", passwordHash: hashPassword("Student@123"), role: "student", status: "active", initials: "AS", enrollment: "IU23CSE2023", routeCode: defaultStudentRoute.code },
+    { id: "drv-101", name: "Imran Hussain", email: "driver@transport.indusuni.ac.in", passwordHash: hashPassword("Driver@123"), role: "driver", status: "active", initials: "IH", routeCode: defaultStudentRoute.code },
+    { id: "con-101", name: "Rahul Patel", email: "conductor@transport.indusuni.ac.in", passwordHash: hashPassword("Conductor@123"), role: "conductor", status: "active", initials: "RP", routeCode: defaultStudentRoute.code },
+    { id: "adm-001", name: "Admin Operator", email: "admin@transport.indusuni.ac.in", passwordHash: hashPassword("Admin@123"), role: "admin", status: "active", initials: "AO" },
 ];
 
 const clone = (value) => JSON.parse(JSON.stringify(value));

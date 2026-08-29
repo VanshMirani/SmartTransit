@@ -60,6 +60,14 @@ test("rejects weak or mismatched passwords", () => {
     assert.match(errors.password ?? "", /uppercase/);
     assert.match(errors.confirmPassword ?? "", /do not match/);
 });
+test("requires a special character in passwords", () => {
+    const errors = validateStudentRegistration({
+        ...validRegistration,
+        password: "Student456",
+        confirmPassword: "Student456",
+    });
+    assert.match(errors.password ?? "", /special character/);
+});
 test("normalizes an Indian country code before phone validation", () => {
     assert.equal(normalizeIndianPhone("+91 98765 43211"), "9876543211");
     assert.deepEqual(validateStudentRegistration({

@@ -7,6 +7,7 @@ import { hashPassword, verifyPassword } from "./passwords.js";
 
 const signupOtpExpiryMinutes = 10;
 const passwordResetOtpExpiryMinutes = 10;
+const defaultSessionHours = 8;
 
 const jsonHeaders = {
     "Content-Type": "application/json",
@@ -21,6 +22,7 @@ function publicUser(user) {
         name: user.name,
         email: user.email,
         role: user.role,
+        status: user.status ?? "active",
         initials: user.initials,
         enrollment: user.enrollment,
         phone: user.phone,
@@ -44,6 +46,10 @@ function badRequest(response, message) {
 
 function serviceUnavailable(response, message) {
     send(response, 503, { message });
+}
+
+function tooManyRequests(response, message) {
+    send(response, 429, { message });
 }
 
 function otpEmailErrorMessage(error) {
@@ -89,11 +95,20 @@ async function requireUser(request, store) {
     const token = header.startsWith("Bearer ") ? header.slice(7) : "";
     if (!token)
         return null;
-    const data = await store.get();
-    const session = data.sessions[token];
-    if (!session)
-        return null;
-    return data.users.find((user) => user.id === session.userId) ?? null;
+    return store.update((data) => {
+        const session = data.sessions[token];
+        if (!session)
+            return null;
+        if (sessionExpired(session)) {
+            delete data.sessions[token];
+            return null;
+        }
+        const user = data.users.find((item) => item.id === session.userId) ?? null;
+        if (!user) {
+            delete data.sessions[token];
+        }
+        return user;
+    });
 }
 
 function requireRole(user, roles) {
@@ -161,13 +176,19 @@ function normalizeStudentRecordAssignment(data, record) {
 function syncStudentUserAssignment(data, record) {
     const student = data.users.find((item) => item.role === "student" &&
         (item.id === record.id || normalizeEmail(item.email) === normalizeEmail(record.contact)));
-    if (!student || !record.routeCode)
+    if (!student)
         return;
+    student.status = record.status ?? student.status ?? "pending";
+    student.routeCode = record.routeCode ?? "";
+    if (!record.routeCode) {
+        student.stopId = "";
+        return;
+    }
     student.routeCode = record.routeCode;
     if (record.stopId)
         student.stopId = record.stopId;
     else
-        delete student.stopId;
+        student.stopId = "";
 }
 
 function totalStudentCount() {
@@ -184,6 +205,30 @@ function ensurePasswordResetOtps(data) {
     if (!data.passwordResetOtps)
         data.passwordResetOtps = {};
     return data.passwordResetOtps;
+}
+
+function sessionDurationMs() {
+    const hours = Number(process.env.SMARTTRANSIT_SESSION_HOURS ?? defaultSessionHours);
+    return Number.isFinite(hours) && hours > 0
+        ? hours * 60 * 60 * 1000
+        : defaultSessionHours * 60 * 60 * 1000;
+}
+
+function createSession(userId) {
+    const createdAt = new Date();
+    return {
+        userId,
+        createdAt: createdAt.toISOString(),
+        expiresAt: new Date(createdAt.getTime() + sessionDurationMs()).toISOString(),
+    };
+}
+
+function sessionExpired(session) {
+    const expiresAt = Date.parse(session.expiresAt ?? "");
+    if (Number.isFinite(expiresAt))
+        return expiresAt <= Date.now();
+    const createdAt = Date.parse(session.createdAt ?? "");
+    return Number.isFinite(createdAt) && createdAt + sessionDurationMs() <= Date.now();
 }
 
 function createOtp() {
@@ -275,6 +320,137 @@ function buildComplaint(input, user) {
         ],
         internalNotes: [],
     };
+}
+
+function createRateLimiter({ limit, windowMs, lockMs = windowMs }) {
+    const attempts = new Map();
+    return {
+        check(key) {
+            const now = Date.now();
+            const entry = attempts.get(key);
+            if (!entry)
+                return { allowed: true };
+            if (entry.blockedUntil && entry.blockedUntil > now) {
+                return {
+                    allowed: false,
+                    retryAfterSeconds: Math.ceil((entry.blockedUntil - now) / 1000),
+                };
+            }
+            if (entry.resetAt <= now) {
+                attempts.delete(key);
+                return { allowed: true };
+            }
+            return { allowed: true };
+        },
+        record(key) {
+            const now = Date.now();
+            const current = attempts.get(key);
+            const entry = current && current.resetAt > now
+                ? current
+                : { count: 0, resetAt: now + windowMs, blockedUntil: 0 };
+            entry.count += 1;
+            if (entry.count >= limit)
+                entry.blockedUntil = now + lockMs;
+            attempts.set(key, entry);
+            return this.check(key);
+        },
+        reset(key) {
+            attempts.delete(key);
+        },
+    };
+}
+
+function clientKey(request, scope, identifier) {
+    const forwardedFor = request.headers["x-forwarded-for"];
+    const ip = Array.isArray(forwardedFor)
+        ? forwardedFor[0]
+        : String(forwardedFor ?? request.socket.remoteAddress ?? "unknown").split(",")[0].trim();
+    return `${scope}:${normalizeEmail(String(identifier ?? "")) || ip}`;
+}
+
+function retryMessage(action, retryAfterSeconds) {
+    const minutes = Math.max(1, Math.ceil((retryAfterSeconds ?? 60) / 60));
+    return `Too many ${action}. Try again in about ${minutes} minute${minutes === 1 ? "" : "s"}.`;
+}
+
+function validateStudentSignupBody(body) {
+    const name = String(body.fullName ?? "").trim();
+    const phone = String(body.phone ?? "").replace(/\D/g, "");
+    const password = String(body.password ?? "");
+    if (name.length < 3)
+        return "Enter your full name before creating the account.";
+    if (!/^\d{10}$/.test(phone))
+        return "Enter a valid 10-digit mobile number.";
+    return validatePassword(password);
+}
+
+function isInactive(user) {
+    return (user.status ?? "active") === "inactive";
+}
+
+function isPendingStudent(user) {
+    return user.role === "student" && (user.status ?? "active") === "pending";
+}
+
+function validateActiveStudentAssignment(record) {
+    if (record.status !== "active")
+        return "";
+    if (!record.routeCode)
+        return "Assign a route before approving this student.";
+    if (!record.stopId)
+        return "Assign a pickup stop before approving this student.";
+    return "";
+}
+
+function buildStaffUserId(kind, recordId) {
+    return `${kind === "drivers" ? "drv" : "con"}-${recordId.replace(/^(driver|conductor)-/i, "")}`;
+}
+
+function buildStaffNameInitials(name) {
+    return String(name ?? "")
+        .trim()
+        .split(/\s+/)
+        .slice(0, 2)
+        .map((part) => part[0]?.toUpperCase())
+        .join("");
+}
+
+function syncStaffUser(data, kind, record) {
+    if (kind !== "drivers" && kind !== "conductors")
+        return { record };
+    const role = kind === "drivers" ? "driver" : "conductor";
+    const accountEmail = normalizeEmail(String(record.accountEmail ?? ""));
+    const temporaryPassword = String(record.temporaryPassword ?? "");
+    const cleaned = { ...record };
+    delete cleaned.temporaryPassword;
+    if (!accountEmail)
+        return { record: cleaned };
+    if (!isInstituteEmail(accountEmail))
+        return { error: "Use an Indus University email for staff account access." };
+    const passwordError = temporaryPassword ? validatePassword(temporaryPassword) : "";
+    const existing = data.users.find((item) => item.id === cleaned.accountUserId || normalizeEmail(item.email) === accountEmail);
+    if (!existing && !temporaryPassword)
+        return { error: "Enter a temporary password when creating a staff login." };
+    if (passwordError)
+        return { error: passwordError };
+    const user = existing ?? {
+        id: cleaned.accountUserId || buildStaffUserId(kind, cleaned.id),
+        role,
+    };
+    user.name = cleaned.name;
+    user.email = accountEmail;
+    user.role = role;
+    user.status = cleaned.status ?? user.status ?? "active";
+    user.initials = user.initials || buildStaffNameInitials(cleaned.name);
+    user.routeCode = routeCodeFromAssignment(cleaned.assignment);
+    if (temporaryPassword)
+        user.passwordHash = hashPassword(temporaryPassword);
+    delete user.password;
+    if (!existing)
+        data.users.push(user);
+    cleaned.accountEmail = accountEmail;
+    cleaned.accountUserId = user.id;
+    return { record: cleaned };
 }
 
 function routeForUser(data, user) {
@@ -390,6 +566,9 @@ function communicationsForUser(data, user) {
 export function createApiServer(store, options = {}) {
     const otpEmailSender = options.otpEmailSender ?? sendSignupOtpEmail;
     const passwordResetEmailSender = options.passwordResetEmailSender ?? sendPasswordResetOtpEmail;
+    const signupOtpLimiter = createRateLimiter({ limit: 3, windowMs: 15 * 60 * 1000 });
+    const passwordResetOtpLimiter = createRateLimiter({ limit: 3, windowMs: 15 * 60 * 1000 });
+    const loginFailureLimiter = createRateLimiter({ limit: 5, windowMs: 15 * 60 * 1000, lockMs: 15 * 60 * 1000 });
 
     return createServer(async (request, response) => {
         if (request.method === "OPTIONS") {
@@ -414,22 +593,41 @@ export function createApiServer(store, options = {}) {
 
             if (method === "POST" && pathname === "/api/auth/login") {
                 const body = await readBody(request);
+                const email = normalizeEmail(String(body.email ?? ""));
+                const loginKey = clientKey(request, "login", email);
+                const loginAllowed = loginFailureLimiter.check(loginKey);
+                if (!loginAllowed.allowed) {
+                    tooManyRequests(response, retryMessage("failed sign-in attempts", loginAllowed.retryAfterSeconds));
+                    return;
+                }
                 const payload = await store.update((data) => {
-                    const user = userByEmail(data, normalizeEmail(String(body.email ?? "")));
+                    const user = userByEmail(data, email);
                     if (!user || !verifyPassword(body.password, user))
-                        return null;
+                        return { error: "invalid" };
+                    if (isInactive(user))
+                        return { error: "inactive" };
                     if (!user.passwordHash) {
                         user.passwordHash = hashPassword(body.password);
                         delete user.password;
                     }
                     const token = randomUUID();
-                    data.sessions[token] = { userId: user.id, createdAt: new Date().toISOString() };
+                    data.sessions[token] = createSession(user.id);
                     return { token, user: publicUser(user) };
                 });
-                if (!payload) {
+                if (payload.error === "inactive") {
+                    send(response, 403, { message: "This account is inactive. Contact the transport office administrator." });
+                    return;
+                }
+                if (payload.error === "invalid") {
+                    const rateState = loginFailureLimiter.record(loginKey);
+                    if (!rateState.allowed) {
+                        tooManyRequests(response, retryMessage("failed sign-in attempts", rateState.retryAfterSeconds));
+                        return;
+                    }
                     send(response, 401, { message: "The email or password is incorrect." });
                     return;
                 }
+                loginFailureLimiter.reset(loginKey);
                 send(response, 200, payload);
                 return;
             }
@@ -441,11 +639,18 @@ export function createApiServer(store, options = {}) {
                     badRequest(response, signupEmailHelpText());
                     return;
                 }
+                const otpKey = clientKey(request, "signup-otp", email);
+                const otpAllowed = signupOtpLimiter.check(otpKey);
+                if (!otpAllowed.allowed) {
+                    tooManyRequests(response, retryMessage("OTP requests", otpAllowed.retryAfterSeconds));
+                    return;
+                }
                 const currentData = await store.get();
                 if (currentData.users.some((user) => user.email.toLowerCase() === email)) {
                     send(response, 409, { message: "An account already exists for this university email." });
                     return;
                 }
+                signupOtpLimiter.record(otpKey);
                 const code = createOtp();
                 try {
                     await otpEmailSender({
@@ -487,6 +692,11 @@ export function createApiServer(store, options = {}) {
                     badRequest(response, signupEmailHelpText());
                     return;
                 }
+                const signupError = validateStudentSignupBody(body);
+                if (signupError) {
+                    badRequest(response, signupError);
+                    return;
+                }
                 const payload = await store.update((data) => {
                     const signupOtps = ensureSignupOtps(data);
                     const otpRecord = signupOtps[email];
@@ -512,6 +722,7 @@ export function createApiServer(store, options = {}) {
                         phone: body.phone,
                         routeCode: "",
                         stopId: "",
+                        status: "pending",
                     };
                     delete signupOtps[email];
                     data.users.push(user);
@@ -524,10 +735,10 @@ export function createApiServer(store, options = {}) {
                         routeCode: user.routeCode,
                         stopId: user.stopId,
                         assignment: "Unassigned",
-                        status: "active",
+                        status: "pending",
                     });
                     const token = randomUUID();
-                    data.sessions[token] = { userId: user.id, createdAt: new Date().toISOString() };
+                    data.sessions[token] = createSession(user.id);
                     return { token, user: publicUser(user) };
                 });
                 if (payload.error === "missing-otp") {
@@ -557,15 +768,23 @@ export function createApiServer(store, options = {}) {
                     badRequest(response, "Enter your Indus University email ending with indusuni.ac.in.");
                     return;
                 }
+                const resetKey = clientKey(request, "password-reset", email);
+                const resetAllowed = passwordResetOtpLimiter.check(resetKey);
+                if (!resetAllowed.allowed) {
+                    tooManyRequests(response, retryMessage("password reset OTP requests", resetAllowed.retryAfterSeconds));
+                    return;
+                }
                 const currentData = await store.get();
                 const existingUser = userByEmail(currentData, email);
                 if (!existingUser) {
+                    passwordResetOtpLimiter.record(resetKey);
                     send(response, 200, {
                         ok: true,
                         expiresInMinutes: passwordResetOtpExpiryMinutes,
                     });
                     return;
                 }
+                passwordResetOtpLimiter.record(resetKey);
                 const code = createOtp();
                 try {
                     await passwordResetEmailSender({
@@ -652,6 +871,10 @@ export function createApiServer(store, options = {}) {
                     send(response, 401, { message: "Authentication required." });
                     return;
                 }
+                if (isInactive(user)) {
+                    send(response, 403, { message: "This account is inactive. Contact the transport office administrator." });
+                    return;
+                }
                 send(response, 200, { user: publicUser(user) });
                 return;
             }
@@ -661,6 +884,10 @@ export function createApiServer(store, options = {}) {
                 send(response, 401, { message: "Authentication required." });
                 return;
             }
+            if (isInactive(user)) {
+                send(response, 403, { message: "This account is inactive. Contact the transport office administrator." });
+                return;
+            }
 
             if (method === "GET" && pathname === "/api/student/transit") {
                 if (!requireRole(user, ["student", "admin"])) {
@@ -668,7 +895,7 @@ export function createApiServer(store, options = {}) {
                     return;
                 }
                 const data = await store.get();
-                send(response, 200, buildStudentTransitData(data, user));
+                send(response, 200, isPendingStudent(user) ? buildUnassignedTransitData(data) : buildStudentTransitData(data, user));
                 return;
             }
 
@@ -808,7 +1035,16 @@ export function createApiServer(store, options = {}) {
                         if (assignment.error)
                             return { error: assignment.error };
                         next = assignment.record;
+                        const approvalError = validateActiveStudentAssignment(next);
+                        if (approvalError)
+                            return { error: approvalError };
                         syncStudentUserAssignment(data, next);
+                    }
+                    if (kind === "drivers" || kind === "conductors") {
+                        const staffSync = syncStaffUser(data, kind, next);
+                        if (staffSync.error)
+                            return { error: staffSync.error };
+                        next = staffSync.record;
                     }
                     const exists = data.admin.records[kind].some((item) => item.id === id);
                     data.admin.records[kind] = exists

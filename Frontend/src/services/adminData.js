@@ -75,6 +75,8 @@ const initialDrivers = drivers.map(([id, name, licence, contact], index) => ({
     detail: `Licence ${licence}`,
     contact,
     assignment: `${indusRoutes[index].primaryBusNumber} - ${indusRoutes[index].code}`,
+    accountEmail: index === 0 ? "driver@transport.indusuni.ac.in" : "",
+    accountUserId: index === 0 ? "drv-101" : "",
     status: index === 6 ? "inactive" : "active",
 }));
 
@@ -85,6 +87,8 @@ const initialConductors = conductors.map(([id, name, contact], index) => ({
     detail: index % 2 === 0 ? "Morning and evening shift" : "Morning shift",
     contact,
     assignment: `${indusRoutes[index].primaryBusNumber} - ${indusRoutes[index].code}`,
+    accountEmail: index === 0 ? "conductor@transport.indusuni.ac.in" : "",
+    accountUserId: index === 0 ? "con-101" : "",
     status: index === 6 ? "inactive" : "active",
 }));
 
@@ -147,7 +151,7 @@ export const initialAdminRecords = {
             routeCode: "",
             stopId: "",
             assignment: "Unassigned",
-            status: "active",
+            status: "pending",
         },
     ],
     stops: indusRoutes.flatMap((route) => route.stops.map((stop, index) => routeStop(route, index, stop))),

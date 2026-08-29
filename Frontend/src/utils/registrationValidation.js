@@ -31,6 +31,9 @@ export function validatePassword(password) {
     if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(password)) {
         return "Include an uppercase letter, a lowercase letter and a number.";
     }
+    if (!/[^\w\s]/.test(password)) {
+        return "Include at least one special character, such as @, # or !.";
+    }
     return "";
 }
 

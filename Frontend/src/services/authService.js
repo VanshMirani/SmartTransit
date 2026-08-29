@@ -42,10 +42,12 @@ function publicBackendUser(payload, fallbackRole = "student") {
         name: account.name ?? account.fullName,
         email: account.email,
         role: account.role ?? fallbackRole,
+        status: account.status ?? "active",
         initials: account.initials ?? initialsFor(account.name ?? account.fullName ?? account.email),
         enrollment: account.enrollment,
         phone: account.phone,
         routeCode: account.routeCode,
+        stopId: account.stopId,
     };
 }
 function initialsFor(name) {

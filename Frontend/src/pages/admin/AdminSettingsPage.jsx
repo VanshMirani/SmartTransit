@@ -1,4 +1,4 @@
-import { Bell, BookOpenCheck, Clock3, ExternalLink, FileClock, LockKeyhole, Save, Search, ShieldCheck, Users, } from "lucide-react";
+import { Bell, BookOpenCheck, Clock3, ExternalLink, FileClock, LockKeyhole, MessageSquareText, Route as RouteIcon, Save, Search, ShieldCheck, UserRound, Users, } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { AdminFeedback, AdminPageHeading, } from "../../components/admin/AdminUI";
@@ -6,6 +6,7 @@ import { useSystemSettings } from "../../settings/SystemSettingsContext";
 const tabs = [
     { value: "general", label: "System settings" },
     { value: "permissions", label: "Roles & permissions" },
+    { value: "support", label: "Support process" },
     { value: "privacy", label: "Privacy" },
     { value: "audit", label: "Audit log" },
 ];
@@ -235,6 +236,84 @@ export function AdminSettingsPage() {
             </span>
           </footer>
         </section>)}
+
+      {tab === "support" && (<div className="privacy-settings-grid support-process-grid">
+          <section className="admin-panel privacy-principle-card">
+            <ShieldCheck />
+            <div>
+              <span>Transport office workflow</span>
+              <h2>Every access or route issue has one admin-owned path.</h2>
+              <p>
+                Operators approve students, assign routes, handle complaints
+                and issue staff accounts from the Admin dashboard.
+              </p>
+            </div>
+          </section>
+          <section className="admin-panel privacy-rule-list">
+            <h2>Route changes</h2>
+            <ul>
+              <li>
+                <strong>Owner</strong>
+                <span>Transport admin updates the student route and pickup stop.</span>
+              </li>
+              <li>
+                <strong>Where</strong>
+                <span>Student management and assignment management.</span>
+              </li>
+            </ul>
+            <Link to="/admin/students">
+              Open student management <RouteIcon />
+            </Link>
+          </section>
+          <section className="admin-panel privacy-rule-list">
+            <h2>Complaints</h2>
+            <ul>
+              <li>
+                <strong>Owner</strong>
+                <span>Operations team reviews, assigns and resolves each complaint.</span>
+              </li>
+              <li>
+                <strong>Where</strong>
+                <span>Admin complaint center with status, notes and resolution.</span>
+              </li>
+            </ul>
+            <Link to="/admin/complaints">
+              Open complaints <MessageSquareText />
+            </Link>
+          </section>
+          <section className="admin-panel privacy-rule-list">
+            <h2>Wrong student route</h2>
+            <ul>
+              <li>
+                <strong>Owner</strong>
+                <span>Transport admin verifies the student email and correct pickup stop.</span>
+              </li>
+              <li>
+                <strong>Where</strong>
+                <span>Student management keeps the account pending until route and stop are correct.</span>
+              </li>
+            </ul>
+            <Link to="/admin/students">
+              Review pending students <UserRound />
+            </Link>
+          </section>
+          <section className="admin-panel privacy-rule-list">
+            <h2>Staff accounts</h2>
+            <ul>
+              <li>
+                <strong>Owner</strong>
+                <span>Only admins issue driver and conductor login credentials.</span>
+              </li>
+              <li>
+                <strong>Where</strong>
+                <span>Driver and conductor management include staff login setup.</span>
+              </li>
+            </ul>
+            <Link to="/admin/drivers">
+              Open staff records <Users />
+            </Link>
+          </section>
+        </div>)}
 
       {tab === "privacy" && (<div className="privacy-settings-grid">
           <section className="admin-panel privacy-principle-card">

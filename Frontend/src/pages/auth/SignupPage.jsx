@@ -106,8 +106,9 @@ export function SignupPage() {
           </span>
           <h1>Student account created</h1>
           <p>
-            Welcome, {registeredName}. Your account is ready. Sign in with your
-            university email to open the student dashboard.
+            Welcome, {registeredName}. Sign in with your university email. The
+            transport admin will approve your account and assign your route
+            before live commute access opens.
           </p>
           <Link className="button button--primary" to="/login" state={{
                 registeredEmail: values.email.trim().toLowerCase(),

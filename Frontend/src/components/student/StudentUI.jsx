@@ -36,10 +36,11 @@ export function AssignmentPendingState({ action, }) {
       <span className="state-card__icon">
         <BusFront />
       </span>
-      <h2>Route assignment pending</h2>
+      <h2>Admin approval pending</h2>
       <p>
-        Your student account is active. The transport admin will assign your
-        route, bus and pickup stop from the Admin dashboard.
+        Your student account has been created. The transport admin will verify
+        it, assign your route, bus and pickup stop, then activate full commute
+        access.
       </p>
       {action}
     </section>);
