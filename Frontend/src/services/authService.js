@@ -2,13 +2,19 @@ import { apiRequest, backendConfig, clearBackendToken, hasBackendToken, saveBack
 import { isInstituteEmail, normalizeEmail } from "../utils/registrationValidation";
 
 export const demoAccounts = {
-    student: { id: 'stu-2023', name: 'Aarav Shah', email: 'student@iite.indusuni.ac.in', password: 'Student@123', role: 'student', initials: 'AS' },
-    driver: { id: 'drv-101', name: 'Imran Hussain', email: 'driver@transport.indusuni.ac.in', password: 'Driver@123', role: 'driver', initials: 'IH' },
-    conductor: { id: 'con-101', name: 'Rahul Patel', email: 'conductor@transport.indusuni.ac.in', password: 'Conductor@123', role: 'conductor', initials: 'RP' },
-    admin: { id: 'adm-001', name: 'Admin Operator', email: 'admin@transport.indusuni.ac.in', password: 'Admin@123', role: 'admin', initials: 'AO' },
+    student: { id: 'stu-2023', name: 'Aarav Shah', email: 'student@iite.indusuni.ac.in', role: 'student', initials: 'AS' },
+    driver: { id: 'drv-101', name: 'Imran Hussain', email: 'driver@transport.indusuni.ac.in', role: 'driver', initials: 'IH' },
+    conductor: { id: 'con-101', name: 'Rahul Patel', email: 'conductor@transport.indusuni.ac.in', role: 'conductor', initials: 'RP' },
+    admin: { id: 'adm-001', name: 'Admin Operator', email: 'admin@transport.indusuni.ac.in', role: 'admin', initials: 'AO' },
 };
 const SESSION_KEY = 'smarttransit.session';
 const REGISTERED_STUDENTS_KEY = 'smarttransit.registeredStudents';
+const localDemoPasswords = {
+    student: import.meta.env.VITE_DEMO_STUDENT_PASSWORD ?? '',
+    driver: import.meta.env.VITE_DEMO_DRIVER_PASSWORD ?? '',
+    conductor: import.meta.env.VITE_DEMO_CONDUCTOR_PASSWORD ?? '',
+    admin: import.meta.env.VITE_DEMO_ADMIN_PASSWORD ?? '',
+};
 export const roleHome = {
     student: '/student',
     driver: '/driver',
@@ -45,6 +51,19 @@ function publicBackendUser(payload, fallbackRole = "student") {
 function initialsFor(name) {
     return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('');
 }
+export function getDemoAccountPassword(role) {
+    if (!import.meta.env.DEV ||
+        backendConfig.enabled ||
+        import.meta.env.VITE_SHOW_DEMO_CONTROLS !== 'true')
+        return '';
+    return localDemoPasswords[role] ?? '';
+}
+function passwordMatches(account, password) {
+    if (account.password)
+        return account.password === password;
+    const localPassword = getDemoAccountPassword(account.role);
+    return Boolean(localPassword) && localPassword === password;
+}
 export const authService = {
     async login(email, password) {
         if (backendConfig.enabled) {
@@ -64,7 +83,7 @@ export const authService = {
             ...getRegisteredStudents(),
             ...Object.values(demoAccounts),
         ].find((item) => item.email.toLowerCase() === normalizedEmail);
-        if (!account || account.password !== password) {
+        if (!account || !passwordMatches(account, password)) {
             throw new Error('The email or password is incorrect.');
         }
         const user = publicUser(account);

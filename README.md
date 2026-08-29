@@ -90,7 +90,7 @@ Use `Frontend/src` when editing screens, styles, routes and UI behavior. Use `Ba
 
 ## Backend-ready mode
 
-The app stays in browser demo mode unless a backend is enabled. For the included local backend, use `npm run dev:full`. For another backend, copy `.env.example` to `.env`, set `VITE_USE_BACKEND=true`, and point `VITE_API_BASE_URL` to your API server.
+The app stays in browser demo mode unless a backend is enabled. For the included local backend, use `npm run dev:full`. For another backend, copy `.env.example` to `.env`, set `VITE_USE_BACKEND=true`, and point `VITE_API_BASE_URL` to your API server. If you temporarily enable local demo shortcut buttons, keep their passwords in your local `.env` values instead of the frontend source.
 
 Backend calls are centralized in `Frontend/src/services/apiClient.js`. Endpoint expectations and data shapes are documented in [BACKEND_INTEGRATION.md](./BACKEND_INTEGRATION.md).
 Deployment steps are documented in [DEPLOYMENT.md](./DEPLOYMENT.md).

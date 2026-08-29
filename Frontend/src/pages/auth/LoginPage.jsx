@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Brand } from '../../components/Brand';
 import { useAuth } from '../../auth/AuthContext';
-import { demoAccounts, roleHome } from '../../services/authService';
+import { demoAccounts, getDemoAccountPassword, roleHome } from '../../services/authService';
 const showDemoControls = import.meta.env.DEV &&
     import.meta.env.VITE_USE_BACKEND !== 'true' &&
     import.meta.env.VITE_SHOW_DEMO_CONTROLS === 'true';
@@ -32,7 +32,7 @@ export function LoginPage() {
     const fillDemoAccount = (role) => {
         const account = demoAccounts[role];
         setEmail(account.email);
-        setPassword(account.password);
+        setPassword(getDemoAccountPassword(role));
         setError('');
         setErrors({});
     };
