@@ -14,6 +14,16 @@ const initialValues = {
     otp: "",
     acceptedTerms: false,
 };
+const coreSignupFields = ["fullName", "email", "phone", "password", "confirmPassword"];
+function getVisibleSignupErrors(values, options = {}) {
+    const nextErrors = validateStudentRegistration(values, options);
+    const hasCoreError = coreSignupFields.some((field) => nextErrors[field]);
+    if (hasCoreError) {
+        delete nextErrors.acceptedTerms;
+        delete nextErrors.otp;
+    }
+    return nextErrors;
+}
 export function SignupPage() {
     const { user, requestSignupOtp, registerStudent } = useAuth();
     const [values, setValues] = useState(initialValues);
@@ -35,7 +45,7 @@ export function SignupPage() {
         setServerError("");
     };
     const sendOtp = async () => {
-        const nextErrors = validateStudentRegistration(values);
+        const nextErrors = getVisibleSignupErrors(values);
         setErrors(nextErrors);
         if (Object.keys(nextErrors).length)
             return;
@@ -62,7 +72,7 @@ export function SignupPage() {
             await sendOtp();
             return;
         }
-        const nextErrors = validateStudentRegistration(values, { requireOtp: true });
+        const nextErrors = getVisibleSignupErrors(values, { requireOtp: true });
         setErrors(nextErrors);
         if (Object.keys(nextErrors).length)
             return;

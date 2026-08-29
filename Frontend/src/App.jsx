@@ -1,4 +1,4 @@
-import { Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { StudentEntryRedirect } from "./auth/StudentEntryRedirect";
 import { StudentLayout } from "./components/student/StudentLayout";
@@ -47,6 +47,7 @@ export default function App() {
       <Route path="/" element={<HomePage />}/>
       <Route path="/track" element={<StudentEntryRedirect to="/student/track"/>}/>
       <Route path="/login" element={<LoginPage />}/>
+      <Route path="/signin" element={<Navigate to="/login" replace/>}/>
       <Route path="/signup" element={<SignupPage />}/>
       <Route path="/forgot-password" element={<ForgotPasswordPage />}/>
       <Route path="/help" element={<StudentEntryRedirect to="/student/help"/>}/>
