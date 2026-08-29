@@ -30,9 +30,14 @@ export function AdminDataProvider({ children }) {
     }, []);
     const value = useMemo(() => ({
         records, routes, fleet, activity,
-        upsertRecord: (kind, record) => {
+        upsertRecord: async (kind, record) => {
+            if (backendConfig.enabled) {
+                const saved = await apiRequest(`/admin/${kind}/${record.id}`, { method: 'PUT', body: record });
+                setRecords((current) => ({ ...current, [kind]: current[kind].some((item) => item.id === saved.id) ? current[kind].map((item) => item.id === saved.id ? saved : item) : [saved, ...current[kind]] }));
+                return saved;
+            }
             setRecords((current) => ({ ...current, [kind]: current[kind].some((item) => item.id === record.id) ? current[kind].map((item) => item.id === record.id ? record : item) : [record, ...current[kind]] }));
-            syncBackend(`/admin/${kind}/${record.id}`, { method: 'PUT', body: record });
+            return record;
         },
         toggleRecord: (kind, id) => {
             setRecords((current) => {

@@ -148,6 +148,60 @@ test("admin can load management bootstrap data", async () => {
     }
 });
 
+test("admin can change a student's route assignment", async () => {
+    const app = await startTestServer();
+    try {
+        const adminLogin = await fetch(`${app.baseUrl}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "admin@transport.indusuni.ac.in", password: "Admin@123" }),
+        });
+        const { token: adminToken } = await json(adminLogin);
+        const bootstrap = await fetch(`${app.baseUrl}/admin/bootstrap`, {
+            headers: { Authorization: `Bearer ${adminToken}` },
+        });
+        const data = await json(bootstrap);
+        const student = data.records.students.find((item) => item.contact === "student@iite.indusuni.ac.in");
+        const route = data.routes.find((item) => item.code === "IU-R2");
+        const stop = route.stops.find((item) => item.name === "Bopal");
+
+        const invalid = await fetch(`${app.baseUrl}/admin/students/${student.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+            body: JSON.stringify({ ...student, routeCode: "IU-R99", stopId: "" }),
+        });
+        assert.equal(invalid.status, 400);
+
+        const updatedResponse = await fetch(`${app.baseUrl}/admin/students/${student.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+            body: JSON.stringify({ ...student, routeCode: route.code, stopId: stop.id }),
+        });
+        assert.equal(updatedResponse.status, 200);
+        const updated = await json(updatedResponse);
+        assert.equal(updated.routeCode, "IU-R2");
+        assert.equal(updated.stopId, stop.id);
+        assert.equal(updated.assignment, "IU-R2 - Bopal");
+
+        const studentLogin = await fetch(`${app.baseUrl}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "student@iite.indusuni.ac.in", password: "Student@123" }),
+        });
+        const { token: studentToken } = await json(studentLogin);
+        const transit = await fetch(`${app.baseUrl}/student/transit`, {
+            headers: { Authorization: `Bearer ${studentToken}` },
+        });
+        const transitData = await json(transit);
+        assert.equal(transitData.route.code, "IU-R2");
+        assert.equal(transitData.route.selectedStopId, stop.id);
+        assert.equal(transitData.route.stops.find((item) => item.id === stop.id).status, "current");
+    }
+    finally {
+        await app.close();
+    }
+});
+
 test("student signup uses institute email OTP verification", async () => {
     let sentOtp = "";
     let sentTo = "";

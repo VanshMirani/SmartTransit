@@ -25,6 +25,7 @@ function publicUser(user) {
         enrollment: user.enrollment,
         phone: user.phone,
         routeCode: user.routeCode,
+        stopId: user.stopId,
     };
 }
 
@@ -105,6 +106,68 @@ function findRouteFromService(service) {
 
 function routeStudentCount(routeCode) {
     return indusRoutes.find((route) => route.code === routeCode)?.studentCount ?? 0;
+}
+
+function routeCodeFromAssignment(assignment) {
+    return String(assignment ?? "").match(/\bIU-R\d+\b/i)?.[0]?.toUpperCase() ?? "";
+}
+
+function findRouteByCode(data, routeCode) {
+    return data.admin?.routes?.find((route) => route.code === routeCode) ??
+        indusRoutes.find((route) => route.code === routeCode);
+}
+
+function stopNameFromAssignment(routeCode, assignment) {
+    return String(assignment ?? "").replace(new RegExp(`^${routeCode}\\s*-\\s*`, "i"), "").trim();
+}
+
+function normalizeStudentRecordAssignment(data, record) {
+    const routeCode = String(record?.routeCode ?? routeCodeFromAssignment(record?.assignment)).trim().toUpperCase();
+    if (!routeCode) {
+        return {
+            record: {
+                ...record,
+                routeCode: "",
+                stopId: "",
+                assignment: "Unassigned",
+            },
+        };
+    }
+    const route = findRouteByCode(data, routeCode);
+    if (!route) {
+        return { error: `Route ${routeCode} does not exist.` };
+    }
+    const requestedStopId = String(record?.stopId ?? "").trim();
+    let stop = requestedStopId
+        ? route.stops?.find((item) => item.id === requestedStopId)
+        : null;
+    if (requestedStopId && !stop) {
+        return { error: "Selected pickup stop does not belong to this route." };
+    }
+    if (!stop) {
+        const stopName = stopNameFromAssignment(routeCode, record?.assignment);
+        stop = route.stops?.find((item) => item.name.toLowerCase() === stopName.toLowerCase()) ?? null;
+    }
+    return {
+        record: {
+            ...record,
+            routeCode: route.code,
+            stopId: stop?.id ?? "",
+            assignment: `${route.code} - ${stop?.name ?? "Pending stop assignment"}`,
+        },
+    };
+}
+
+function syncStudentUserAssignment(data, record) {
+    const student = data.users.find((item) => item.role === "student" &&
+        (item.id === record.id || normalizeEmail(item.email) === normalizeEmail(record.contact)));
+    if (!student || !record.routeCode)
+        return;
+    student.routeCode = record.routeCode;
+    if (record.stopId)
+        student.stopId = record.stopId;
+    else
+        delete student.stopId;
 }
 
 function totalStudentCount() {
@@ -234,8 +297,9 @@ function buildStudentTransitData(data, user) {
     if (!route) {
         return data.studentTransitData;
     }
-    const selectedStopId = route.stops.some((stop) => stop.id === data.studentTransitData.route.selectedStopId)
-        ? data.studentTransitData.route.selectedStopId
+    const preferredStopId = user.stopId ?? data.studentTransitData.route.selectedStopId;
+    const selectedStopId = route.stops.some((stop) => stop.id === preferredStopId)
+        ? preferredStopId
         : route.stops[Math.max(0, route.stops.length - 2)]?.id ?? route.stops[0]?.id;
     const selectedIndex = Math.max(0, route.stops.findIndex((stop) => stop.id === selectedStopId));
     const stops = withStopProgress(route, selectedStopId).map((stop, index) => ({
@@ -414,6 +478,7 @@ export function createApiServer(store, options = {}) {
                         enrollment: studentCode,
                         phone: body.phone,
                         routeCode: indusRoutes[3].code,
+                        stopId: "",
                     };
                     delete signupOtps[email];
                     data.users.push(user);
@@ -423,6 +488,8 @@ export function createApiServer(store, options = {}) {
                         code: studentCode,
                         detail: "Verified institute email",
                         contact: user.email,
+                        routeCode: user.routeCode,
+                        stopId: user.stopId,
                         assignment: `${user.routeCode} - Pending stop assignment`,
                         status: "active",
                     });
@@ -702,13 +769,24 @@ export function createApiServer(store, options = {}) {
                 const updated = await store.update((data) => {
                     const kind = adminRecordMatch[1];
                     const id = adminRecordMatch[2];
-                    const next = body?.id ? body : { ...data.admin.records[kind].find((item) => item.id === id), ...body };
+                    let next = body?.id ? body : { ...data.admin.records[kind].find((item) => item.id === id), ...body };
+                    if (kind === "students") {
+                        const assignment = normalizeStudentRecordAssignment(data, next);
+                        if (assignment.error)
+                            return { error: assignment.error };
+                        next = assignment.record;
+                        syncStudentUserAssignment(data, next);
+                    }
                     const exists = data.admin.records[kind].some((item) => item.id === id);
                     data.admin.records[kind] = exists
                         ? data.admin.records[kind].map((item) => item.id === id ? next : item)
                         : [next, ...data.admin.records[kind]];
                     return next;
                 });
+                if (updated.error) {
+                    badRequest(response, updated.error);
+                    return;
+                }
                 send(response, 200, updated);
                 return;
             }

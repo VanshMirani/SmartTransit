@@ -61,13 +61,59 @@ const emptyRecord = (kind) => ({
     code: "",
     detail: "",
     contact: "",
-    assignment: "Unassigned",
+    assignment: kind === "students" ? "" : "Unassigned",
+    ...(kind === "students" ? { routeCode: "", stopId: "" } : {}),
     status: kind === "buses" ? "active" : "active",
 });
+
+function routeCodeFromAssignment(assignment) {
+    return assignment?.match(/\bIU-R\d+\b/i)?.[0]?.toUpperCase() ?? "";
+}
+
+function assignmentForStudentRoute(routeCode, stopId, routes) {
+    if (!routeCode)
+        return "Unassigned";
+    const route = routes.find((item) => item.code === routeCode);
+    const stop = route?.stops?.find((item) => item.id === stopId);
+    return `${routeCode} - ${stop?.name ?? "Pending stop assignment"}`;
+}
+
+function stopIdFromAssignment(route, assignment) {
+    if (!route)
+        return "";
+    const stopName = assignment?.replace(new RegExp(`^${route.code}\\s*-\\s*`, "i"), "").trim();
+    return route.stops?.find((stop) => stop.name.toLowerCase() === stopName?.toLowerCase())?.id ?? "";
+}
+
+function prepareEditableRecord(record, kind, routes) {
+    if (kind !== "students")
+        return { ...record };
+    const routeCode = record.routeCode || routeCodeFromAssignment(record.assignment) || (!record.id ? routes[0]?.code ?? "" : "");
+    const route = routes.find((item) => item.code === routeCode);
+    const stopId = route?.stops?.some((stop) => stop.id === record.stopId)
+        ? record.stopId
+        : stopIdFromAssignment(route, record.assignment);
+    return {
+        ...record,
+        routeCode,
+        stopId,
+        assignment: assignmentForStudentRoute(routeCode, stopId, routes),
+    };
+}
+
+function normalizeStudentRecord(record, routes) {
+    return {
+        ...record,
+        routeCode: record.routeCode ?? "",
+        stopId: record.stopId ?? "",
+        assignment: assignmentForStudentRoute(record.routeCode, record.stopId, routes),
+    };
+}
+
 export function ManagementPage({ kind }) {
     const config = labels[kind];
     const [searchParams] = useSearchParams();
-    const { records, upsertRecord, toggleRecord } = useAdminData();
+    const { records, routes, upsertRecord, toggleRecord } = useAdminData();
     const [query, setQuery] = useState(() => searchParams.get("search") ?? "");
     const [filter, setFilter] = useState("all");
     const [ascending, setAscending] = useState(true);
@@ -77,6 +123,7 @@ export function ManagementPage({ kind }) {
     const [confirming, setConfirming] = useState(null);
     const [errors, setErrors] = useState({});
     const [feedback, setFeedback] = useState(null);
+    const [savingRecord, setSavingRecord] = useState(false);
     const pageSize = 5;
     useEffect(() => {
         setQuery(searchParams.get("search") ?? "");
@@ -91,22 +138,25 @@ export function ManagementPage({ kind }) {
     const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
     const visible = filtered.slice((page - 1) * pageSize, page * pageSize);
     const openAdd = () => {
-        setEditing(emptyRecord(kind));
+        setEditing(prepareEditableRecord(emptyRecord(kind), kind, routes));
         setErrors({});
     };
-    const save = (event) => {
+    const save = async (event) => {
         event.preventDefault();
-        if (!editing)
+        if (!editing || savingRecord)
             return;
+        const recordToSave = kind === "students" ? normalizeStudentRecord(editing, routes) : editing;
         const next = {};
-        if (!editing.name.trim())
+        if (!recordToSave.name.trim())
             next.name = `${config.name} is required.`;
-        if (!editing.code.trim())
+        if (!recordToSave.code.trim())
             next.code = `${config.code} is required.`;
-        if (!editing.detail.trim())
+        if (!recordToSave.detail.trim())
             next.detail = `${config.detail} is required.`;
-        if (records[kind].some((item) => item.code.toLowerCase() === editing.code.toLowerCase() &&
-            item.id !== editing.id))
+        if (kind === "students" && !recordToSave.routeCode)
+            next.assignment = "Select a route for this student.";
+        if (records[kind].some((item) => item.code.toLowerCase() === recordToSave.code.toLowerCase() &&
+            item.id !== recordToSave.id))
             next.code = `${config.code} already exists.`;
         setErrors(next);
         if (Object.keys(next).length) {
@@ -117,17 +167,30 @@ export function ManagementPage({ kind }) {
             });
             return;
         }
-        const isNew = !editing.id;
-        upsertRecord(kind, {
-            ...editing,
-            id: editing.id || `${kind}-${Date.now()}`,
-        });
-        setEditing(null);
-        setFeedback({
-            type: "success",
-            title: `${config.singular[0].toUpperCase() + config.singular.slice(1)} ${isNew ? "added" : "updated"}`,
-            message: `${editing.name} was saved successfully.`,
-        });
+        const isNew = !recordToSave.id;
+        setSavingRecord(true);
+        try {
+            const saved = await upsertRecord(kind, {
+                ...recordToSave,
+                id: recordToSave.id || `${kind}-${Date.now()}`,
+            });
+            setEditing(null);
+            setFeedback({
+                type: "success",
+                title: `${config.singular[0].toUpperCase() + config.singular.slice(1)} ${isNew ? "added" : "updated"}`,
+                message: `${saved.name} was saved successfully.`,
+            });
+        }
+        catch {
+            setFeedback({
+                type: "error",
+                title: "Could not save",
+                message: "The change could not be saved to the backend. Please retry.",
+            });
+        }
+        finally {
+            setSavingRecord(false);
+        }
     };
     return (<div>
       <AdminPageHeading eyebrow="Fleet & people" title={config.title} description={config.description} actions={<button className="button admin-primary-button" onClick={openAdd}>
@@ -192,7 +255,7 @@ export function ManagementPage({ kind }) {
                         <Eye />
                       </button>
                       <button onClick={() => {
-                setEditing({ ...item });
+                setEditing(prepareEditableRecord(item, kind, routes));
                 setErrors({});
             }} aria-label={`Edit ${item.name}`}>
                         <Pencil />
@@ -232,8 +295,8 @@ export function ManagementPage({ kind }) {
               <button className="button button--secondary" onClick={() => setEditing(null)}>
                 Cancel
               </button>
-              <button className="button admin-primary-button" onClick={save}>
-                Save {config.singular}
+              <button className="button admin-primary-button" onClick={save} disabled={savingRecord}>
+                {savingRecord ? "Saving..." : `Save ${config.singular}`}
               </button>
             </>}>
           <form className="admin-record-form" onSubmit={save} noValidate>
@@ -241,7 +304,7 @@ export function ManagementPage({ kind }) {
             <AdminField label={config.code} value={editing.code} setValue={(value) => setEditing({ ...editing, code: value })} error={errors.code}/>
             <AdminField label={config.detail} value={editing.detail} setValue={(value) => setEditing({ ...editing, detail: value })} error={errors.detail}/>
             <AdminField label={config.contact} value={editing.contact} setValue={(value) => setEditing({ ...editing, contact: value })}/>
-            <AdminField label={config.assignment} value={editing.assignment} setValue={(value) => setEditing({ ...editing, assignment: value })}/>
+            {kind === "students" ? (<StudentAssignmentFields student={editing} setStudent={setEditing} routes={routes} error={errors.assignment}/>) : (<AdminField label={config.assignment} value={editing.assignment} setValue={(value) => setEditing({ ...editing, assignment: value })}/>)}
             <label className="admin-form-field">
               <span>Status</span>
               <select value={editing.status} onChange={(e) => setEditing({
@@ -301,6 +364,40 @@ export function ManagementPage({ kind }) {
             Existing historical records will be preserved.
           </p>
         </AdminModal>)}
+    </div>);
+}
+function StudentAssignmentFields({ student, setStudent, routes, error, }) {
+    const selectedRoute = routes.find((route) => route.code === student.routeCode);
+    const stops = selectedRoute?.stops ?? [];
+    return (<div className="admin-form-row">
+      <label className="admin-form-field">
+        <span>Assigned route *</span>
+        <select value={student.routeCode ?? ""} onChange={(event) => setStudent({
+            ...student,
+            routeCode: event.target.value,
+            stopId: "",
+            assignment: assignmentForStudentRoute(event.target.value, "", routes),
+        })} aria-invalid={Boolean(error)}>
+          <option value="">Unassigned</option>
+          {routes.map((route) => (<option key={route.id} value={route.code}>
+              {route.code} - {route.name}
+            </option>))}
+        </select>
+        {error && <small>{error}</small>}
+      </label>
+      <label className="admin-form-field">
+        <span>Pickup stop</span>
+        <select value={student.stopId ?? ""} disabled={!selectedRoute} onChange={(event) => setStudent({
+            ...student,
+            stopId: event.target.value,
+            assignment: assignmentForStudentRoute(student.routeCode, event.target.value, routes),
+        })}>
+          <option value="">Pending stop assignment</option>
+          {stops.map((stop) => (<option key={stop.id} value={stop.id}>
+              {stop.name} · {stop.scheduledTime}
+            </option>))}
+        </select>
+      </label>
     </div>);
 }
 function AdminField({ label, value, setValue, error, }) {

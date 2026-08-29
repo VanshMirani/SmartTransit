@@ -48,6 +48,16 @@ const routeStop = (route, index, stop) => ({
     status: "active",
 });
 
+const studentRouteAssignment = (routeCode, stopName) => {
+    const route = indusRoutes.find((item) => item.code === routeCode);
+    const stop = route?.stops.find((item) => item.name === stopName);
+    return {
+        routeCode,
+        stopId: stop?.id ?? "",
+        assignment: `${routeCode} - ${stopName}`,
+    };
+};
+
 const initialBuses = indusRoutes.map((route, index) => ({
     id: `bus-${route.primaryBusNumber}`,
     name: route.primaryBusNumber,
@@ -89,7 +99,7 @@ export const initialAdminRecords = {
             code: "IU23CSE2023",
             detail: "Computer Science - Semester 7",
             contact: "student@iite.indusuni.ac.in",
-            assignment: "IU-R4 - Shilaj Circle",
+            ...studentRouteAssignment("IU-R4", "Shilaj Circle"),
             status: "active",
         },
         {
@@ -98,7 +108,7 @@ export const initialAdminRecords = {
             code: "IU24IT1042",
             detail: "Information Technology - Semester 5",
             contact: "diya.patel@iite.indusuni.ac.in",
-            assignment: "IU-R2 - Bopal",
+            ...studentRouteAssignment("IU-R2", "Bopal"),
             status: "active",
         },
         {
@@ -107,7 +117,7 @@ export const initialAdminRecords = {
             code: "IU23CE1088",
             detail: "Civil Engineering - Semester 7",
             contact: "vivaan.joshi@iite.indusuni.ac.in",
-            assignment: "IU-R6 - Gurukul",
+            ...studentRouteAssignment("IU-R6", "Gurukul"),
             status: "active",
         },
         {
@@ -116,7 +126,7 @@ export const initialAdminRecords = {
             code: "IU25MBA0341",
             detail: "Management - Semester 3",
             contact: "ananya.desai@iite.indusuni.ac.in",
-            assignment: "IU-R7 - University Road",
+            ...studentRouteAssignment("IU-R7", "University Road"),
             status: "inactive",
         },
         {
@@ -125,7 +135,7 @@ export const initialAdminRecords = {
             code: "IU24ME1077",
             detail: "Mechanical Engineering - Semester 5",
             contact: "kabir.mehta@iite.indusuni.ac.in",
-            assignment: "IU-R3 - Science City",
+            ...studentRouteAssignment("IU-R3", "Science City"),
             status: "active",
         },
         {
@@ -134,6 +144,8 @@ export const initialAdminRecords = {
             code: "IU25BCA0290",
             detail: "Computer Applications - Semester 3",
             contact: "myra.trivedi@iite.indusuni.ac.in",
+            routeCode: "",
+            stopId: "",
             assignment: "Unassigned",
             status: "active",
         },
