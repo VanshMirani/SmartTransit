@@ -205,6 +205,115 @@ test("signup accepts only Indus University email domains", async () => {
     }
 });
 
+test("password reset accepts only institute emails and hides unknown accounts", async () => {
+    let sentCount = 0;
+    const app = await startTestServer({
+        passwordResetEmailSender: async () => {
+            sentCount += 1;
+        },
+    });
+    try {
+        const external = await fetch(`${app.baseUrl}/auth/password-reset`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "student@gmail.com" }),
+        });
+        assert.equal(external.status, 400);
+        assert.match((await json(external)).message, /indusuni\.ac\.in/);
+
+        const unknownInstitute = await fetch(`${app.baseUrl}/auth/password-reset`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "unknown.student@iite.indusuni.ac.in" }),
+        });
+        assert.equal(unknownInstitute.status, 200);
+        const payload = await json(unknownInstitute);
+        assert.equal(payload.ok, true);
+        assert.equal(payload.expiresInMinutes, 10);
+        assert.equal(sentCount, 0);
+    }
+    finally {
+        await app.close();
+    }
+});
+
+test("password reset verifies emailed OTP and updates login password", async () => {
+    let sentOtp = "";
+    let sentTo = "";
+    const app = await startTestServer({
+        passwordResetEmailSender: async ({ to, otp }) => {
+            sentTo = to;
+            sentOtp = otp;
+        },
+    });
+    try {
+        const oldLogin = await fetch(`${app.baseUrl}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "student@iite.indusuni.ac.in", password: "Student@123" }),
+        });
+        assert.equal(oldLogin.status, 200);
+        const oldSession = await json(oldLogin);
+
+        const resetRequest = await fetch(`${app.baseUrl}/auth/password-reset`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "student@iite.indusuni.ac.in" }),
+        });
+        assert.equal(resetRequest.status, 200);
+        const resetPayload = await json(resetRequest);
+        assert.deepEqual(Object.keys(resetPayload).sort(), ["expiresInMinutes", "ok"]);
+        assert.equal(sentTo, "student@iite.indusuni.ac.in");
+        assert.match(sentOtp, /^\d{6}$/);
+
+        const blocked = await fetch(`${app.baseUrl}/auth/password-reset/confirm`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                email: "student@iite.indusuni.ac.in",
+                otp: "000000",
+                password: "Student@789",
+            }),
+        });
+        assert.equal(blocked.status, 400);
+
+        const confirmed = await fetch(`${app.baseUrl}/auth/password-reset/confirm`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                email: "student@iite.indusuni.ac.in",
+                otp: sentOtp,
+                password: "Student@789",
+            }),
+        });
+        assert.equal(confirmed.status, 200);
+        assert.equal((await json(confirmed)).ok, true);
+
+        const oldSessionRequest = await fetch(`${app.baseUrl}/student/transit`, {
+            headers: { Authorization: `Bearer ${oldSession.token}` },
+        });
+        assert.equal(oldSessionRequest.status, 401);
+
+        const oldPassword = await fetch(`${app.baseUrl}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "student@iite.indusuni.ac.in", password: "Student@123" }),
+        });
+        assert.equal(oldPassword.status, 401);
+
+        const newPassword = await fetch(`${app.baseUrl}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "student@iite.indusuni.ac.in", password: "Student@789" }),
+        });
+        assert.equal(newPassword.status, 200);
+        assert.equal((await json(newPassword)).user.role, "student");
+    }
+    finally {
+        await app.close();
+    }
+});
+
 test("backend rejects role mismatches for protected operations", async () => {
     const app = await startTestServer();
     try {

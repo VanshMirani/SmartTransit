@@ -19,6 +19,7 @@ export function createSeedData() {
         users: demoUsers,
         sessions: {},
         signupOtps: {},
+        passwordResetOtps: {},
         routes: indusRoutes,
         studentTransitData,
         admin: {

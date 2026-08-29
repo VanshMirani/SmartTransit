@@ -116,7 +116,7 @@ When MongoDB is enabled, accounts, OTP records, sessions, complaints, notificati
 | Conductor        | `conductor@transport.indusuni.ac.in` | `Conductor@123` | `/conductor`  |
 | Admin / Operator | `admin@transport.indusuni.ac.in`     | `Admin@123`     | `/admin`      |
 
-These accounts are seeded for presentation and testing. Students can create an account at `/signup` using any email ending with `indusuni.ac.in`, such as `name@iite.indusuni.ac.in` or `zoom1@indusuni.ac.in`, plus OTP verification. Real OTP delivery uses the configured backend email provider. Local Gmail SMTP needs a Gmail App Password; Render Free should use Brevo. New student registrations are stored in JSON during local development and in MongoDB when production storage is enabled. The active authentication session is stored in `sessionStorage`. Driver, conductor and operator accounts remain transport-office provisioned.
+These accounts are seeded for presentation and testing. Students can create an account at `/signup` using any email ending with `indusuni.ac.in`, such as `name@iite.indusuni.ac.in` or `zoom1@indusuni.ac.in`, plus OTP verification. Forgot password also uses email OTP verification before changing the password. Real OTP delivery uses the configured backend email provider. Local Gmail SMTP needs a Gmail App Password; Render Free should use Brevo. New student registrations are stored in JSON during local development and in MongoDB when production storage is enabled. The active authentication session is stored in `sessionStorage`. Driver, conductor and operator accounts remain transport-office provisioned.
 
 ## Real OTP email setup
 
@@ -144,7 +144,7 @@ SMARTTRANSIT_MAIL_FROM="SmartTransit <your.verified.sender@gmail.com>"
 SMARTTRANSIT_OTP_SECRET=replace-with-a-long-random-secret
 ```
 
-Keep both allowed-domain lines empty to allow only Indus University addresses ending with `indusuni.ac.in`. Without the selected email-provider values, real signup OTP sending will be blocked with a clear configuration message.
+Keep both allowed-domain lines empty to allow only Indus University addresses ending with `indusuni.ac.in`. Without the selected email-provider values, real signup and password reset OTP sending will be blocked with a clear configuration message.
 
 ## Main routes
 

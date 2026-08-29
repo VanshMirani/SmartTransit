@@ -24,6 +24,16 @@ export function isValidOtp(otp) {
     return /^\d{6}$/.test(String(otp ?? "").trim());
 }
 
+export function validatePassword(password) {
+    if (password.length < 8) {
+        return "Password must contain at least 8 characters.";
+    }
+    if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(password)) {
+        return "Include an uppercase letter, a lowercase letter and a number.";
+    }
+    return "";
+}
+
 export function validateStudentRegistration(values, options = {}) {
     const errors = {};
     const name = values.fullName.trim();
@@ -38,13 +48,9 @@ export function validateStudentRegistration(values, options = {}) {
     if (!/^\d{10}$/.test(phone)) {
         errors.phone = "Enter a valid 10-digit mobile number.";
     }
-    if (values.password.length < 8) {
-        errors.password = "Password must contain at least 8 characters.";
-    }
-    else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(values.password)) {
-        errors.password =
-            "Include an uppercase letter, a lowercase letter and a number.";
-    }
+    const passwordError = validatePassword(values.password);
+    if (passwordError)
+        errors.password = passwordError;
     if (!values.confirmPassword) {
         errors.confirmPassword = "Confirm your password.";
     }

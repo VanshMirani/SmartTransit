@@ -119,16 +119,35 @@ export const authService = {
         }
     },
     async requestPasswordReset(email) {
+        const normalizedEmail = normalizeEmail(email);
         if (backendConfig.enabled) {
-            await apiRequest("/auth/password-reset", {
+            return apiRequest("/auth/password-reset", {
                 method: "POST",
-                body: { email: normalizeEmail(email) },
+                body: { email: normalizedEmail },
             });
-            return;
         }
 
         await wait(700);
-        if (!isInstituteEmail(email))
+        if (!isInstituteEmail(normalizedEmail))
             throw new Error('Enter your Indus University email ending with indusuni.ac.in.');
+        throw new Error("Password reset requires the backend email service.");
+    },
+    async confirmPasswordReset({ email, otp, password }) {
+        const normalizedEmail = normalizeEmail(email);
+        if (backendConfig.enabled) {
+            return apiRequest("/auth/password-reset/confirm", {
+                method: "POST",
+                body: {
+                    email: normalizedEmail,
+                    otp,
+                    password,
+                },
+            });
+        }
+
+        await wait(700);
+        if (!isInstituteEmail(normalizedEmail))
+            throw new Error('Enter your Indus University email ending with indusuni.ac.in.');
+        throw new Error("Password reset requires the backend email service.");
     },
 };

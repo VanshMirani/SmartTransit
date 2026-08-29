@@ -93,6 +93,7 @@ After deployment, test these flows:
 
 - open the public website on desktop and mobile;
 - create a student account and confirm the OTP email arrives;
+- use forgot password for a registered student account and confirm the reset OTP changes the password;
 - sign in as student and track the bus;
 - sign in as driver, conductor and admin using the seeded/provisioned staff accounts;
 - check that refresh works on routes like `/student/track`, `/driver`, `/conductor` and `/admin`;

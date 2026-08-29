@@ -212,20 +212,7 @@ function createSmtpClient(config) {
     };
 }
 
-export async function sendSignupOtpEmail({ to, otp, expiresInMinutes }) {
-    const subject = "Your SmartTransit signup OTP";
-    const text = [
-        `Your SmartTransit OTP is ${otp}.`,
-        `It expires in ${expiresInMinutes} minutes.`,
-        "If you did not request this, ignore this email.",
-    ].join("\n");
-    const html = [
-        "<p>Your SmartTransit signup OTP is:</p>",
-        `<p style="font-size:24px;font-weight:700;letter-spacing:4px">${otp}</p>`,
-        `<p>This code expires in ${expiresInMinutes} minutes.</p>`,
-        "<p>If you did not request this, ignore this email.</p>",
-    ].join("");
-    const message = { to, subject, text, html };
+async function sendConfiguredEmail(message) {
     const provider = getMailProvider();
     if (provider === "brevo") {
         await sendBrevoEmail(getBrevoConfig(), message);
@@ -237,6 +224,46 @@ export async function sendSignupOtpEmail({ to, otp, expiresInMinutes }) {
         return;
     }
     throw new Error("Email service is not configured. SMARTTRANSIT_EMAIL_PROVIDER must be smtp or brevo.");
+}
+
+function otpEmailContent({ intro, otp, expiresInMinutes }) {
+    return {
+        text: [
+            `${intro} ${otp}.`,
+            `It expires in ${expiresInMinutes} minutes.`,
+            "If you did not request this, ignore this email.",
+        ].join("\n"),
+        html: [
+            `<p>${intro}</p>`,
+            `<p style="font-size:24px;font-weight:700;letter-spacing:4px">${otp}</p>`,
+            `<p>This code expires in ${expiresInMinutes} minutes.</p>`,
+            "<p>If you did not request this, ignore this email.</p>",
+        ].join(""),
+    };
+}
+
+export async function sendSignupOtpEmail({ to, otp, expiresInMinutes }) {
+    await sendConfiguredEmail({
+        to,
+        subject: "Your SmartTransit signup OTP",
+        ...otpEmailContent({
+            intro: "Your SmartTransit signup OTP is:",
+            otp,
+            expiresInMinutes,
+        }),
+    });
+}
+
+export async function sendPasswordResetOtpEmail({ to, otp, expiresInMinutes }) {
+    await sendConfiguredEmail({
+        to,
+        subject: "Your SmartTransit password reset OTP",
+        ...otpEmailContent({
+            intro: "Your SmartTransit password reset OTP is:",
+            otp,
+            expiresInMinutes,
+        }),
+    });
 }
 
 async function sendBrevoEmail(config, message) {

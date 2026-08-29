@@ -1,11 +1,12 @@
 import { createServer } from "node:http";
 import { createHash, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import { indusRoutes, withStopProgress } from "../Frontend/src/services/indusRoutes.js";
-import { isInstituteEmail, normalizeEmail, signupEmailHelpText } from "../Frontend/src/utils/registrationValidation.js";
-import { sendSignupOtpEmail } from "./emailService.js";
+import { isInstituteEmail, normalizeEmail, signupEmailHelpText, validatePassword } from "../Frontend/src/utils/registrationValidation.js";
+import { sendPasswordResetOtpEmail, sendSignupOtpEmail } from "./emailService.js";
 import { hashPassword, verifyPassword } from "./passwords.js";
 
 const signupOtpExpiryMinutes = 10;
+const passwordResetOtpExpiryMinutes = 10;
 
 const jsonHeaders = {
     "Content-Type": "application/json",
@@ -51,8 +52,19 @@ function otpEmailErrorMessage(error) {
     return "Unable to send OTP email right now. Try again later.";
 }
 
+function passwordResetEmailErrorMessage(error) {
+    if (error instanceof Error && error.message.startsWith("Email service is not configured")) {
+        return "Password reset email service is not configured yet. Ask the transport office administrator to set email provider credentials.";
+    }
+    return "Unable to send password reset OTP right now. Try again later.";
+}
+
 function logOtpEmailError(error) {
     console.error("[otp-email]", error instanceof Error ? error.message : error);
+}
+
+function logPasswordResetEmailError(error) {
+    console.error("[password-reset-email]", error instanceof Error ? error.message : error);
 }
 
 
@@ -105,6 +117,12 @@ function ensureSignupOtps(data) {
     return data.signupOtps;
 }
 
+function ensurePasswordResetOtps(data) {
+    if (!data.passwordResetOtps)
+        data.passwordResetOtps = {};
+    return data.passwordResetOtps;
+}
+
 function createOtp() {
     return String(randomInt(100000, 1000000));
 }
@@ -116,6 +134,12 @@ function signupOtpSecret() {
 function hashSignupOtp(email, otp) {
     return createHash("sha256")
         .update(`${signupOtpSecret()}:${email}:${String(otp ?? "").trim()}`)
+        .digest("hex");
+}
+
+function hashPasswordResetOtp(email, otp) {
+    return createHash("sha256")
+        .update(`${signupOtpSecret()}:password-reset:${email}:${String(otp ?? "").trim()}`)
         .digest("hex");
 }
 
@@ -134,6 +158,19 @@ function verifyStoredSignupOtp(email, inputOtp, record) {
         return safeHashEquals(record.codeHash, hashSignupOtp(email, inputOtp));
     }
     return record.code === String(inputOtp ?? "").trim();
+}
+
+function verifyStoredPasswordResetOtp(email, inputOtp, record) {
+    if (!record)
+        return false;
+    if (record.codeHash) {
+        return safeHashEquals(record.codeHash, hashPasswordResetOtp(email, inputOtp));
+    }
+    return record.code === String(inputOtp ?? "").trim();
+}
+
+function userByEmail(data, email) {
+    return data.users.find((user) => user.email.toLowerCase() === email);
 }
 
 function studentCodeFromEmail(email) {
@@ -255,6 +292,7 @@ function communicationsForUser(data, user) {
 
 export function createApiServer(store, options = {}) {
     const otpEmailSender = options.otpEmailSender ?? sendSignupOtpEmail;
+    const passwordResetEmailSender = options.passwordResetEmailSender ?? sendPasswordResetOtpEmail;
 
     return createServer(async (request, response) => {
         if (request.method === "OPTIONS") {
@@ -280,7 +318,7 @@ export function createApiServer(store, options = {}) {
             if (method === "POST" && pathname === "/api/auth/login") {
                 const body = await readBody(request);
                 const payload = await store.update((data) => {
-                    const user = data.users.find((item) => item.email.toLowerCase() === normalizeEmail(String(body.email ?? "")));
+                    const user = userByEmail(data, normalizeEmail(String(body.email ?? "")));
                     if (!user || !verifyPassword(body.password, user))
                         return null;
                     if (!user.passwordHash) {
@@ -414,11 +452,97 @@ export function createApiServer(store, options = {}) {
 
             if (method === "POST" && pathname === "/api/auth/password-reset") {
                 const body = await readBody(request);
-                if (!isInstituteEmail(String(body.email ?? ""))) {
+                const email = normalizeEmail(String(body.email ?? ""));
+                if (!isInstituteEmail(email)) {
                     badRequest(response, "Enter your Indus University email ending with indusuni.ac.in.");
                     return;
                 }
-                send(response, 200, { ok: true });
+                const currentData = await store.get();
+                const existingUser = userByEmail(currentData, email);
+                if (!existingUser) {
+                    send(response, 200, {
+                        ok: true,
+                        expiresInMinutes: passwordResetOtpExpiryMinutes,
+                    });
+                    return;
+                }
+                const code = createOtp();
+                try {
+                    await passwordResetEmailSender({
+                        to: email,
+                        otp: code,
+                        expiresInMinutes: passwordResetOtpExpiryMinutes,
+                    });
+                }
+                catch (error) {
+                    logPasswordResetEmailError(error);
+                    serviceUnavailable(response, passwordResetEmailErrorMessage(error));
+                    return;
+                }
+                await store.update((data) => {
+                    if (!userByEmail(data, email))
+                        return { ok: true };
+                    ensurePasswordResetOtps(data)[email] = {
+                        codeHash: hashPasswordResetOtp(email, code),
+                        createdAt: new Date().toISOString(),
+                        expiresAt: new Date(Date.now() + passwordResetOtpExpiryMinutes * 60 * 1000).toISOString(),
+                    };
+                    return { ok: true };
+                });
+                send(response, 200, {
+                    ok: true,
+                    expiresInMinutes: passwordResetOtpExpiryMinutes,
+                });
+                return;
+            }
+
+            if (method === "POST" && pathname === "/api/auth/password-reset/confirm") {
+                const body = await readBody(request);
+                const email = normalizeEmail(String(body.email ?? ""));
+                const password = String(body.password ?? "");
+                if (!isInstituteEmail(email)) {
+                    badRequest(response, "Enter your Indus University email ending with indusuni.ac.in.");
+                    return;
+                }
+                const passwordError = validatePassword(password);
+                if (passwordError) {
+                    badRequest(response, passwordError);
+                    return;
+                }
+                const result = await store.update((data) => {
+                    const user = userByEmail(data, email);
+                    const passwordResetOtps = ensurePasswordResetOtps(data);
+                    const otpRecord = passwordResetOtps[email];
+                    if (!user || !otpRecord)
+                        return { error: "missing-otp" };
+                    if (Date.parse(otpRecord.expiresAt) < Date.now()) {
+                        delete passwordResetOtps[email];
+                        return { error: "expired-otp" };
+                    }
+                    if (!verifyStoredPasswordResetOtp(email, body.otp, otpRecord))
+                        return { error: "invalid-otp" };
+                    user.passwordHash = hashPassword(password);
+                    delete user.password;
+                    delete passwordResetOtps[email];
+                    for (const [token, session] of Object.entries(data.sessions ?? {})) {
+                        if (session.userId === user.id)
+                            delete data.sessions[token];
+                    }
+                    return { ok: true };
+                });
+                if (result.error === "missing-otp") {
+                    badRequest(response, "Request a password reset OTP before changing your password.");
+                    return;
+                }
+                if (result.error === "expired-otp") {
+                    badRequest(response, "The OTP has expired. Request a new reset code.");
+                    return;
+                }
+                if (result.error === "invalid-otp") {
+                    badRequest(response, "The OTP is incorrect.");
+                    return;
+                }
+                send(response, 200, result);
                 return;
             }
 
