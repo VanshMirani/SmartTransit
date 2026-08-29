@@ -1,4 +1,4 @@
-import { apiRequest, backendConfig, clearBackendToken, saveBackendToken } from "./apiClient";
+import { apiRequest, backendConfig, clearBackendToken, hasBackendToken, saveBackendToken } from "./apiClient";
 import { isInstituteEmail, normalizeEmail } from "../utils/registrationValidation";
 
 export const demoAccounts = {
@@ -110,11 +110,31 @@ export const authService = {
         sessionStorage.removeItem(SESSION_KEY);
     },
     getSession() {
+        if (backendConfig.enabled && !hasBackendToken()) {
+            sessionStorage.removeItem(SESSION_KEY);
+            return null;
+        }
         try {
             const session = sessionStorage.getItem(SESSION_KEY);
             return session ? JSON.parse(session) : null;
         }
         catch {
+            return null;
+        }
+    },
+    async validateSession() {
+        if (!backendConfig.enabled)
+            return this.getSession();
+        if (!this.getSession())
+            return null;
+        try {
+            const payload = await apiRequest("/auth/session");
+            const user = publicBackendUser(payload);
+            sessionStorage.setItem(SESSION_KEY, JSON.stringify(user));
+            return user;
+        }
+        catch {
+            this.logout();
             return null;
         }
     },

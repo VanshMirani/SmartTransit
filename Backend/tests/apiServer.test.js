@@ -62,6 +62,35 @@ test("student can login and load transit data", async () => {
     }
 });
 
+test("session endpoint validates saved backend tokens", async () => {
+    const app = await startTestServer();
+    try {
+        const missing = await fetch(`${app.baseUrl}/auth/session`);
+        assert.equal(missing.status, 401);
+
+        const login = await fetch(`${app.baseUrl}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "admin@transport.indusuni.ac.in", password: "Admin@123" }),
+        });
+        const session = await json(login);
+
+        const valid = await fetch(`${app.baseUrl}/auth/session`, {
+            headers: { Authorization: `Bearer ${session.token}` },
+        });
+        assert.equal(valid.status, 200);
+        assert.equal((await json(valid)).user.role, "admin");
+
+        const invalid = await fetch(`${app.baseUrl}/auth/session`, {
+            headers: { Authorization: "Bearer not-a-real-token" },
+        });
+        assert.equal(invalid.status, 401);
+    }
+    finally {
+        await app.close();
+    }
+});
+
 test("student complaint is stored and returned", async () => {
     const app = await startTestServer();
     try {

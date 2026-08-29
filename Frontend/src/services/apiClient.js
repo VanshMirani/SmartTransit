@@ -30,6 +30,10 @@ function getBackendToken() {
     return sessionStorage.getItem(TOKEN_KEY);
 }
 
+export function hasBackendToken() {
+    return Boolean(getBackendToken());
+}
+
 function endpoint(path) {
     return `${backendConfig.baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
 }

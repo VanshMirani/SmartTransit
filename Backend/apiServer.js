@@ -546,6 +546,16 @@ export function createApiServer(store, options = {}) {
                 return;
             }
 
+            if (method === "GET" && pathname === "/api/auth/session") {
+                const user = await requireUser(request, store);
+                if (!user) {
+                    send(response, 401, { message: "Authentication required." });
+                    return;
+                }
+                send(response, 200, { user: publicUser(user) });
+                return;
+            }
+
             const user = await requireUser(request, store);
             if (!user) {
                 send(response, 401, { message: "Authentication required." });

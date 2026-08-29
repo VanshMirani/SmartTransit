@@ -1,10 +1,26 @@
-import { createContext, useContext, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { authService } from '../services/authService';
 const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
     const [user, setUser] = useState(() => authService.getSession());
+    const [checkingSession, setCheckingSession] = useState(() => Boolean(authService.getSession()));
+    useEffect(() => {
+        let cancelled = false;
+        authService.validateSession().then((session) => {
+            if (cancelled)
+                return;
+            setUser(session);
+        }).finally(() => {
+            if (!cancelled)
+                setCheckingSession(false);
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, []);
     const value = useMemo(() => ({
         user,
+        checkingSession,
         login: async (email, password) => {
             const session = await authService.login(email, password);
             setUser(session);
@@ -13,7 +29,7 @@ export function AuthProvider({ children }) {
         requestSignupOtp: (email) => authService.requestSignupOtp(email),
         registerStudent: (input) => authService.registerStudent(input),
         logout: () => { authService.logout(); setUser(null); },
-    }), [user]);
+    }), [checkingSession, user]);
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 // eslint-disable-next-line react-refresh/only-export-components

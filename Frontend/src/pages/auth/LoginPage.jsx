@@ -14,7 +14,7 @@ const demoLoginOptions = [
     { role: 'admin', label: 'Admin' },
 ];
 export function LoginPage() {
-    const { user, login } = useAuth();
+    const { checkingSession, user, login } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
     const registration = location.state;
@@ -25,6 +25,8 @@ export function LoginPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [errors, setErrors] = useState({});
+    if (checkingSession)
+        return <main className="placeholder"><section className="placeholder__card"><p>Checking secure session...</p></section></main>;
     if (user)
         return <Navigate to={roleHome[user.role]} replace/>;
     const fillDemoAccount = (role) => {
