@@ -30,14 +30,19 @@ export function AdminNotificationsPage() {
     const visibleCampaigns = useMemo(() => campaigns.filter((campaign) => historyStatus === "all" || campaign.status === historyStatus), [campaigns, historyStatus]);
     const submit = async (event) => {
         event.preventDefault();
+        const scheduledForField = event.currentTarget.elements.namedItem("scheduledFor");
+        const submittedForm = {
+            ...form,
+            scheduledFor: scheduledForField?.value ?? form.scheduledFor,
+        };
         const nextErrors = {};
-        if (form.title.trim().length < 5)
+        if (submittedForm.title.trim().length < 5)
             nextErrors.title = "Enter a clear title of at least 5 characters.";
-        if (form.message.trim().length < 10)
+        if (submittedForm.message.trim().length < 10)
             nextErrors.message = "Enter a message of at least 10 characters.";
-        if (form.audience === "route" && !form.routeCode)
+        if (submittedForm.audience === "route" && !submittedForm.routeCode)
             nextErrors.routeCode = "Select a route.";
-        if (form.deliveryMode === "scheduled" && !form.scheduledFor)
+        if (submittedForm.deliveryMode === "scheduled" && !submittedForm.scheduledFor)
             nextErrors.scheduledFor = "Choose a delivery date and time.";
         setErrors(nextErrors);
         if (Object.keys(nextErrors).length) {
@@ -51,11 +56,11 @@ export function AdminNotificationsPage() {
         setSubmitting(true);
         try {
             const campaign = await sendNotification({
-                ...form,
-                title: form.title.trim(),
-                message: form.message.trim(),
-                routeCode: form.audience === "route" ? form.routeCode : undefined,
-                scheduledFor: form.deliveryMode === "scheduled" ? form.scheduledFor : undefined,
+                ...submittedForm,
+                title: submittedForm.title.trim(),
+                message: submittedForm.message.trim(),
+                routeCode: submittedForm.audience === "route" ? submittedForm.routeCode : undefined,
+                scheduledFor: submittedForm.deliveryMode === "scheduled" ? submittedForm.scheduledFor : undefined,
             });
             setFeedback({
                 type: "success",
@@ -152,7 +157,7 @@ export function AdminNotificationsPage() {
           </fieldset>
           {form.deliveryMode === "scheduled" && (<label className="admin-form-field">
               <span>Schedule date and time *</span>
-              <input type="datetime-local" value={form.scheduledFor} onChange={(event) => setForm({ ...form, scheduledFor: event.target.value })} aria-invalid={Boolean(errors.scheduledFor)}/>
+              <input type="datetime-local" name="scheduledFor" value={form.scheduledFor} onChange={(event) => setForm({ ...form, scheduledFor: event.target.value })} aria-invalid={Boolean(errors.scheduledFor)}/>
               {errors.scheduledFor && <small>{errors.scheduledFor}</small>}
             </label>)}
           <button className="button admin-primary-button notification-submit" disabled={submitting}>

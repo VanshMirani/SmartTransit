@@ -82,12 +82,12 @@ export function PrivacyPage() {
         <article className="privacy-feature-card privacy-feature-card--wide">
           <LockKeyhole />
           <div>
-            <h2>Backend-ready implementation notice</h2>
+            <h2>Production implementation notice</h2>
             <p>
-              This version can run with local structured data or the included
-              Node.js API. A production backend can later replace the local
-              JSON store with JWT, database and real-time transports without
-              changing these privacy rules.
+              This deployment uses role-protected authentication, verified
+              institute email access and backend API safeguards for transport
+              records. These privacy rules apply across student, driver,
+              conductor and operator workspaces.
             </p>
           </div>
         </article>
