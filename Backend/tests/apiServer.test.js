@@ -54,6 +54,7 @@ test("student can login and load transit data", async () => {
         assert.equal(transit.status, 200);
         const data = await json(transit);
         assert.equal(data.route.code, "IU-R4");
+        assert.equal(data.route.distance, "19.8 km");
         assert.equal(data.bus.number, "9468");
     }
     finally {

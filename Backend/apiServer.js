@@ -178,8 +178,17 @@ function buildComplaint(input, user) {
 }
 
 function routeForUser(data, user) {
-    return data.admin?.routes?.find((route) => route.code === user.routeCode) ??
-        indusRoutes.find((route) => route.code === user.routeCode) ??
+    const managedRoute = data.admin?.routes?.find((route) => route.code === user.routeCode);
+    const routeTemplate = indusRoutes.find((route) => route.code === user.routeCode);
+    if (managedRoute && routeTemplate) {
+        return {
+            ...routeTemplate,
+            ...managedRoute,
+            stops: managedRoute.stops?.length ? managedRoute.stops : routeTemplate.stops,
+        };
+    }
+    return managedRoute ??
+        routeTemplate ??
         null;
 }
 
