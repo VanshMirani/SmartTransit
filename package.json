@@ -15,6 +15,7 @@
     "test:frontend": "node --test Frontend/tests/*.test.js",
     "test:backend": "node --test Backend/tests/*.test.js",
     "check:production": "node Backend/scripts/check-production-config.js",
+    "clean:presentation": "node Backend/scripts/clean-presentation-data.js",
     "check": "npm run lint && npm test && npm run build",
     "preview": "vite preview Frontend"
   },

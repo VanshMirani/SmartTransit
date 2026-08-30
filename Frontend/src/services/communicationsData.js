@@ -1,6 +1,6 @@
 import { defaultStudentRoute, getRouteServiceLabel, indusRoutes } from "./indusRoutes.js";
 
-const [route1, route2, route3, route4, route5, route6, route7] = indusRoutes;
+const route4 = defaultStudentRoute;
 const selectedStop = route4.stops.find((stop) => stop.name === "Shilaj Circle");
 
 export const initialStudentNotifications = [
@@ -14,15 +14,6 @@ export const initialStudentNotifications = [
         routeCode: defaultStudentRoute.code,
     },
     {
-        id: "notif-2",
-        type: "route-change",
-        title: `Route ${defaultStudentRoute.code} pickup note`,
-        message: `${selectedStop.name} pickup is operating from the regular marked point today.`,
-        createdAt: "Yesterday, 7:00 PM",
-        unread: true,
-        routeCode: defaultStudentRoute.code,
-    },
-    {
         id: "notif-3",
         type: "general",
         title: "Transport help desk",
@@ -30,45 +21,22 @@ export const initialStudentNotifications = [
         createdAt: "18 Aug, 10:30 AM",
         unread: false,
     },
-    {
-        id: "notif-4",
-        type: "cancellation",
-        title: `Route ${route7.code} evening trip cancelled`,
-        message: `The evening service on Route ${route7.code} is cancelled due to maintenance.`,
-        createdAt: "16 Aug, 4:15 PM",
-        unread: false,
-        routeCode: route7.code,
-    },
 ];
 
 export const initialNotificationCampaigns = [
     {
         id: "NTF-2026-0182",
         type: "delay",
-        title: `Delay on Route ${route5.code}`,
-        message: `Bus ${route5.primaryBusNumber} is running approximately 14 minutes late near Anjali Crossroad.`,
+        title: `Delay on Route ${route4.code}`,
+        message: `Bus ${route4.primaryBusNumber} is running approximately 10 minutes late near ${selectedStop.name}.`,
         audience: "route",
-        routeCode: route5.code,
+        routeCode: route4.code,
         deliveryMode: "now",
         createdAt: "Today, 8:02 AM",
         status: "delivered",
-        deliveredCount: route5.studentCount,
-        recipientCount: route5.studentCount,
+        deliveredCount: route4.studentCount,
+        recipientCount: route4.studentCount,
         createdBy: "Admin Operator",
-    },
-    {
-        id: "NTF-2026-0181",
-        type: "route-change",
-        title: `Route ${route3.code} stop updated`,
-        message: "The Science City pickup point will use the main road shelter tomorrow morning.",
-        audience: "route",
-        routeCode: route3.code,
-        deliveryMode: "now",
-        createdAt: "20 Aug, 7:00 PM",
-        status: "delivered",
-        deliveredCount: route3.studentCount - 2,
-        recipientCount: route3.studentCount,
-        createdBy: "Operations Manager",
     },
     {
         id: "NTF-2026-0180",
@@ -82,20 +50,6 @@ export const initialNotificationCampaigns = [
         status: "scheduled",
         deliveredCount: 0,
         recipientCount: indusRoutes.reduce((sum, route) => sum + route.studentCount, 0),
-        createdBy: "Admin Operator",
-    },
-    {
-        id: "NTF-2026-0179",
-        type: "cancellation",
-        title: `Route ${route7.code} service cancelled`,
-        message: "The afternoon service is cancelled because the assigned bus is under maintenance.",
-        audience: "route",
-        routeCode: route7.code,
-        deliveryMode: "now",
-        createdAt: "19 Aug, 1:20 PM",
-        status: "failed",
-        deliveredCount: 0,
-        recipientCount: route7.studentCount,
         createdBy: "Admin Operator",
     },
 ];
@@ -167,38 +121,6 @@ export const initialComplaintCases = [
         ],
     },
     {
-        id: "CMP-2026-0438",
-        studentId: "stu-2058",
-        studentName: "Diya Patel",
-        studentEmail: "diya.patel@iite.indusuni.ac.in",
-        category: "Route or stop",
-        subject: "Driver skipped designated stop",
-        description: "The bus passed the marked pickup point even though students were waiting near the shelter.",
-        relatedService: getRouteServiceLabel(route2),
-        routeCode: route2.code,
-        busNumber: route2.primaryBusNumber,
-        tripId: "TRIP-1808-IU-R2-AM",
-        status: "in-progress",
-        assignedTo: "Route Supervisor",
-        createdAt: "18 Aug 2026, 8:14 AM",
-        updatedAt: "18 Aug 2026, 10:40 AM",
-        timeline: [
-            {
-                id: "evt-438-1",
-                title: "Complaint submitted",
-                detail: "Missed-stop issue reported.",
-                timestamp: "18 Aug, 8:14 AM",
-            },
-            {
-                id: "evt-438-2",
-                title: "Investigation started",
-                detail: "GPS trace shared with Route Supervisor.",
-                timestamp: "18 Aug, 10:40 AM",
-            },
-        ],
-        internalNotes: [],
-    },
-    {
         id: "CMP-2026-0412",
         studentId: "stu-2023",
         studentName: "Aarav Shah",
@@ -246,4 +168,4 @@ export const initialComplaintCases = [
     },
 ];
 
-export const communicationRoutes = [route1, route2, route3, route4, route5, route6, route7];
+export const communicationRoutes = indusRoutes;
