@@ -298,6 +298,7 @@ export const defaultStudentRoute = getIndusRouteByCode(defaultStudentRouteCode);
 export const defaultStaffRoute = getIndusRouteByCode(defaultStaffRouteCode);
 
 export const getPrimaryBusLabel = (route) => route.primaryBusNumber;
+export const getBusRegistration = (route) => `GJ-01-FT-${route.primaryBusNumber}`;
 export const getRouteLabel = (route) => `${route.code} - ${route.name}`;
 
 export const getRouteServiceLabel = (route) => `${getPrimaryBusLabel(route)} / Route ${route.code}`;

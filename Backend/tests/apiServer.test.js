@@ -62,6 +62,74 @@ test("student can login and load transit data", async () => {
     }
 });
 
+test("route, bus, driver, and conductor assignments match across dashboards", async () => {
+    const app = await startTestServer();
+    try {
+        const loginAs = async (email, password) => {
+            const login = await fetch(`${app.baseUrl}/auth/login`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email, password }),
+            });
+            assert.equal(login.status, 200);
+            return (await json(login)).token;
+        };
+
+        const [studentToken, driverToken, conductorToken, adminToken] = await Promise.all([
+            loginAs("student@iite.indusuni.ac.in", "Student@123"),
+            loginAs("driver@transport.indusuni.ac.in", "Driver@123"),
+            loginAs("conductor@transport.indusuni.ac.in", "Conductor@123"),
+            loginAs("admin@transport.indusuni.ac.in", "Admin@123"),
+        ]);
+
+        const studentTransit = await fetch(`${app.baseUrl}/student/transit`, {
+            headers: { Authorization: `Bearer ${studentToken}` },
+        });
+        const driverTrip = await fetch(`${app.baseUrl}/driver/trips/current`, {
+            headers: { Authorization: `Bearer ${driverToken}` },
+        });
+        const conductorTrip = await fetch(`${app.baseUrl}/conductor/trips/current`, {
+            headers: { Authorization: `Bearer ${conductorToken}` },
+        });
+        const adminBootstrap = await fetch(`${app.baseUrl}/admin/bootstrap`, {
+            headers: { Authorization: `Bearer ${adminToken}` },
+        });
+
+        const student = await json(studentTransit);
+        const driver = await json(driverTrip);
+        const conductor = await json(conductorTrip);
+        const admin = await json(adminBootstrap);
+        const adminRoute = admin.routes.find((route) => route.code === "IU-R4");
+        const adminFleetBus = admin.fleetVehicles.find((bus) => bus.route === "IU-R4");
+        const adminBus = admin.records.buses.find((bus) => bus.id === adminRoute.busId);
+        const adminDriver = admin.records.drivers.find((record) => record.id === adminRoute.driverId);
+        const adminConductor = admin.records.conductors.find((record) => record.id === adminRoute.conductorId);
+
+        assert.equal(student.route.code, "IU-R4");
+        assert.equal(student.bus.number, "9468");
+        assert.equal(student.bus.registration, "GJ-01-FT-9468");
+        assert.equal(driver.activeStaffTrip.routeCode, student.route.code);
+        assert.equal(conductor.activeStaffTrip.routeCode, student.route.code);
+        assert.equal(driver.activeStaffTrip.busNumber, student.bus.number);
+        assert.equal(conductor.activeStaffTrip.busNumber, student.bus.number);
+        assert.equal(driver.activeStaffTrip.driver.name, "Imran Hussain");
+        assert.equal(conductor.activeStaffTrip.driver.name, "Imran Hussain");
+        assert.equal(driver.activeStaffTrip.conductor.name, "Rahul Patel");
+        assert.equal(conductor.activeStaffTrip.conductor.name, "Rahul Patel");
+        assert.equal(adminBus.name, student.bus.number);
+        assert.equal(adminBus.assignment, "IU-R4 - Imran Hussain");
+        assert.equal(adminDriver.name, "Imran Hussain");
+        assert.equal(adminDriver.assignment, "9468 - IU-R4");
+        assert.equal(adminConductor.name, "Rahul Patel");
+        assert.equal(adminConductor.assignment, "9468 - IU-R4");
+        assert.equal(adminFleetBus.number, student.bus.number);
+        assert.equal(adminFleetBus.driver, "Imran Hussain");
+    }
+    finally {
+        await app.close();
+    }
+});
+
 test("driver phone GPS updates student and admin live tracking", async () => {
     const app = await startTestServer();
     try {

@@ -1,15 +1,17 @@
-import { defaultStaffRoute, withStopProgress } from "./indusRoutes.js";
+import { getRouteStaffAssignment } from "./adminData.js";
+import { defaultStaffRoute, getBusRegistration, withStopProgress } from "./indusRoutes.js";
 
 export const operationalCurrentStopId = "iu-r4-13";
 export const operationalStops = withStopProgress(defaultStaffRoute, operationalCurrentStopId);
 const currentStop = operationalStops.find((stop) => stop.id === operationalCurrentStopId);
+const staffAssignment = getRouteStaffAssignment(defaultStaffRoute.code);
 
 export const activeStaffTrip = {
     id: "TRIP-2026-0821-IU-R4",
     routeCode: defaultStaffRoute.code,
     routeName: defaultStaffRoute.name,
     busNumber: defaultStaffRoute.primaryBusNumber,
-    registration: "GJ-01-FT-9468",
+    registration: getBusRegistration(defaultStaffRoute),
     capacity: 50,
     scheduledStart: defaultStaffRoute.stops[0].scheduledTime,
     scheduledEnd: defaultStaffRoute.campusArrival,
@@ -18,8 +20,18 @@ export const activeStaffTrip = {
     nextStopName: currentStop.name,
     nextStopEta: "8 min",
     remainingDistance: "5.8 km",
-    conductor: { id: "con-101", name: "Rahul Patel", phone: "+91 98765 44210", initials: "RP" },
-    driver: { id: "drv-101", name: "Imran Hussain", phone: "+91 98765 44330", initials: "IH" },
+    conductor: {
+        id: staffAssignment.conductor.accountUserId,
+        name: staffAssignment.conductor.name,
+        phone: staffAssignment.conductor.phone,
+        initials: staffAssignment.conductor.name.split(/\s+/).map((part) => part[0]).join(""),
+    },
+    driver: {
+        id: staffAssignment.driver.accountUserId,
+        name: staffAssignment.driver.name,
+        phone: staffAssignment.driver.phone,
+        initials: staffAssignment.driver.name.split(/\s+/).map((part) => part[0]).join(""),
+    },
 };
 
 export const driverTripHistory = [

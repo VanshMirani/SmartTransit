@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { createHash, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
-import { indusRoutes, withStopProgress } from "../Frontend/src/services/indusRoutes.js";
+import { getBusRegistration, indusRoutes, withStopProgress } from "../Frontend/src/services/indusRoutes.js";
+import { getRouteStaffAssignment } from "../Frontend/src/services/adminData.js";
 import { isInstituteEmail, normalizeEmail, signupEmailHelpText, validatePassword } from "../Frontend/src/utils/registrationValidation.js";
 import { sendPasswordResetOtpEmail, sendSignupOtpEmail } from "./emailService.js";
 import { hashPassword, verifyPassword } from "./passwords.js";
@@ -565,15 +566,134 @@ function busWithLiveLocation(data, bus, routeCode) {
     };
 }
 
-function adminDataWithLiveLocations(data) {
+function initialsForName(name) {
+    return name.split(/\s+/).map((part) => part[0]?.toUpperCase()).join("");
+}
+
+function activeTripWithConsistentAssignments(data, trip) {
+    if (!trip)
+        return trip;
+    const route = indusRoutes.find((item) => item.code === trip.routeCode || item.primaryBusNumber === trip.busNumber);
+    if (!route)
+        return trip;
+    const staff = getRouteStaffAssignment(route.code);
+    const fleetBus = data.admin?.fleetVehicles?.find((bus) => bus.route === route.code || bus.number === route.primaryBusNumber);
     return {
-        ...data.admin,
-        fleetVehicles: data.admin.fleetVehicles.map((bus) => busWithLiveLocation(data, bus, bus.route)),
+        ...trip,
+        routeCode: route.code,
+        routeName: route.name,
+        busNumber: route.primaryBusNumber,
+        registration: getBusRegistration(route),
+        capacity: fleetBus?.capacity ?? trip.capacity,
+        scheduledStart: route.stops[0]?.scheduledTime ?? trip.scheduledStart,
+        scheduledEnd: route.campusArrival ?? trip.scheduledEnd,
+        distance: route.distance ?? trip.distance,
+        driver: {
+            ...(trip.driver ?? {}),
+            id: staff.driver.accountUserId || trip.driver?.id,
+            name: staff.driver.name,
+            phone: staff.driver.phone,
+            initials: initialsForName(staff.driver.name),
+        },
+        conductor: {
+            ...(trip.conductor ?? {}),
+            id: staff.conductor.accountUserId || trip.conductor?.id,
+            name: staff.conductor.name,
+            phone: staff.conductor.phone,
+            initials: initialsForName(staff.conductor.name),
+        },
+    };
+}
+
+function routeForDriverRecord(driverId) {
+    return indusRoutes.find((route) => getRouteStaffAssignment(route.code).driver.id === driverId);
+}
+
+function routeForConductorRecord(conductorId) {
+    return indusRoutes.find((route) => getRouteStaffAssignment(route.code).conductor.id === conductorId);
+}
+
+function adminDataWithConsistentAssignments(data) {
+    const admin = data.admin ?? {};
+    const records = admin.records ?? {};
+    const buses = (records.buses ?? []).map((bus) => {
+        const route = indusRoutes.find((item) => bus.id === `bus-${item.primaryBusNumber}` || bus.name === item.primaryBusNumber);
+        if (!route)
+            return bus;
+        return {
+            ...bus,
+            id: `bus-${route.primaryBusNumber}`,
+            name: route.primaryBusNumber,
+            code: getBusRegistration(route),
+            assignment: `${route.code} - ${getRouteStaffAssignment(route.code).driver.name}`,
+        };
+    });
+    const drivers = (records.drivers ?? []).map((driver) => {
+        const route = routeForDriverRecord(driver.id);
+        return {
+            ...driver,
+            assignment: route ? `${route.primaryBusNumber} - ${route.code}` : "Unassigned",
+            accountEmail: driver.accountEmail || (driver.id === "driver-101" ? "driver@transport.indusuni.ac.in" : ""),
+            accountUserId: driver.accountUserId || (driver.id === "driver-101" ? "drv-101" : ""),
+        };
+    });
+    const conductors = (records.conductors ?? []).map((conductor) => {
+        const route = routeForConductorRecord(conductor.id);
+        return {
+            ...conductor,
+            assignment: route ? `${route.primaryBusNumber} - ${route.code}` : "Unassigned",
+            accountEmail: conductor.accountEmail || (conductor.id === "conductor-101" ? "conductor@transport.indusuni.ac.in" : ""),
+            accountUserId: conductor.accountUserId || (conductor.id === "conductor-101" ? "con-101" : ""),
+        };
+    });
+    const routes = (admin.routes ?? []).map((routeRecord) => {
+        const route = indusRoutes.find((item) => item.code === routeRecord.code || item.id === routeRecord.id);
+        if (!route)
+            return routeRecord;
+        const staff = getRouteStaffAssignment(route.code);
+        return {
+            ...routeRecord,
+            busId: `bus-${route.primaryBusNumber}`,
+            driverId: staff.driver.id,
+            conductorId: staff.conductor.id,
+            primaryBusNumber: route.primaryBusNumber,
+        };
+    });
+    const fleetVehicles = (admin.fleetVehicles ?? []).map((bus) => {
+        const route = indusRoutes.find((item) => item.code === bus.route || item.primaryBusNumber === bus.number);
+        if (!route)
+            return bus;
+        return {
+            ...bus,
+            id: `bus-${route.primaryBusNumber}`,
+            number: route.primaryBusNumber,
+            route: route.code,
+            driver: getRouteStaffAssignment(route.code).driver.name,
+        };
+    });
+    return {
+        ...admin,
+        records: {
+            ...records,
+            buses,
+            drivers,
+            conductors,
+        },
+        routes,
+        fleetVehicles,
+    };
+}
+
+function adminDataWithLiveLocations(data) {
+    const admin = adminDataWithConsistentAssignments(data);
+    return {
+        ...admin,
+        fleetVehicles: admin.fleetVehicles.map((bus) => busWithLiveLocation({ ...data, admin }, bus, bus.route)),
     };
 }
 
 function operationsWithLiveLocation(data) {
-    const trip = data.operations?.activeStaffTrip;
+    const trip = activeTripWithConsistentAssignments(data, data.operations?.activeStaffTrip);
     const location = data.operations?.tripStatus === "active" && trip ? liveLocationMap(data)[trip.id] : null;
     return {
         ...data.operations,
@@ -740,6 +860,7 @@ function buildStudentTransitData(data, user) {
         ...data.studentTransitData.bus,
         id: fleetBus?.id ?? `bus-${route.primaryBusNumber}`,
         number: fleetBus?.number ?? route.primaryBusNumber,
+        registration: getBusRegistration(route),
         capacity: fleetBus?.capacity ?? data.studentTransitData.bus.capacity,
         occupiedSeats: fleetBus?.occupancy ?? data.studentTransitData.bus.occupiedSeats,
         status: fleetBus?.status === "delayed" ? "delayed" : data.studentTransitData.bus.status,

@@ -1,4 +1,4 @@
-import { indusRoutes } from "./indusRoutes.js";
+import { getBusRegistration, indusRoutes } from "./indusRoutes.js";
 
 const drivers = [
     ["driver-101", "Imran Hussain", "GJ05-2021-4567", "+91 98765 44330"],
@@ -21,6 +21,51 @@ const conductors = [
     ["conductor-107", "Ritesh Solanki", "+91 98765 44216"],
     ["conductor-108", "Harsh Vyas", "+91 98765 44217"],
 ];
+
+const routeStaffAssignments = {
+    "IU-R1": { driverId: "driver-104", conductorId: "conductor-104" },
+    "IU-R2": { driverId: "driver-102", conductorId: "conductor-102" },
+    "IU-R3": { driverId: "driver-103", conductorId: "conductor-103" },
+    "IU-R4": { driverId: "driver-101", conductorId: "conductor-101" },
+    "IU-R5": { driverId: "driver-105", conductorId: "conductor-105" },
+    "IU-R6": { driverId: "driver-106", conductorId: "conductor-106" },
+    "IU-R7": { driverId: "driver-107", conductorId: "conductor-107" },
+    "IU-R8": { driverId: "driver-108", conductorId: "conductor-108" },
+};
+
+const driverById = new Map(drivers.map((driver) => [driver[0], driver]));
+const conductorById = new Map(conductors.map((conductor) => [conductor[0], conductor]));
+
+function routeForDriver(driverId) {
+    return indusRoutes.find((route) => routeStaffAssignments[route.code]?.driverId === driverId);
+}
+
+function routeForConductor(conductorId) {
+    return indusRoutes.find((route) => routeStaffAssignments[route.code]?.conductorId === conductorId);
+}
+
+export function getRouteStaffAssignment(routeCode) {
+    const assignment = routeStaffAssignments[routeCode] ?? routeStaffAssignments["IU-R4"];
+    const driver = driverById.get(assignment.driverId) ?? drivers[0];
+    const conductor = conductorById.get(assignment.conductorId) ?? conductors[0];
+    return {
+        driver: {
+            id: driver[0],
+            name: driver[1],
+            licence: driver[2],
+            phone: driver[3],
+            accountEmail: driver[0] === "driver-101" ? "driver@transport.indusuni.ac.in" : "",
+            accountUserId: driver[0] === "driver-101" ? "drv-101" : "",
+        },
+        conductor: {
+            id: conductor[0],
+            name: conductor[1],
+            phone: conductor[2],
+            accountEmail: conductor[0] === "conductor-101" ? "conductor@transport.indusuni.ac.in" : "",
+            accountUserId: conductor[0] === "conductor-101" ? "con-101" : "",
+        },
+    };
+}
 
 const vehicleModels = [
     "Tata Starbus",
@@ -61,36 +106,42 @@ const studentRouteAssignment = (routeCode, stopName) => {
 const initialBuses = indusRoutes.map((route, index) => ({
     id: `bus-${route.primaryBusNumber}`,
     name: route.primaryBusNumber,
-    code: `GJ-01-FT-${route.primaryBusNumber}`,
+    code: getBusRegistration(route),
     detail: vehicleModels[index],
     contact: `${capacities[index]} seats`,
-    assignment: `${route.code} - ${drivers[index][1]}`,
+    assignment: `${route.code} - ${getRouteStaffAssignment(route.code).driver.name}`,
     status: index === 6 ? "inactive" : "active",
 }));
 
-const initialDrivers = drivers.map(([id, name, licence, contact], index) => ({
-    id,
-    name,
-    code: `DRV-${String(index + 1).padStart(3, "0")}`,
-    detail: `Licence ${licence}`,
-    contact,
-    assignment: `${indusRoutes[index].primaryBusNumber} - ${indusRoutes[index].code}`,
-    accountEmail: index === 0 ? "driver@transport.indusuni.ac.in" : "",
-    accountUserId: index === 0 ? "drv-101" : "",
-    status: index === 6 ? "inactive" : "active",
-}));
+const initialDrivers = drivers.map(([id, name, licence, contact], index) => {
+    const route = routeForDriver(id);
+    return {
+        id,
+        name,
+        code: `DRV-${String(index + 1).padStart(3, "0")}`,
+        detail: `Licence ${licence}`,
+        contact,
+        assignment: route ? `${route.primaryBusNumber} - ${route.code}` : "Unassigned",
+        accountEmail: id === "driver-101" ? "driver@transport.indusuni.ac.in" : "",
+        accountUserId: id === "driver-101" ? "drv-101" : "",
+        status: index === 6 ? "inactive" : "active",
+    };
+});
 
-const initialConductors = conductors.map(([id, name, contact], index) => ({
-    id,
-    name,
-    code: `CON-${String(index + 1).padStart(3, "0")}`,
-    detail: index % 2 === 0 ? "Morning and evening shift" : "Morning shift",
-    contact,
-    assignment: `${indusRoutes[index].primaryBusNumber} - ${indusRoutes[index].code}`,
-    accountEmail: index === 0 ? "conductor@transport.indusuni.ac.in" : "",
-    accountUserId: index === 0 ? "con-101" : "",
-    status: index === 6 ? "inactive" : "active",
-}));
+const initialConductors = conductors.map(([id, name, contact], index) => {
+    const route = routeForConductor(id);
+    return {
+        id,
+        name,
+        code: `CON-${String(index + 1).padStart(3, "0")}`,
+        detail: index % 2 === 0 ? "Morning and evening shift" : "Morning shift",
+        contact,
+        assignment: route ? `${route.primaryBusNumber} - ${route.code}` : "Unassigned",
+        accountEmail: id === "conductor-101" ? "conductor@transport.indusuni.ac.in" : "",
+        accountUserId: id === "conductor-101" ? "con-101" : "",
+        status: index === 6 ? "inactive" : "active",
+    };
+});
 
 export const initialAdminRecords = {
     buses: initialBuses,
@@ -170,8 +221,8 @@ export const initialRoutes = indusRoutes.map((route, index) => ({
     notes: route.notes,
     status: routeStatuses[index],
     busId: `bus-${route.primaryBusNumber}`,
-    driverId: drivers[index][0],
-    conductorId: conductors[index][0],
+    driverId: getRouteStaffAssignment(route.code).driver.id,
+    conductorId: getRouteStaffAssignment(route.code).conductor.id,
     stops: route.stops.map((stop) => ({
         id: stop.id,
         name: stop.name,
@@ -183,11 +234,12 @@ export const initialRoutes = indusRoutes.map((route, index) => ({
 export const fleetVehicles = indusRoutes.map((route, index) => {
     const currentStop = route.stops[Math.min(2 + (index % 4), route.stops.length - 2)];
     const status = fleetStatuses[index];
+    const staff = getRouteStaffAssignment(route.code);
     return {
         id: `bus-${route.primaryBusNumber}`,
         number: route.primaryBusNumber,
         route: route.code,
-        driver: drivers[index][1],
+        driver: staff.driver.name,
         speed: status === "stopped" || status === "stale-gps" ? 0 : 24 + index * 3,
         eta: status === "stopped" ? "--" : `${8 + index} min`,
         occupancy: occupancies[index],
@@ -203,6 +255,6 @@ export const adminActivity = [
     `Bus ${indusRoutes[1].primaryBusNumber} started trip on Route ${indusRoutes[1].code}`,
     "Complaint CMP-2026-0445 assigned to Operations Team",
     `Route ${indusRoutes[3].code} stop schedule updated`,
-    `${drivers[0][1]} completed pre-trip checklist`,
+    `${getRouteStaffAssignment("IU-R4").driver.name} completed pre-trip checklist`,
     `Seat count updated for ${indusRoutes[3].primaryBusNumber} at Shilaj Circle`,
 ];

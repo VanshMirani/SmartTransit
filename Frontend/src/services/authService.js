@@ -1,10 +1,14 @@
 import { apiRequest, backendConfig, clearBackendToken, hasBackendToken, saveBackendToken } from "./apiClient";
+import { getRouteStaffAssignment } from "./adminData";
+import { defaultStaffRouteCode } from "./indusRoutes";
 import { isInstituteEmail, normalizeEmail } from "../utils/registrationValidation";
+
+const defaultStaffAssignment = getRouteStaffAssignment(defaultStaffRouteCode);
 
 export const demoAccounts = {
     student: { id: 'stu-2023', name: 'Aarav Shah', email: 'student@iite.indusuni.ac.in', role: 'student', initials: 'AS' },
-    driver: { id: 'drv-101', name: 'Imran Hussain', email: 'driver@transport.indusuni.ac.in', role: 'driver', initials: 'IH' },
-    conductor: { id: 'con-101', name: 'Rahul Patel', email: 'conductor@transport.indusuni.ac.in', role: 'conductor', initials: 'RP' },
+    driver: { id: defaultStaffAssignment.driver.accountUserId, name: defaultStaffAssignment.driver.name, email: 'driver@transport.indusuni.ac.in', role: 'driver', initials: 'IH' },
+    conductor: { id: defaultStaffAssignment.conductor.accountUserId, name: defaultStaffAssignment.conductor.name, email: 'conductor@transport.indusuni.ac.in', role: 'conductor', initials: 'RP' },
     admin: { id: 'adm-001', name: 'Admin Operator', email: 'admin@transport.indusuni.ac.in', role: 'admin', initials: 'AO' },
 };
 const SESSION_KEY = 'smarttransit.session';

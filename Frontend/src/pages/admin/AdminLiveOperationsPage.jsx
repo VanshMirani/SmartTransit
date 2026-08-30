@@ -85,8 +85,7 @@ export function AdminLiveOperationsPage() {
                 <span>
                   <strong>{bus.number}</strong>
                   <small>
-                    {bus.route} ·{" "}
-                    {bus.tripActive ? bus.driver : "No active trip"}
+                    {bus.route} · {bus.driver}
                   </small>
                   <em>
                     {bus.tripActive
@@ -127,10 +126,7 @@ export function AdminLiveOperationsPage() {
             <div>
               <small>Selected bus</small>
               <h2>{selected.number}</h2>
-              <p>
-                {selected.route} ·{" "}
-                {selected.tripActive ? selected.driver : "No active trip"}
-              </p>
+              <p>{selected.route} · {selected.driver}</p>
             </div>
             <AdminStatusBadge status={selected.status}/>
           </div>

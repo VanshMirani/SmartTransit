@@ -1,4 +1,4 @@
-import { defaultStudentRoute, getRouteServiceLabel, withStopProgress } from "./indusRoutes.js";
+import { defaultStudentRoute, getBusRegistration, getRouteServiceLabel, withStopProgress } from "./indusRoutes.js";
 
 const selectedStopId = "iu-r4-13";
 const routeStops = withStopProgress(defaultStudentRoute, selectedStopId).map((stop) => ({
@@ -16,7 +16,7 @@ export const studentTransitData = {
     bus: {
         id: `bus-${defaultStudentRoute.primaryBusNumber}`,
         number: defaultStudentRoute.primaryBusNumber,
-        registration: "GJ-01-FT-9468",
+        registration: getBusRegistration(defaultStudentRoute),
         capacity: 50,
         occupiedSeats: 33,
         status: "on-time",
