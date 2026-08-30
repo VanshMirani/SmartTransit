@@ -309,6 +309,10 @@ test("driver phone GPS updates student and admin live tracking", async () => {
         const locationPayload = await json(locationUpdate);
         assert.equal(locationPayload.location.source, "driver-phone");
         assert.deepEqual(locationPayload.location.coordinates, [23.021111, 72.511111]);
+        assert.equal(locationPayload.activeStaffTrip.etaSource, "driver-phone-speed");
+        assert.equal(locationPayload.activeStaffTrip.nextStopName, "Shilaj Circle");
+        assert.match(locationPayload.activeStaffTrip.nextStopEta, /^\d+ min$/);
+        assert.notEqual(locationPayload.activeStaffTrip.remainingDistance, "Waiting for GPS");
 
         const studentLogin = await fetch(`${app.baseUrl}/auth/login`, {
             method: "POST",
@@ -325,6 +329,16 @@ test("driver phone GPS updates student and admin live tracking", async () => {
         assert.equal(transitData.bus.locationSource, "driver-phone");
         assert.deepEqual(transitData.bus.coordinates, [23.021111, 72.511111]);
         assert.equal(transitData.bus.speed, 35);
+        assert.equal(transitData.bus.etaSource, "driver-phone-speed");
+        assert.equal(transitData.bus.nextStopName, "Shilaj Circle");
+        assert.equal(transitData.bus.nextStopEta, locationPayload.activeStaffTrip.nextStopEta);
+        assert.equal(transitData.bus.remainingDistance, locationPayload.activeStaffTrip.remainingDistance);
+        const activeStop = transitData.route.stops.find((stop) => stop.id === transitData.route.currentStopId);
+        const campusStop = transitData.route.stops.at(-1);
+        assert.equal(activeStop.name, "Shilaj Circle");
+        assert.equal(activeStop.eta, transitData.bus.nextStopEta);
+        assert.equal(activeStop.distanceFromBus, transitData.bus.remainingDistance);
+        assert.match(campusStop.eta, /^\d+ min$/);
 
         const liveLocation = await fetch(`${app.baseUrl}/student/live-location`, {
             headers: { Authorization: `Bearer ${studentToken}` },
@@ -345,6 +359,10 @@ test("driver phone GPS updates student and admin live tracking", async () => {
         const liveBus = adminData.fleetVehicles.find((bus) => bus.route === "IU-R4");
         assert.equal(liveBus.gpsStatus, "live");
         assert.deepEqual(liveBus.coordinates, [23.021111, 72.511111]);
+        assert.equal(liveBus.etaSource, "driver-phone-speed");
+        assert.equal(liveBus.nextStopName, "Shilaj Circle");
+        assert.equal(liveBus.nextStopEta, transitData.bus.nextStopEta);
+        assert.equal(liveBus.remainingDistance, transitData.bus.remainingDistance);
 
         const endTrip = await fetch(`${app.baseUrl}/driver/trips/TRIP-2026-0821-IU-R4/end`, {
             method: "POST",

@@ -10,6 +10,10 @@ const signupOtpExpiryMinutes = 10;
 const passwordResetOtpExpiryMinutes = 10;
 const defaultSessionHours = 8;
 const defaultGpsStaleMinutes = 2;
+const defaultEtaSpeedKmh = 24;
+const minimumEtaSpeedKmh = 12;
+const maximumEtaSpeedKmh = 60;
+const roadDistanceFactor = 1.25;
 
 const jsonHeaders = {
     "Content-Type": "application/json",
@@ -498,6 +502,164 @@ function roundMetric(value, decimals = 1) {
     return Number(Number(value).toFixed(decimals));
 }
 
+function hasCoordinates(value) {
+    return Array.isArray(value) &&
+        value.length >= 2 &&
+        Number.isFinite(Number(value[0])) &&
+        Number.isFinite(Number(value[1]));
+}
+
+function radians(value) {
+    return Number(value) * Math.PI / 180;
+}
+
+function distanceKmBetween(start, end) {
+    if (!hasCoordinates(start) || !hasCoordinates(end))
+        return null;
+    const earthRadiusKm = 6371;
+    const startLat = Number(start[0]);
+    const startLng = Number(start[1]);
+    const endLat = Number(end[0]);
+    const endLng = Number(end[1]);
+    const latDelta = radians(endLat - startLat);
+    const lngDelta = radians(endLng - startLng);
+    const a = Math.sin(latDelta / 2) ** 2 +
+        Math.cos(radians(startLat)) * Math.cos(radians(endLat)) * Math.sin(lngDelta / 2) ** 2;
+    return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) * roadDistanceFactor;
+}
+
+function routeDistanceKm(stops, fromIndex, toIndex) {
+    if (!Array.isArray(stops) || fromIndex >= toIndex)
+        return 0;
+    let distance = 0;
+    for (let index = Math.max(0, fromIndex); index < toIndex; index += 1) {
+        const segmentDistance = distanceKmBetween(stops[index]?.coordinates, stops[index + 1]?.coordinates);
+        if (segmentDistance === null)
+            return null;
+        distance += segmentDistance;
+    }
+    return distance;
+}
+
+function etaSpeedKmh(location) {
+    const speed = Number(location?.speedKmh);
+    if (Number.isFinite(speed) && speed > 0)
+        return Math.max(minimumEtaSpeedKmh, Math.min(maximumEtaSpeedKmh, speed));
+    return defaultEtaSpeedKmh;
+}
+
+function etaLabel(distanceKm, speedKmh) {
+    if (!Number.isFinite(distanceKm) || distanceKm < 0 || !Number.isFinite(speedKmh) || speedKmh <= 0)
+        return "Waiting for GPS";
+    const minutes = Math.max(1, Math.round(distanceKm / speedKmh * 60));
+    if (minutes < 60)
+        return `${minutes} min`;
+    const hours = Math.floor(minutes / 60);
+    const rest = minutes % 60;
+    return rest ? `${hours} hr ${rest} min` : `${hours} hr`;
+}
+
+function distanceLabel(distanceKm) {
+    if (!Number.isFinite(distanceKm) || distanceKm < 0)
+        return "Waiting for GPS";
+    if (distanceKm < 0.1)
+        return "<100 m";
+    if (distanceKm < 1)
+        return `${Math.round(distanceKm * 1000)} m`;
+    return `${distanceKm.toFixed(distanceKm >= 10 ? 0 : 1)} km`;
+}
+
+function stopDistanceFromLiveLocation(route, nextStopIndex, targetStopIndex, location) {
+    if (targetStopIndex < nextStopIndex)
+        return null;
+    const stops = route?.stops ?? [];
+    const nextStop = stops[nextStopIndex];
+    if (!nextStop)
+        return null;
+    const distanceToNextStop = distanceKmBetween(location?.coordinates, nextStop.coordinates);
+    if (distanceToNextStop === null)
+        return null;
+    const distanceAfterNextStop = routeDistanceKm(stops, nextStopIndex, targetStopIndex);
+    if (distanceAfterNextStop === null)
+        return null;
+    return distanceToNextStop + distanceAfterNextStop;
+}
+
+function buildLiveEtaContext(data, route, trip, locationOverride) {
+    if (!route || !trip) {
+        return {
+            nextStopId: "",
+            nextStopName: "",
+            nextStopEta: "Waiting for GPS",
+            remainingDistance: "Waiting for GPS",
+            etaSource: "unavailable",
+            distanceToNextStopKm: null,
+        };
+    }
+    const nextStopId = route.stops?.some((stop) => stop.id === trip.nextStopId)
+        ? trip.nextStopId
+        : route.stops?.[Math.max(0, route.stops.length - 2)]?.id ?? route.stops?.[0]?.id ?? "";
+    const nextStopIndex = Math.max(0, route.stops?.findIndex((stop) => stop.id === nextStopId) ?? 0);
+    const nextStop = route.stops?.[nextStopIndex];
+    const tripActive = tripIsSharingLocation(data, route.code);
+    const location = locationOverride ?? (tripActive ? liveLocationForRoute(data, route.code) : null);
+    const gpsStatus = tripActive ? liveLocationStatus(location) : "not-sharing";
+    const hasPhoneLocation = tripActive && hasCoordinates(location?.coordinates);
+    if (!tripActive) {
+        return {
+            nextStopId: nextStop?.id ?? nextStopId,
+            nextStopName: nextStop?.name ?? trip.nextStopName,
+            nextStopEta: trip.nextStopEta ?? "--",
+            remainingDistance: trip.remainingDistance ?? "--",
+            etaSource: "scheduled",
+            distanceToNextStopKm: null,
+            gpsStatus,
+        };
+    }
+    if (!hasPhoneLocation) {
+        return {
+            nextStopId: nextStop?.id ?? nextStopId,
+            nextStopName: nextStop?.name ?? trip.nextStopName,
+            nextStopEta: "Waiting for GPS",
+            remainingDistance: "Waiting for GPS",
+            etaSource: "waiting-for-gps",
+            distanceToNextStopKm: null,
+            gpsStatus,
+        };
+    }
+    const speedKmh = etaSpeedKmh(location);
+    const distanceToNextStopKm = stopDistanceFromLiveLocation(route, nextStopIndex, nextStopIndex, location);
+    return {
+        nextStopId: nextStop?.id ?? nextStopId,
+        nextStopName: nextStop?.name ?? trip.nextStopName,
+        nextStopEta: etaLabel(distanceToNextStopKm, speedKmh),
+        remainingDistance: distanceLabel(distanceToNextStopKm),
+        etaSource: Number.isFinite(location?.speedKmh) && location.speedKmh > 0
+            ? "driver-phone-speed"
+            : "driver-phone-average",
+        etaSpeedKmh: speedKmh,
+        distanceToNextStopKm,
+        gpsStatus,
+        location,
+        stopDistanceKm(targetStopId) {
+            const targetStopIndex = route.stops?.findIndex((stop) => stop.id === targetStopId) ?? -1;
+            if (targetStopIndex < 0)
+                return null;
+            return stopDistanceFromLiveLocation(route, nextStopIndex, targetStopIndex, location);
+        },
+    };
+}
+
+function etaForStop(etaContext, stopId) {
+    const distanceKm = etaContext?.stopDistanceKm?.(stopId);
+    if (distanceKm === null || distanceKm === undefined)
+        return null;
+    return {
+        eta: etaLabel(distanceKm, etaContext.etaSpeedKmh),
+        distanceFromBus: distanceLabel(distanceKm),
+    };
+}
+
 function locationAgeLabel(updatedAt) {
     const timestamp = Date.parse(updatedAt ?? "");
     if (!Number.isFinite(timestamp))
@@ -541,10 +703,14 @@ function busWithLiveLocation(data, bus, routeCode) {
             ...bus,
             gpsStatus: bus.status === "stale-gps" ? "stale" : bus.tripActive ? "live" : "not-sharing",
             gpsUpdatedAt: bus.gpsUpdated ?? bus.gpsUpdatedAt,
+            etaSource: bus.etaSource ?? "scheduled",
         };
     }
     const tripActive = tripIsSharingLocation(data, routeCode);
     const location = tripActive ? liveLocationForRoute(data, routeCode) : null;
+    const route = routeFromData(data, routeCode);
+    const trip = data.operations?.activeStaffTrip;
+    const etaContext = buildLiveEtaContext(data, route, trip, location);
     const gpsStatus = tripActive ? liveLocationStatus(location) : "not-sharing";
     const gpsUpdated = location ? locationAgeLabel(location.updatedAt) : tripActive ? "Waiting for driver phone" : "Not sharing";
     const speed = Number.isFinite(location?.speedKmh)
@@ -563,6 +729,15 @@ function busWithLiveLocation(data, bus, routeCode) {
         gpsAccuracy: location?.accuracy,
         lastLocationAt: location?.updatedAt,
         locationSource: location?.source,
+        eta: etaContext.nextStopEta ?? bus.eta,
+        nextStopId: etaContext.nextStopId,
+        nextStopName: etaContext.nextStopName,
+        nextStopEta: etaContext.nextStopEta,
+        remainingDistance: etaContext.remainingDistance,
+        etaSource: etaContext.etaSource,
+        distanceToNextStop: etaContext.distanceToNextStopKm === null
+            ? etaContext.remainingDistance
+            : distanceLabel(etaContext.distanceToNextStopKm),
         status: !tripActive ? "stopped" : gpsStatus === "live" ? bus.status === "stopped" || bus.status === "stale-gps" ? "on-trip" : bus.status : "stale-gps",
     };
 }
@@ -584,6 +759,11 @@ function activeTripWithConsistentAssignments(data, trip) {
         ? trip.nextStopId
         : route.stops?.[Math.max(0, route.stops.length - 2)]?.id ?? route.stops?.[0]?.id;
     const nextStop = route.stops?.find((stop) => stop.id === nextStopId);
+    const etaContext = buildLiveEtaContext(data, route, {
+        ...trip,
+        routeCode: route.code,
+        nextStopId: nextStop?.id ?? trip.nextStopId,
+    });
     return {
         ...trip,
         routeCode: route.code,
@@ -596,6 +776,13 @@ function activeTripWithConsistentAssignments(data, trip) {
         distance: route.distance ?? trip.distance,
         nextStopId: nextStop?.id ?? trip.nextStopId,
         nextStopName: nextStop?.name ?? trip.nextStopName,
+        nextStopEta: etaContext.nextStopEta,
+        remainingDistance: etaContext.remainingDistance,
+        etaSource: etaContext.etaSource,
+        etaSpeedKmh: etaContext.etaSpeedKmh,
+        distanceToNextStop: etaContext.distanceToNextStopKm === null
+            ? etaContext.remainingDistance
+            : distanceLabel(etaContext.distanceToNextStopKm),
         driver: {
             ...(trip.driver ?? {}),
             id: staff.driver.accountUserId || trip.driver?.id,
@@ -805,9 +992,20 @@ function storeDriverLocation(data, user, tripId, locationInput) {
         ...locationInput,
     };
     ensureLiveLocations(data)[tripId] = location;
+    const route = routeFromData(data, trip.routeCode);
+    const etaContext = buildLiveEtaContext(data, route, trip, location);
     data.operations.gpsUpdatedAt = "Just now";
     data.operations.activeStaffTrip = {
         ...trip,
+        nextStopId: etaContext.nextStopId || trip.nextStopId,
+        nextStopName: etaContext.nextStopName || trip.nextStopName,
+        nextStopEta: etaContext.nextStopEta,
+        remainingDistance: etaContext.remainingDistance,
+        etaSource: etaContext.etaSource,
+        etaSpeedKmh: etaContext.etaSpeedKmh,
+        distanceToNextStop: etaContext.distanceToNextStopKm === null
+            ? etaContext.remainingDistance
+            : distanceLabel(etaContext.distanceToNextStopKm),
         currentCoordinates: location.coordinates,
         currentSpeed: location.speedKmh,
         gpsUpdatedAt: "Just now",
@@ -818,6 +1016,15 @@ function storeDriverLocation(data, user, tripId, locationInput) {
         fleetBus.speed = Number.isFinite(location.speedKmh) ? Math.round(location.speedKmh) : fleetBus.speed;
         fleetBus.gpsUpdated = "Just now";
         fleetBus.tripActive = true;
+        fleetBus.eta = etaContext.nextStopEta;
+        fleetBus.nextStopId = etaContext.nextStopId;
+        fleetBus.nextStopName = etaContext.nextStopName;
+        fleetBus.nextStopEta = etaContext.nextStopEta;
+        fleetBus.remainingDistance = etaContext.remainingDistance;
+        fleetBus.etaSource = etaContext.etaSource;
+        fleetBus.distanceToNextStop = etaContext.distanceToNextStopKm === null
+            ? etaContext.remainingDistance
+            : distanceLabel(etaContext.distanceToNextStopKm);
         if (fleetBus.status === "stopped" || fleetBus.status === "stale-gps")
             fleetBus.status = "on-trip";
     }
@@ -878,13 +1085,20 @@ function buildStudentTransitData(data, user) {
         ? tripNextStopId
         : selectedStopId;
     const progressIndex = Math.max(0, route.stops.findIndex((stop) => stop.id === progressStopId));
+    const etaContext = activeTrip?.routeCode === route.code
+        ? buildLiveEtaContext(data, route, activeTrip)
+        : null;
     const stops = withStopProgress(route, progressStopId).map((stop, index) => ({
         ...stop,
-        ...(stop.id === progressStopId
-            ? { eta: "8 min" }
-            : index > progressIndex
-                ? { eta: stop.name === route.destination ? "23 min" : "14 min" }
-                : {}),
+        ...(etaForStop(etaContext, stop.id) ??
+            (stop.id === progressStopId && etaContext
+                ? {
+                    eta: etaContext.nextStopEta,
+                    distanceFromBus: etaContext.remainingDistance,
+                }
+                : index > progressIndex && etaContext?.etaSource === "scheduled"
+                    ? { eta: stop.name === route.destination ? "23 min" : "14 min" }
+                    : {})),
     }));
     const fleetBus = data.admin?.fleetVehicles?.find((bus) => bus.route === route.code);
     const bus = busWithLiveLocation(data, {
@@ -915,6 +1129,7 @@ function buildStudentTransitData(data, user) {
             scheduledArrival: route.campusArrival ?? data.studentTransitData.route.scheduledArrival,
             selectedStopId,
             currentStopId: progressStopId,
+            etaSource: etaContext?.etaSource ?? bus.etaSource,
             mapCenter: route.mapCenter ?? data.studentTransitData.route.mapCenter,
             notes: route.notes,
             stops,

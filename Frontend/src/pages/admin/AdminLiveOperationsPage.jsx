@@ -184,7 +184,7 @@ export function AdminLiveOperationsPage() {
               <small>Next stop</small>
               <strong>
                 {selected.tripActive
-            ? (route.stops[1]?.name ?? route.destination)
+            ? (selected.nextStopName ?? route.stops.find((stop) => stop.id === selected.nextStopId)?.name ?? route.destination)
             : "Trip not started"}
               </strong>
             </span>

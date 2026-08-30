@@ -47,6 +47,10 @@ export function LiveTrackingPage() {
         data.route.stops.find((stop) => stop.status === "current") ??
         selectedStop;
     const selectedStopEta = selectedStop.status === "completed" ? "Departed" : selectedStop.eta ?? "—";
+    const nextStopDistance = currentStop.distanceFromBus ?? data.bus.distanceToNextStop ?? data.bus.remainingDistance;
+    const nextStopDistanceText = nextStopDistance && nextStopDistance !== "Waiting for GPS"
+        ? `${nextStopDistance} away`
+        : "Distance updates after GPS sync";
     const busPosition = data.bus.coordinates ?? selectedStop.coordinates;
     const routePoints = data.route.stops.map((stop) => stop.coordinates);
     const mapCenter = data.route.mapCenter ?? routePoints[0];
@@ -170,7 +174,7 @@ export function LiveTrackingPage() {
           <section className="next-stop-card">
             <span>Next stop</span>
             <strong>{currentStop.name}</strong>
-            <p>Approximately 1.2 km away</p>
+            <p>{nextStopDistanceText}</p>
           </section>
           <p className="privacy-note">
             <Signal /> Driver location is visible only while this trip is
