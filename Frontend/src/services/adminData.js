@@ -83,13 +83,17 @@ const fleetStatuses = ["on-trip", "delayed", "on-trip", "on-trip", "stale-gps", 
 const capacities = [52, 50, 48, 50, 52, 48, 50, 52];
 const occupancies = [37, 42, 31, 33, 28, 39, 0, 35];
 
-const routeStop = (route, index, stop) => ({
+export const buildRouteStopRecord = (route, index, stop) => ({
     id: `${route.code.toLowerCase()}-stop-${String(index + 1).padStart(2, "0")}`,
     name: stop.name,
     code: `STP-${route.code.replace("IU-R", "").padStart(2, "0")}${String(index + 1).padStart(2, "0")}`,
     detail: stop.coordinates.join(", "),
     contact: stop.scheduledTime,
     assignment: `${route.code} - Stop ${index + 1}`,
+    routeCode: route.code,
+    routeId: route.id,
+    stopId: stop.id,
+    stopOrder: index + 1,
     status: "active",
 });
 
@@ -205,7 +209,7 @@ export const initialAdminRecords = {
             status: "pending",
         },
     ],
-    stops: indusRoutes.flatMap((route) => route.stops.map((stop, index) => routeStop(route, index, stop))),
+    stops: indusRoutes.flatMap((route) => route.stops.map((stop, index) => buildRouteStopRecord(route, index, stop))),
 };
 
 export const initialRoutes = indusRoutes.map((route, index) => ({

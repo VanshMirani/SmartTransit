@@ -130,6 +130,86 @@ test("route, bus, driver, and conductor assignments match across dashboards", as
     }
 });
 
+test("route stop changes stay aligned across student, staff, and admin dashboards", async () => {
+    const app = await startTestServer();
+    try {
+        const loginAs = async (email, password) => {
+            const login = await fetch(`${app.baseUrl}/auth/login`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email, password }),
+            });
+            assert.equal(login.status, 200);
+            return (await json(login)).token;
+        };
+
+        const [studentToken, driverToken, conductorToken, adminToken] = await Promise.all([
+            loginAs("student@iite.indusuni.ac.in", "Student@123"),
+            loginAs("driver@transport.indusuni.ac.in", "Driver@123"),
+            loginAs("conductor@transport.indusuni.ac.in", "Conductor@123"),
+            loginAs("admin@transport.indusuni.ac.in", "Admin@123"),
+        ]);
+
+        const bootstrap = await fetch(`${app.baseUrl}/admin/bootstrap`, {
+            headers: { Authorization: `Bearer ${adminToken}` },
+        });
+        const adminBefore = await json(bootstrap);
+        const route = adminBefore.routes.find((item) => item.code === "IU-R4");
+        const updatedRoute = {
+            ...route,
+            stops: route.stops.map((stop) => stop.id === "iu-r4-13"
+                ? { ...stop, name: "Shilaj Circle Gate", scheduledTime: "8:26 AM" }
+                : stop),
+        };
+
+        const routeUpdate = await fetch(`${app.baseUrl}/admin/routes/${route.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+            body: JSON.stringify(updatedRoute),
+        });
+        assert.equal(routeUpdate.status, 200);
+
+        const [studentTransit, driverTrip, conductorTrip, adminBootstrap] = await Promise.all([
+            fetch(`${app.baseUrl}/student/transit`, {
+                headers: { Authorization: `Bearer ${studentToken}` },
+            }),
+            fetch(`${app.baseUrl}/driver/trips/current`, {
+                headers: { Authorization: `Bearer ${driverToken}` },
+            }),
+            fetch(`${app.baseUrl}/conductor/trips/current`, {
+                headers: { Authorization: `Bearer ${conductorToken}` },
+            }),
+            fetch(`${app.baseUrl}/admin/bootstrap`, {
+                headers: { Authorization: `Bearer ${adminToken}` },
+            }),
+        ]);
+
+        const student = await json(studentTransit);
+        const driver = await json(driverTrip);
+        const conductor = await json(conductorTrip);
+        const admin = await json(adminBootstrap);
+        const studentStop = student.route.stops.find((stop) => stop.id === "iu-r4-13");
+        const driverStop = driver.operationalStops.find((stop) => stop.id === "iu-r4-13");
+        const conductorStop = conductor.operationalStops.find((stop) => stop.id === "iu-r4-13");
+        const adminRouteStop = admin.routes.find((item) => item.code === "IU-R4").stops.find((stop) => stop.id === "iu-r4-13");
+        const adminStopRecord = admin.records.stops.find((stop) => stop.routeCode === "IU-R4" && stop.stopOrder === 13);
+
+        assert.equal(studentStop.name, "Shilaj Circle Gate");
+        assert.equal(studentStop.scheduledTime, "8:26 AM");
+        assert.equal(driverStop.name, "Shilaj Circle Gate");
+        assert.equal(conductorStop.name, "Shilaj Circle Gate");
+        assert.equal(driver.activeStaffTrip.nextStopName, "Shilaj Circle Gate");
+        assert.equal(conductor.activeStaffTrip.nextStopName, "Shilaj Circle Gate");
+        assert.equal(adminRouteStop.name, "Shilaj Circle Gate");
+        assert.equal(adminStopRecord.name, "Shilaj Circle Gate");
+        assert.equal(adminStopRecord.contact, "8:26 AM");
+        assert.equal(adminStopRecord.assignment, "IU-R4 - Stop 13");
+    }
+    finally {
+        await app.close();
+    }
+});
+
 test("driver phone GPS updates student and admin live tracking", async () => {
     const app = await startTestServer();
     try {

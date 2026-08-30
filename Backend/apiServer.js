@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { createHash, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import { getBusRegistration, indusRoutes, withStopProgress } from "../Frontend/src/services/indusRoutes.js";
-import { getRouteStaffAssignment } from "../Frontend/src/services/adminData.js";
+import { buildRouteStopRecord, getRouteStaffAssignment } from "../Frontend/src/services/adminData.js";
 import { isInstituteEmail, normalizeEmail, signupEmailHelpText, validatePassword } from "../Frontend/src/utils/registrationValidation.js";
 import { sendPasswordResetOtpEmail, sendSignupOtpEmail } from "./emailService.js";
 import { hashPassword, verifyPassword } from "./passwords.js";
@@ -129,9 +129,21 @@ function routeCodeFromAssignment(assignment) {
     return String(assignment ?? "").match(/\bIU-R\d+\b/i)?.[0]?.toUpperCase() ?? "";
 }
 
+function routeFromData(data, routeCode) {
+    const managedRoute = data.admin?.routes?.find((route) => route.code === routeCode);
+    const routeTemplate = indusRoutes.find((route) => route.code === routeCode);
+    if (managedRoute && routeTemplate) {
+        return {
+            ...routeTemplate,
+            ...managedRoute,
+            stops: managedRoute.stops?.length ? managedRoute.stops : routeTemplate.stops,
+        };
+    }
+    return managedRoute ?? routeTemplate ?? null;
+}
+
 function findRouteByCode(data, routeCode) {
-    return data.admin?.routes?.find((route) => route.code === routeCode) ??
-        indusRoutes.find((route) => route.code === routeCode);
+    return routeFromData(data, routeCode);
 }
 
 function stopNameFromAssignment(routeCode, assignment) {
@@ -456,18 +468,7 @@ function syncStaffUser(data, kind, record) {
 }
 
 function routeForUser(data, user) {
-    const managedRoute = data.admin?.routes?.find((route) => route.code === user.routeCode);
-    const routeTemplate = indusRoutes.find((route) => route.code === user.routeCode);
-    if (managedRoute && routeTemplate) {
-        return {
-            ...routeTemplate,
-            ...managedRoute,
-            stops: managedRoute.stops?.length ? managedRoute.stops : routeTemplate.stops,
-        };
-    }
-    return managedRoute ??
-        routeTemplate ??
-        null;
+    return routeFromData(data, user.routeCode);
 }
 
 function gpsStaleMs() {
@@ -573,11 +574,16 @@ function initialsForName(name) {
 function activeTripWithConsistentAssignments(data, trip) {
     if (!trip)
         return trip;
-    const route = indusRoutes.find((item) => item.code === trip.routeCode || item.primaryBusNumber === trip.busNumber);
+    const templateRoute = indusRoutes.find((item) => item.code === trip.routeCode || item.primaryBusNumber === trip.busNumber);
+    const route = routeFromData(data, templateRoute?.code ?? trip.routeCode);
     if (!route)
         return trip;
     const staff = getRouteStaffAssignment(route.code);
     const fleetBus = data.admin?.fleetVehicles?.find((bus) => bus.route === route.code || bus.number === route.primaryBusNumber);
+    const nextStopId = route.stops?.some((stop) => stop.id === trip.nextStopId)
+        ? trip.nextStopId
+        : route.stops?.[Math.max(0, route.stops.length - 2)]?.id ?? route.stops?.[0]?.id;
+    const nextStop = route.stops?.find((stop) => stop.id === nextStopId);
     return {
         ...trip,
         routeCode: route.code,
@@ -588,6 +594,8 @@ function activeTripWithConsistentAssignments(data, trip) {
         scheduledStart: route.stops[0]?.scheduledTime ?? trip.scheduledStart,
         scheduledEnd: route.campusArrival ?? trip.scheduledEnd,
         distance: route.distance ?? trip.distance,
+        nextStopId: nextStop?.id ?? trip.nextStopId,
+        nextStopName: nextStop?.name ?? trip.nextStopName,
         driver: {
             ...(trip.driver ?? {}),
             id: staff.driver.accountUserId || trip.driver?.id,
@@ -671,6 +679,14 @@ function adminDataWithConsistentAssignments(data) {
             driver: getRouteStaffAssignment(route.code).driver.name,
         };
     });
+    const stopStatusById = new Map((records.stops ?? []).map((stop) => [stop.id, stop.status]));
+    const stops = routes.flatMap((route) => route.stops.map((stop, index) => {
+        const record = buildRouteStopRecord(route, index, stop);
+        return {
+            ...record,
+            status: stopStatusById.get(record.id) ?? record.status,
+        };
+    }));
     return {
         ...admin,
         records: {
@@ -678,6 +694,7 @@ function adminDataWithConsistentAssignments(data) {
             buses,
             drivers,
             conductors,
+            stops,
         },
         routes,
         fleetVehicles,
@@ -694,9 +711,18 @@ function adminDataWithLiveLocations(data) {
 
 function operationsWithLiveLocation(data) {
     const trip = activeTripWithConsistentAssignments(data, data.operations?.activeStaffTrip);
+    const route = trip ? routeFromData(data, trip.routeCode) : null;
+    const currentStopId = route?.stops?.some((stop) => stop.id === trip?.nextStopId)
+        ? trip.nextStopId
+        : data.operations?.operationalCurrentStopId;
+    const operationalStops = route?.stops?.length
+        ? withStopProgress(route, currentStopId)
+        : data.operations?.operationalStops;
     const location = data.operations?.tripStatus === "active" && trip ? liveLocationMap(data)[trip.id] : null;
     return {
         ...data.operations,
+        operationalStops,
+        operationalCurrentStopId: currentStopId,
         gpsUpdatedAt: location ? locationAgeLabel(location.updatedAt) : data.operations?.gpsUpdatedAt,
         liveLocation: location
             ? {
