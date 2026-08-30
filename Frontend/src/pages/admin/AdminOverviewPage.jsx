@@ -14,14 +14,17 @@ const fleetIcon = (status) => L.divIcon({
 });
 export function AdminOverviewPage() {
     const { complaints } = useCommunications();
-    const { fleet, activity } = useAdminData();
+    const { fleet, activity, records } = useAdminData();
     const openComplaints = complaints.filter((item) => item.status !== "resolved");
     const activeFleet = fleet.filter((item) => item.tripActive);
     const occupancy = activeFleet.map((item) => Math.round((item.occupancy / item.capacity) * 100));
     const averageOccupancy = occupancy.length
         ? Math.round(occupancy.reduce((sum, value) => sum + value, 0) / occupancy.length)
         : 0;
-    const totalStudentCount = indusRoutes.reduce((sum, route) => sum + route.studentCount, 0);
+    const studentRecords = records.students ?? [];
+    const totalStudentCount = studentRecords.length;
+    const activeStudentCount = studentRecords.filter((item) => item.status === "active").length;
+    const pendingStudentCount = studentRecords.filter((item) => item.status === "pending").length;
     const routeName = (code) => indusRoutes.find((route) => route.code === code)?.name ?? code;
     const delayedBus = fleet.find((item) => item.status === "delayed");
     const staleBus = fleet.find((item) => item.status === "stale-gps");
@@ -58,7 +61,7 @@ export function AdminOverviewPage() {
           <div>
             <small>Total students</small>
             <strong>{totalStudentCount}</strong>
-            <em>6 enrolled today</em>
+            <em>{pendingStudentCount ? `${pendingStudentCount} pending approval` : `${activeStudentCount} active`}</em>
           </div>
         </article>
         <article>

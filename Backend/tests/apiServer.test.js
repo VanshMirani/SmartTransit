@@ -381,6 +381,73 @@ test("driver phone GPS updates student and admin live tracking", async () => {
     }
 });
 
+test("conductor seat update advances shared stop and occupancy", async () => {
+    const app = await startTestServer();
+    try {
+        const loginAs = async (email, password) => {
+            const login = await fetch(`${app.baseUrl}/auth/login`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email, password }),
+            });
+            assert.equal(login.status, 200);
+            return (await json(login)).token;
+        };
+
+        const [conductorToken, studentToken, adminToken] = await Promise.all([
+            loginAs("conductor@transport.indusuni.ac.in", "Conductor@123"),
+            loginAs("student@iite.indusuni.ac.in", "Student@123"),
+            loginAs("admin@transport.indusuni.ac.in", "Admin@123"),
+        ]);
+
+        const currentTripResponse = await fetch(`${app.baseUrl}/conductor/trips/current`, {
+            headers: { Authorization: `Bearer ${conductorToken}` },
+        });
+        assert.equal(currentTripResponse.status, 200);
+        const currentTrip = await json(currentTripResponse);
+        const submittedStop = currentTrip.operationalStops.find((stop) => stop.id === currentTrip.operationalCurrentStopId);
+        const nextStop = currentTrip.operationalStops.at(-1);
+
+        const seatUpdateResponse = await fetch(`${app.baseUrl}/conductor/trips/${currentTrip.activeStaffTrip.id}/seat-updates`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${conductorToken}` },
+            body: JSON.stringify({
+                stopId: submittedStop.id,
+                stopName: submittedStop.name,
+                boarded: 4,
+                deboarded: 1,
+            }),
+        });
+        assert.equal(seatUpdateResponse.status, 201);
+        const seatUpdate = await json(seatUpdateResponse);
+        assert.equal(seatUpdate.update.stopName, submittedStop.name);
+        assert.equal(seatUpdate.update.occupiedSeats, 33);
+        assert.equal(seatUpdate.operationalCurrentStopId, nextStop.id);
+        assert.equal(seatUpdate.activeStaffTrip.nextStopName, nextStop.name);
+
+        const studentTransitResponse = await fetch(`${app.baseUrl}/student/transit`, {
+            headers: { Authorization: `Bearer ${studentToken}` },
+        });
+        assert.equal(studentTransitResponse.status, 200);
+        const studentTransit = await json(studentTransitResponse);
+        assert.equal(studentTransit.route.currentStopId, nextStop.id);
+        assert.equal(studentTransit.route.stops.find((stop) => stop.status === "current").name, nextStop.name);
+        assert.equal(studentTransit.bus.occupiedSeats, 33);
+
+        const adminBootstrapResponse = await fetch(`${app.baseUrl}/admin/bootstrap`, {
+            headers: { Authorization: `Bearer ${adminToken}` },
+        });
+        assert.equal(adminBootstrapResponse.status, 200);
+        const admin = await json(adminBootstrapResponse);
+        const liveBus = admin.fleetVehicles.find((bus) => bus.route === "IU-R4");
+        assert.equal(liveBus.occupancy, 33);
+        assert.equal(liveBus.nextStopName, nextStop.name);
+    }
+    finally {
+        await app.close();
+    }
+});
+
 test("session endpoint validates saved backend tokens", async () => {
     const app = await startTestServer();
     try {
@@ -461,6 +528,65 @@ test("admin can load management bootstrap data", async () => {
         assert.equal(data.routes.length, 8);
         assert.equal(data.fleetVehicles.length, 8);
         assert.ok(data.records.buses.length >= 8);
+    }
+    finally {
+        await app.close();
+    }
+});
+
+test("admin notifications count actual active student accounts", async () => {
+    const app = await startTestServer();
+    try {
+        const login = await fetch(`${app.baseUrl}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "admin@transport.indusuni.ac.in", password: "Admin@123" }),
+        });
+        const { token } = await json(login);
+
+        const allStudents = await fetch(`${app.baseUrl}/admin/notifications`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+                type: "general",
+                title: "Morning update",
+                message: "Transport services are running on schedule today.",
+                audience: "all",
+                deliveryMode: "now",
+            }),
+        });
+        assert.equal(allStudents.status, 201);
+        assert.equal((await json(allStudents)).recipientCount, 1);
+
+        const assignedRoute = await fetch(`${app.baseUrl}/admin/notifications`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+                type: "delay",
+                title: "Route IU-R4 update",
+                message: "Route IU-R4 is delayed by five minutes.",
+                audience: "route",
+                routeCode: "IU-R4",
+                deliveryMode: "now",
+            }),
+        });
+        assert.equal(assignedRoute.status, 201);
+        assert.equal((await json(assignedRoute)).recipientCount, 1);
+
+        const emptyRoute = await fetch(`${app.baseUrl}/admin/notifications`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+                type: "delay",
+                title: "Route IU-R2 update",
+                message: "Route IU-R2 is delayed by five minutes.",
+                audience: "route",
+                routeCode: "IU-R2",
+                deliveryMode: "now",
+            }),
+        });
+        assert.equal(emptyRoute.status, 201);
+        assert.equal((await json(emptyRoute)).recipientCount, 0);
     }
     finally {
         await app.close();

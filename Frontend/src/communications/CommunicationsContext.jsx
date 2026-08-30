@@ -61,9 +61,12 @@ export function CommunicationsProvider({ children }) {
             await wait(550);
             const id = `NTF-${new Date().getFullYear()}-${String(campaigns.length + 183).padStart(4, "0")}`;
             const route = findRoute(input.routeCode);
-            const recipientCount = input.audience === "all"
+            const fallbackRecipientCount = input.audience === "all"
                 ? totalStudentCount
                 : route?.studentCount ?? 0;
+            const recipientCount = Number.isFinite(input.recipientCount)
+                ? input.recipientCount
+                : fallbackRecipientCount;
             const campaign = {
                 ...input,
                 id,

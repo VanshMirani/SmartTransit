@@ -272,9 +272,16 @@ export function ConductorOperationsProvider({ children, }) {
             const update = backendConfig.enabled
                 ? await apiRequest(`/conductor/trips/${activeTrip.id}/seat-updates`, { method: "POST", body: updatePayload })
                 : updatePayload;
-            setOccupiedSeats(calculation.occupiedSeats);
-            setUpdates((items) => [update, ...items]);
-            return update;
+            const savedUpdate = update.update ?? update;
+            setOccupiedSeats(savedUpdate.occupiedSeats ?? calculation.occupiedSeats);
+            setUpdates((items) => [savedUpdate, ...items]);
+            if (update.activeStaffTrip)
+                setActiveTrip(update.activeStaffTrip);
+            if (update.operationalStops)
+                setStops(update.operationalStops);
+            if (update.operationalCurrentStopId)
+                setCurrentStopId(update.operationalCurrentStopId);
+            return savedUpdate;
         },
         submitEmergency: (type, note) => {
             const report = {

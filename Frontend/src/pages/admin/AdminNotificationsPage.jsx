@@ -1,10 +1,9 @@
 import { Bell, CalendarClock, CheckCircle2, Clock3, Send, Users, } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useAdminData } from "../../admin/AdminDataContext";
 import { useCommunications } from "../../communications/CommunicationsContext";
 import { AdminFeedback, AdminPageHeading, AdminStatusBadge, } from "../../components/admin/AdminUI";
-import { defaultStudentRoute, indusRoutes } from "../../services/indusRoutes";
-const routeOptions = indusRoutes.map((route) => route.code);
-const totalStudentCount = indusRoutes.reduce((sum, route) => sum + route.studentCount, 0);
+import { defaultStudentRoute } from "../../services/indusRoutes";
 const typeLabels = {
     delay: "Delay",
     "route-change": "Route Change",
@@ -21,12 +20,18 @@ const blankForm = {
     scheduledFor: "",
 };
 export function AdminNotificationsPage() {
+    const { records, routes } = useAdminData();
     const { campaigns, sendNotification } = useCommunications();
     const [form, setForm] = useState(blankForm);
     const [errors, setErrors] = useState({});
     const [submitting, setSubmitting] = useState(false);
     const [feedback, setFeedback] = useState(null);
     const [historyStatus, setHistoryStatus] = useState("all");
+    const routeOptions = useMemo(() => routes.map((route) => route.code), [routes]);
+    const activeStudents = useMemo(() => (records.students ?? []).filter((student) => student.status === "active"), [records.students]);
+    const totalStudentCount = activeStudents.length;
+    const selectedRouteStudentCount = useMemo(() => activeStudents.filter((student) => student.routeCode === form.routeCode).length, [activeStudents, form.routeCode]);
+    const audienceCount = form.audience === "all" ? totalStudentCount : selectedRouteStudentCount;
     const visibleCampaigns = useMemo(() => campaigns.filter((campaign) => historyStatus === "all" || campaign.status === historyStatus), [campaigns, historyStatus]);
     const submit = async (event) => {
         event.preventDefault();
@@ -61,6 +66,7 @@ export function AdminNotificationsPage() {
                 message: submittedForm.message.trim(),
                 routeCode: submittedForm.audience === "route" ? submittedForm.routeCode : undefined,
                 scheduledFor: submittedForm.deliveryMode === "scheduled" ? submittedForm.scheduledFor : undefined,
+                recipientCount: audienceCount,
             });
             setFeedback({
                 type: "success",
@@ -121,7 +127,7 @@ export function AdminNotificationsPage() {
                 <select value={form.routeCode} onChange={(event) => setForm({ ...form, routeCode: event.target.value })} aria-invalid={Boolean(errors.routeCode)}>
                   {routeOptions.map((route) => (<option key={route}>{route}</option>))}
                 </select>
-                {errors.routeCode && <small>{errors.routeCode}</small>}
+                {errors.routeCode ? <small>{errors.routeCode}</small> : <small className="field-hint">{selectedRouteStudentCount} active students on this route</small>}
               </label>) : (<div className="notification-audience-note">
                 <Users />
                 <span>

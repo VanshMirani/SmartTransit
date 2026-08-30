@@ -125,10 +125,6 @@ function findRouteFromService(service) {
     return indusRoutes.find((route) => String(service ?? "").includes(route.code));
 }
 
-function routeStudentCount(routeCode) {
-    return indusRoutes.find((route) => route.code === routeCode)?.studentCount ?? 0;
-}
-
 function routeCodeFromAssignment(assignment) {
     return String(assignment ?? "").match(/\bIU-R\d+\b/i)?.[0]?.toUpperCase() ?? "";
 }
@@ -209,8 +205,20 @@ function syncStudentUserAssignment(data, record) {
         student.stopId = "";
 }
 
-function totalStudentCount() {
-    return indusRoutes.reduce((sum, route) => sum + route.studentCount, 0);
+function studentRecordRouteCode(record) {
+    return String(record?.routeCode ?? routeCodeFromAssignment(record?.assignment)).trim().toUpperCase();
+}
+
+function activeStudentRecords(data) {
+    return data.admin?.records?.students?.filter((record) => (record.status ?? "active") === "active") ?? [];
+}
+
+function studentRecipientCount(data, routeCode = "") {
+    const students = activeStudentRecords(data);
+    if (!routeCode)
+        return students.length;
+    const normalizedRouteCode = String(routeCode).trim().toUpperCase();
+    return students.filter((record) => studentRecordRouteCode(record) === normalizedRouteCode).length;
 }
 
 function ensureSignupOtps(data) {
@@ -1036,6 +1044,95 @@ function storeDriverLocation(data, user, tripId, locationInput) {
     };
 }
 
+function currentSeatCount(data, trip) {
+    const fleetBus = data.admin?.fleetVehicles?.find((bus) => bus.route === trip.routeCode || bus.number === trip.busNumber);
+    const latestUpdate = data.operations?.seatUpdates?.[0];
+    const value = Number(latestUpdate?.occupiedSeats ?? fleetBus?.occupancy ?? 0);
+    return Number.isFinite(value) ? value : 0;
+}
+
+function updateTripProgressFromSeatUpdate(data, tripId, body) {
+    const trip = data.operations?.activeStaffTrip;
+    if (!trip || trip.id !== tripId) {
+        return { error: "Trip not found." };
+    }
+    const route = routeFromData(data, trip.routeCode);
+    if (!route?.stops?.length) {
+        return { error: "Trip route does not have stops configured." };
+    }
+    const boarded = Number(body.boarded);
+    const deboarded = Number(body.deboarded);
+    if (!Number.isInteger(boarded) || boarded < 0 || !Number.isInteger(deboarded) || deboarded < 0) {
+        return { error: "Boarded and deboarded counts must be zero or positive whole numbers." };
+    }
+    const capacity = Number(trip.capacity);
+    const previousOccupiedSeats = currentSeatCount(data, trip);
+    const occupiedSeats = previousOccupiedSeats + boarded - deboarded;
+    if (occupiedSeats < 0 || occupiedSeats > capacity) {
+        return { error: `Seat count must stay between 0 and ${capacity}.` };
+    }
+    const stop = route.stops.find((item) => item.id === body.stopId) ??
+        route.stops.find((item) => item.id === data.operations?.operationalCurrentStopId) ??
+        route.stops[0];
+    const stopIndex = route.stops.findIndex((item) => item.id === stop.id);
+    const nextStop = route.stops[Math.min(stopIndex + 1, route.stops.length - 1)] ?? stop;
+    const update = {
+        ...body,
+        id: body.id ?? `SEAT-${Date.now().toString().slice(-5)}`,
+        stopId: stop.id,
+        stopName: stop.name,
+        boarded,
+        deboarded,
+        occupiedSeats,
+        availableSeats: capacity - occupiedSeats,
+        timestamp: body.timestamp ?? new Intl.DateTimeFormat("en-IN", {
+            hour: "numeric",
+            minute: "2-digit",
+        }).format(new Date()),
+    };
+    data.operations.seatUpdates.unshift(update);
+    data.operations.operationalCurrentStopId = nextStop.id;
+    data.operations.operationalStops = withStopProgress(route, nextStop.id);
+    const etaContext = buildLiveEtaContext(data, route, {
+        ...trip,
+        nextStopId: nextStop.id,
+        nextStopName: nextStop.name,
+    });
+    data.operations.activeStaffTrip = {
+        ...trip,
+        nextStopId: nextStop.id,
+        nextStopName: nextStop.name,
+        nextStopEta: etaContext.nextStopEta,
+        remainingDistance: etaContext.remainingDistance,
+        etaSource: etaContext.etaSource,
+        etaSpeedKmh: etaContext.etaSpeedKmh,
+        distanceToNextStop: etaContext.distanceToNextStopKm === null
+            ? etaContext.remainingDistance
+            : distanceLabel(etaContext.distanceToNextStopKm),
+    };
+    const fleetBus = data.admin?.fleetVehicles?.find((bus) => bus.route === trip.routeCode || bus.number === trip.busNumber);
+    if (fleetBus) {
+        fleetBus.occupancy = occupiedSeats;
+        fleetBus.seatsUpdatedAt = "Just now";
+        fleetBus.nextStopId = nextStop.id;
+        fleetBus.nextStopName = nextStop.name;
+        fleetBus.nextStopEta = etaContext.nextStopEta;
+        fleetBus.eta = etaContext.nextStopEta;
+        fleetBus.remainingDistance = etaContext.remainingDistance;
+        fleetBus.etaSource = etaContext.etaSource;
+        fleetBus.distanceToNextStop = etaContext.distanceToNextStopKm === null
+            ? etaContext.remainingDistance
+            : distanceLabel(etaContext.distanceToNextStopKm);
+    }
+    return {
+        ...update,
+        update,
+        activeStaffTrip: data.operations.activeStaffTrip,
+        operationalStops: data.operations.operationalStops,
+        operationalCurrentStopId: data.operations.operationalCurrentStopId,
+    };
+}
+
 function buildUnassignedTransitData(data) {
     return {
         ...data.studentTransitData,
@@ -1557,7 +1654,9 @@ export function createApiServer(store, options = {}) {
                 }
                 const body = await readBody(request);
                 const campaign = await store.update((data) => {
-                    const recipientCount = body.audience === "all" ? totalStudentCount() : routeStudentCount(body.routeCode);
+                    const recipientCount = body.audience === "all"
+                        ? studentRecipientCount(data)
+                        : studentRecipientCount(data, body.routeCode);
                     const next = {
                         ...body,
                         id: `NTF-${new Date().getFullYear()}-${String(data.communications.campaigns.length + 183).padStart(4, "0")}`,
@@ -1800,17 +1899,18 @@ export function createApiServer(store, options = {}) {
                 return;
             }
 
-            if (method === "POST" && pathname.match(/^\/api\/conductor\/trips\/([^/]+)\/seat-updates$/)) {
+            const seatUpdateMatch = pathname.match(/^\/api\/conductor\/trips\/([^/]+)\/seat-updates$/);
+            if (method === "POST" && seatUpdateMatch) {
                 if (!requireRole(user, ["conductor", "admin"])) {
                     send(response, 403, { message: "Only conductors can submit seat updates." });
                     return;
                 }
                 const body = await readBody(request);
-                const update = await store.update((data) => {
-                    const next = { ...body, id: body.id ?? `SEAT-${Date.now().toString().slice(-5)}` };
-                    data.operations.seatUpdates.unshift(next);
-                    return next;
-                });
+                const update = await store.update((data) => updateTripProgressFromSeatUpdate(data, seatUpdateMatch[1], body));
+                if (update.error) {
+                    badRequest(response, update.error);
+                    return;
+                }
                 send(response, 201, update);
                 return;
             }
