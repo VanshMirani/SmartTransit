@@ -210,6 +210,58 @@ test("route stop changes stay aligned across student, staff, and admin dashboard
     }
 });
 
+test("student pickup stop does not override the bus next stop", async () => {
+    const app = await startTestServer();
+    try {
+        const loginAs = async (email, password) => {
+            const login = await fetch(`${app.baseUrl}/auth/login`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email, password }),
+            });
+            assert.equal(login.status, 200);
+            return (await json(login)).token;
+        };
+
+        const [studentToken, adminToken] = await Promise.all([
+            loginAs("student@iite.indusuni.ac.in", "Student@123"),
+            loginAs("admin@transport.indusuni.ac.in", "Admin@123"),
+        ]);
+
+        const bootstrap = await fetch(`${app.baseUrl}/admin/bootstrap`, {
+            headers: { Authorization: `Bearer ${adminToken}` },
+        });
+        const admin = await json(bootstrap);
+        const student = admin.records.students.find((item) => item.contact === "student@iite.indusuni.ac.in");
+        const route = admin.routes.find((item) => item.code === "IU-R4");
+        const pickupStop = route.stops.find((item) => item.name === "Sola Road");
+        const busNextStop = route.stops.find((item) => item.name === "Shilaj Circle");
+
+        const updatedResponse = await fetch(`${app.baseUrl}/admin/students/${student.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+            body: JSON.stringify({ ...student, routeCode: route.code, stopId: pickupStop.id }),
+        });
+        assert.equal(updatedResponse.status, 200);
+
+        const transit = await fetch(`${app.baseUrl}/student/transit`, {
+            headers: { Authorization: `Bearer ${studentToken}` },
+        });
+        const transitData = await json(transit);
+        const pickup = transitData.route.stops.find((item) => item.id === pickupStop.id);
+        const current = transitData.route.stops.find((item) => item.status === "current");
+
+        assert.equal(transitData.route.selectedStopId, pickupStop.id);
+        assert.equal(transitData.route.currentStopId, busNextStop.id);
+        assert.equal(pickup.name, "Sola Road");
+        assert.equal(pickup.status, "completed");
+        assert.equal(current.name, "Shilaj Circle");
+    }
+    finally {
+        await app.close();
+    }
+});
+
 test("driver phone GPS updates student and admin live tracking", async () => {
     const app = await startTestServer();
     try {

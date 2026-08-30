@@ -25,15 +25,22 @@ export function StudentDashboardPage() {
           </Link>}/>
     </div>);
     const selectedStop = data.route.stops.find((stop) => stop.id === data.route.selectedStopId) ?? data.route.stops[0];
-    const currentStop = data.route.stops.find((stop) => stop.status === "current") ?? selectedStop;
+    const currentStop = data.route.stops.find((stop) => stop.id === data.route.currentStopId) ??
+        data.route.stops.find((stop) => stop.status === "current") ??
+        selectedStop;
+    const currentStopIndex = Math.max(0, data.route.stops.findIndex((stop) => stop.id === currentStop.id));
+    const compactStart = Math.max(0, Math.min(currentStopIndex - 1, data.route.stops.length - 4));
+    const compactStops = data.route.stops.slice(compactStart, compactStart + 4);
+    const selectedStopEta = selectedStop.status === "completed" ? "Departed" : selectedStop.eta ?? "—";
+    const busPassedPickup = selectedStop.status === "completed";
     const tripActive = data.bus.tripActive !== false;
     return (<div className="student-dashboard">
-      <PageHeading eyebrow={currentDisplayDate()} title={`Good morning, ${user?.name.split(" ")[0]} 👋`} description={tripActive ? "Your bus is active and moving toward your stop." : "Your route is assigned. Live tracking starts when the driver begins the trip."} action={<Link className="button button--primary desktop-action" to="/student/track">
+      <PageHeading eyebrow={currentDisplayDate()} title={`Good morning, ${user?.name.split(" ")[0]} 👋`} description={tripActive ? busPassedPickup ? "Your bus has passed your pickup stop and is continuing toward campus." : "Your bus is active and moving toward your stop." : "Your route is assigned. Live tracking starts when the driver begins the trip."} action={<Link className="button button--primary desktop-action" to="/student/track">
             <Navigation /> Track live
           </Link>}/>
       <div className="dashboard-grid">
         <div className="dashboard-primary">
-          <BusOverviewCard bus={data.bus} routeName={`${data.route.code} · ${data.route.name}`} stopName={selectedStop.name} eta={selectedStop.eta ?? "—"}/>
+          <BusOverviewCard bus={data.bus} routeName={`${data.route.code} · ${data.route.name}`} stopName={selectedStop.name} eta={selectedStopEta}/>
           <section className="progress-card">
             <div className="card-title">
               <div>
@@ -51,7 +58,7 @@ export function StudentDashboardPage() {
             </div>
             <div className="compact-route">
               <div className="compact-route__line"/>
-              {data.route.stops.slice(0, 4).map((stop) => (<div key={stop.id} className={`compact-route__stop compact-route__stop--${stop.status}`}>
+              {compactStops.map((stop) => (<div key={stop.id} className={`compact-route__stop compact-route__stop--${stop.status}`}>
                   <span>{stop.status === "completed" ? "✓" : ""}</span>
                   <small>{stop.name}</small>
                   <time>{stop.eta ?? stop.scheduledTime}</time>
@@ -111,7 +118,7 @@ export function StudentDashboardPage() {
               <strong>{tripActive ? "Traffic update" : "Trip status"}</strong>
               <p>
                 {tripActive
-            ? `Moderate traffic near ${currentStop.name}. ETA already includes the delay.`
+            ? busPassedPickup ? `Bus has passed your pickup stop and is now near ${currentStop.name}.` : `Moderate traffic near ${currentStop.name}. ETA already includes the delay.`
             : "Driver phone GPS will become visible here after the trip is started."}
               </p>
             </div>

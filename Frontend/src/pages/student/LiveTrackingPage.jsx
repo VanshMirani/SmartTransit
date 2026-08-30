@@ -43,6 +43,10 @@ export function LiveTrackingPage() {
         <AssignmentPendingState />
       </>);
     const selectedStop = data.route.stops.find((stop) => stop.id === data.route.selectedStopId) ?? data.route.stops[0];
+    const currentStop = data.route.stops.find((stop) => stop.id === data.route.currentStopId) ??
+        data.route.stops.find((stop) => stop.status === "current") ??
+        selectedStop;
+    const selectedStopEta = selectedStop.status === "completed" ? "Departed" : selectedStop.eta ?? "—";
     const busPosition = data.bus.coordinates ?? selectedStop.coordinates;
     const routePoints = data.route.stops.map((stop) => stop.coordinates);
     const mapCenter = data.route.mapCenter ?? routePoints[0];
@@ -142,7 +146,7 @@ export function LiveTrackingPage() {
           </section>
           <section className="tracking-eta">
             <small>Arriving at your stop</small>
-            <strong>{selectedStop.eta}</strong>
+            <strong>{selectedStopEta}</strong>
             <span>
               <MapPin /> {selectedStop.name}
             </span>
@@ -165,7 +169,7 @@ export function LiveTrackingPage() {
           </div>
           <section className="next-stop-card">
             <span>Next stop</span>
-            <strong>{selectedStop.name}</strong>
+            <strong>{currentStop.name}</strong>
             <p>Approximately 1.2 km away</p>
           </section>
           <p className="privacy-note">

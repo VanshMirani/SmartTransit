@@ -872,12 +872,17 @@ function buildStudentTransitData(data, user) {
     const selectedStopId = route.stops.some((stop) => stop.id === preferredStopId)
         ? preferredStopId
         : route.stops[Math.max(0, route.stops.length - 2)]?.id ?? route.stops[0]?.id;
-    const selectedIndex = Math.max(0, route.stops.findIndex((stop) => stop.id === selectedStopId));
-    const stops = withStopProgress(route, selectedStopId).map((stop, index) => ({
+    const activeTrip = activeTripWithConsistentAssignments(data, data.operations?.activeStaffTrip);
+    const tripNextStopId = activeTrip?.routeCode === route.code ? activeTrip.nextStopId : "";
+    const progressStopId = route.stops.some((stop) => stop.id === tripNextStopId)
+        ? tripNextStopId
+        : selectedStopId;
+    const progressIndex = Math.max(0, route.stops.findIndex((stop) => stop.id === progressStopId));
+    const stops = withStopProgress(route, progressStopId).map((stop, index) => ({
         ...stop,
-        ...(stop.id === selectedStopId
+        ...(stop.id === progressStopId
             ? { eta: "8 min" }
-            : index > selectedIndex
+            : index > progressIndex
                 ? { eta: stop.name === route.destination ? "23 min" : "14 min" }
                 : {}),
     }));
@@ -909,6 +914,7 @@ function buildStudentTransitData(data, user) {
             distance: route.distance,
             scheduledArrival: route.campusArrival ?? data.studentTransitData.route.scheduledArrival,
             selectedStopId,
+            currentStopId: progressStopId,
             mapCenter: route.mapCenter ?? data.studentTransitData.route.mapCenter,
             notes: route.notes,
             stops,

@@ -34,6 +34,7 @@ export const studentTransitData = {
         distance: defaultStudentRoute.distance,
         scheduledArrival: defaultStudentRoute.campusArrival,
         selectedStopId,
+        currentStopId: selectedStopId,
         mapCenter: defaultStudentRoute.mapCenter,
         notes: defaultStudentRoute.notes,
         stops: routeStops,
