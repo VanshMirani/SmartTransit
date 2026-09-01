@@ -225,7 +225,7 @@ function normalizeStudentRecordAssignment(data, record) {
 
 function syncStudentUserAssignment(data, record) {
     const student = data.users.find((item) => item.role === "student" &&
-        (item.id === record.id || normalizeEmail(item.email) === normalizeEmail(record.contact)));
+        (item.id === record.id || cleanEmail(item.email) === cleanEmail(record.contact)));
     if (!student)
         return;
     student.status = record.status ?? student.status ?? "pending";
@@ -427,7 +427,11 @@ function clientKey(request, scope, identifier) {
     const ip = Array.isArray(forwardedFor)
         ? forwardedFor[0]
         : String(forwardedFor ?? request.socket.remoteAddress ?? "unknown").split(",")[0].trim();
-    return `${scope}:${normalizeEmail(String(identifier ?? "")) || ip}`;
+    return `${scope}:${cleanEmail(identifier) || ip}`;
+}
+
+function cleanEmail(value) {
+    return normalizeEmail(String(value ?? ""));
 }
 
 function retryMessage(action, retryAfterSeconds) {
@@ -485,7 +489,7 @@ function syncStaffUser(data, kind, record) {
     if (kind !== "drivers" && kind !== "conductors")
         return { record };
     const role = kind === "drivers" ? "driver" : "conductor";
-    const accountEmail = normalizeEmail(String(record.accountEmail ?? ""));
+    const accountEmail = cleanEmail(record.accountEmail);
     const temporaryPassword = String(record.temporaryPassword ?? "");
     const cleaned = { ...record };
     delete cleaned.temporaryPassword;
@@ -494,7 +498,7 @@ function syncStaffUser(data, kind, record) {
     if (!isInstituteEmail(accountEmail))
         return { error: "Use an Indus University email for staff account access." };
     const passwordError = temporaryPassword ? validatePassword(temporaryPassword) : "";
-    const existing = data.users.find((item) => item.id === cleaned.accountUserId || normalizeEmail(item.email) === accountEmail);
+    const existing = data.users.find((item) => item.id === cleaned.accountUserId || cleanEmail(item.email) === accountEmail);
     if (!existing && !temporaryPassword)
         return { error: "Enter a temporary password when creating a staff login." };
     if (passwordError)
@@ -1163,9 +1167,9 @@ function staffRecordForUser(data, user) {
     const kind = user.role === "driver" ? "drivers" : user.role === "conductor" ? "conductors" : "";
     if (!kind)
         return null;
-    const email = normalizeEmail(user.email);
+    const email = cleanEmail(user.email);
     const records = data.admin?.records?.[kind] ?? [];
-    const linkedRecord = records.find((record) => record.accountUserId === user.id || normalizeEmail(record.accountEmail) === email);
+    const linkedRecord = records.find((record) => record.accountUserId === user.id || cleanEmail(record.accountEmail) === email);
     if (linkedRecord)
         return linkedRecord;
     const staffName = normalizedStaffName(user.name);
