@@ -1,8 +1,35 @@
 import { ArrowDown, ArrowLeft, ArrowUp, BusFront, MapPin, Pencil, Plus, Route, Save, Search, ToggleLeft, ToggleRight, Trash2, UserRound, Users, X, } from "lucide-react";
 import { useMemo, useState } from "react";
 import { CircleMarker, MapContainer, Polyline, Popup, TileLayer, } from "react-leaflet";
+import { useMapEvents } from "react-leaflet";
 import { useAdminData } from "../../admin/AdminDataContext";
 import { AdminFeedback, AdminPageHeading, AdminStatusBadge, } from "../../components/admin/AdminUI";
+const defaultMapCenter = [23.07, 72.54];
+const formatCoordinate = (value) => Number.isFinite(Number(value)) ? String(Math.round(Number(value) * 1000000) / 1000000) : "";
+const coordinatesFromStop = (stop) => {
+    const lat = Number(stop.lat ?? stop.coordinates?.[0]);
+    const lng = Number(stop.lng ?? stop.coordinates?.[1]);
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90)
+        return null;
+    if (!Number.isFinite(lng) || lng < -180 || lng > 180)
+        return null;
+    return [lat, lng];
+};
+const prepareRouteForEdit = (route) => ({
+    ...structuredClone(route),
+    stops: (route.stops ?? []).map((stop) => ({
+        ...stop,
+        lat: formatCoordinate(stop.coordinates?.[0]),
+        lng: formatCoordinate(stop.coordinates?.[1]),
+    })),
+});
+const cleanRouteForSave = (route) => ({
+    ...route,
+    stops: route.stops.map(({ lat, lng, ...stop }) => ({
+        ...stop,
+        coordinates: coordinatesFromStop({ lat, lng, coordinates: stop.coordinates }),
+    })),
+});
 const emptyRoute = () => ({
     id: "",
     code: "",
@@ -27,7 +54,7 @@ export function AdminRoutesPage() {
         .includes(query.toLowerCase())), [routes, query]);
     const selected = routes.find((route) => route.id === selectedId) ?? filtered[0] ?? routes[0];
     const beginEdit = (route) => {
-        setEditing(structuredClone(route));
+        setEditing(prepareRouteForEdit(route));
         setErrors({});
     };
     const save = (event) => {
@@ -50,10 +77,12 @@ export function AdminRoutesPage() {
             next.stops = "Add at least two ordered stops.";
         if (editing.stops.some((stop) => !stop.name.trim() || !stop.scheduledTime.trim()))
             next.stops = "Every stop needs a name and scheduled time.";
+        if (editing.stops.some((stop) => !coordinatesFromStop(stop)))
+            next.stops = "Every stop needs valid latitude and longitude.";
         setErrors(next);
         if (Object.keys(next).length)
             return;
-        const route = { ...editing, id: editing.id || `route-${Date.now()}` };
+        const route = cleanRouteForSave({ ...editing, id: editing.id || `route-${Date.now()}` });
         upsertRoute(route);
         setSelectedId(route.id);
         setEditing(null);
@@ -166,11 +195,33 @@ function RouteEditor({ route, setRoute, errors, records, save, cancel, }) {
         lat: "23.0700",
         lng: "72.5400",
     });
+    const [coordinateTarget, setCoordinateTarget] = useState("new");
     const [stopError, setStopError] = useState("");
+    const validStops = route.stops
+        .map((stop, index) => ({ stop, index, coordinates: coordinatesFromStop(stop) }))
+        .filter((item) => item.coordinates);
+    const draftCoordinates = coordinatesFromStop(newStop);
+    const mapCenter = validStops[0]?.coordinates ?? draftCoordinates ?? defaultMapCenter;
+    const targetStop = route.stops.find((stop) => stop.id === coordinateTarget);
+    const coordinateTargetLabel = coordinateTarget === "new" ? "the new stop" : targetStop?.name || "the selected stop";
     const updateStop = (index, patch) => setRoute({
         ...route,
         stops: route.stops.map((stop, i) => i === index ? { ...stop, ...patch } : stop),
     });
+    const applyMapCoordinate = ({ lat, lng }) => {
+        const coordinatePatch = {
+            lat: formatCoordinate(lat),
+            lng: formatCoordinate(lng),
+        };
+        if (coordinateTarget === "new") {
+            setNewStop((current) => ({ ...current, ...coordinatePatch }));
+            return;
+        }
+        setRoute({
+            ...route,
+            stops: route.stops.map((stop) => stop.id === coordinateTarget ? { ...stop, ...coordinatePatch } : stop),
+        });
+    };
     const move = (index, direction) => {
         const target = index + direction;
         if (target < 0 || target >= route.stops.length)
@@ -180,11 +231,10 @@ function RouteEditor({ route, setRoute, errors, records, save, cancel, }) {
         setRoute({ ...route, stops });
     };
     const addStop = () => {
-        const lat = Number(newStop.lat), lng = Number(newStop.lng);
+        const coordinates = coordinatesFromStop(newStop);
         if (!newStop.name.trim() ||
             !newStop.scheduledTime ||
-            Number.isNaN(lat) ||
-            Number.isNaN(lng)) {
+            !coordinates) {
             setStopError("Enter a stop name, time and valid coordinates.");
             return;
         }
@@ -196,11 +246,14 @@ function RouteEditor({ route, setRoute, errors, records, save, cancel, }) {
                     id: `rs-${Date.now()}`,
                     name: newStop.name,
                     scheduledTime: newStop.scheduledTime,
-                    coordinates: [lat, lng],
+                    coordinates,
+                    lat: newStop.lat,
+                    lng: newStop.lng,
                 },
             ],
         });
         setNewStop({ name: "", scheduledTime: "", lat: "23.0700", lng: "72.5400" });
+        setCoordinateTarget("new");
         setStopError("");
     };
     return (<form onSubmit={save} noValidate>
@@ -289,7 +342,12 @@ function RouteEditor({ route, setRoute, errors, records, save, cancel, }) {
                 <span className="route-stop-order">{index + 1}</span>
                 <input aria-label={`Stop ${index + 1} name`} value={stop.name} onChange={(e) => updateStop(index, { name: e.target.value })}/>
                 <input aria-label={`Stop ${index + 1} time`} value={stop.scheduledTime} onChange={(e) => updateStop(index, { scheduledTime: e.target.value })}/>
+                <input aria-label={`Stop ${index + 1} latitude`} value={stop.lat ?? formatCoordinate(stop.coordinates?.[0])} onChange={(e) => updateStop(index, { lat: e.target.value })} placeholder="Latitude"/>
+                <input aria-label={`Stop ${index + 1} longitude`} value={stop.lng ?? formatCoordinate(stop.coordinates?.[1])} onChange={(e) => updateStop(index, { lng: e.target.value })} placeholder="Longitude"/>
                 <div>
+                  <button type="button" className={coordinateTarget === stop.id ? "route-pick-button route-pick-button--active" : "route-pick-button"} onClick={() => setCoordinateTarget(stop.id)} aria-label={`Pick ${stop.name} coordinates on map`}>
+                    <MapPin />
+                  </button>
                   <button type="button" disabled={index === 0} onClick={() => move(index, -1)} aria-label={`Move ${stop.name} up`}>
                     <ArrowUp />
                   </button>
@@ -310,6 +368,9 @@ function RouteEditor({ route, setRoute, errors, records, save, cancel, }) {
             <input aria-label="New stop time" value={newStop.scheduledTime} onChange={(e) => setNewStop({ ...newStop, scheduledTime: e.target.value })} placeholder="e.g. 7:30 AM"/>
             <input aria-label="New stop latitude" value={newStop.lat} onChange={(e) => setNewStop({ ...newStop, lat: e.target.value })} placeholder="Latitude"/>
             <input aria-label="New stop longitude" value={newStop.lng} onChange={(e) => setNewStop({ ...newStop, lng: e.target.value })} placeholder="Longitude"/>
+            <button type="button" className={coordinateTarget === "new" ? "route-pick-button route-pick-button--active" : "route-pick-button"} onClick={() => setCoordinateTarget("new")}>
+              <MapPin /> Pick
+            </button>
             <button type="button" className="button button--secondary" onClick={addStop}>
               <Plus /> Add stop
             </button>
@@ -320,15 +381,16 @@ function RouteEditor({ route, setRoute, errors, records, save, cancel, }) {
           <div className="admin-panel-title">
             <div>
               <h2>Map preview</h2>
-              <p>Updates with ordered stop coordinates</p>
+              <p>Click the map to set coordinates for {coordinateTargetLabel}</p>
             </div>
           </div>
-          {route.stops.length ? (<MapContainer key={route.stops.map((stop) => stop.id).join()} center={route.stops[0].coordinates} zoom={11} scrollWheelZoom={false} className="admin-route-map">
+          <MapContainer key={`${route.id || "new-route"}-${mapCenter.join(",")}-${validStops.length}`} center={mapCenter} zoom={11} scrollWheelZoom={false} className="admin-route-map">
+              <MapCoordinatePicker onPick={applyMapCoordinate}/>
               <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>
-              <Polyline positions={route.stops.map((stop) => stop.coordinates)} pathOptions={{ color: "#0b948f", weight: 5 }}/>
-              {route.stops.map((stop, index) => (<CircleMarker key={stop.id} center={stop.coordinates} radius={8} pathOptions={{
+              {validStops.length > 1 && <Polyline positions={validStops.map((item) => item.coordinates)} pathOptions={{ color: "#0b948f", weight: 5 }}/>}
+              {validStops.map(({ stop, index, coordinates }) => (<CircleMarker key={stop.id} center={coordinates} radius={8} pathOptions={{
                     color: "#0b948f",
-                    fillColor: index === 0 ? "#ffb547" : "#fff",
+                    fillColor: coordinateTarget === stop.id ? "#ffb547" : index === 0 ? "#0b948f" : "#fff",
                     fillOpacity: 1,
                     weight: 3,
                 }}>
@@ -336,10 +398,13 @@ function RouteEditor({ route, setRoute, errors, records, save, cancel, }) {
                     {index + 1}. {stop.name}
                   </Popup>
                 </CircleMarker>))}
-            </MapContainer>) : (<div className="route-map-empty">
-              <MapPin />
-              <strong>Add stops to preview the route</strong>
-            </div>)}
+              {coordinateTarget === "new" && draftCoordinates && (<CircleMarker center={draftCoordinates} radius={7} pathOptions={{ color: "#ffb547", fillColor: "#ffb547", fillOpacity: 0.85, weight: 3 }}>
+                  <Popup>New stop coordinates</Popup>
+                </CircleMarker>)}
+            </MapContainer>
+          <p className="route-map-picker-hint">
+            Select a stop’s pin button, then click the exact point on the map.
+          </p>
         </section>
       </div>
       <div className="route-editor-actions">
@@ -351,6 +416,14 @@ function RouteEditor({ route, setRoute, errors, records, save, cancel, }) {
         </button>
       </div>
     </form>);
+}
+function MapCoordinatePicker({ onPick }) {
+    useMapEvents({
+        click(event) {
+            onPick(event.latlng);
+        },
+    });
+    return null;
 }
 function RouteField({ label, value, setValue, error, }) {
     return (<label className="admin-form-field">

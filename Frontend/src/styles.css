@@ -8239,7 +8239,7 @@ svg {
 .route-editor-stop-list > div {
   min-height: 55px;
   display: grid;
-  grid-template-columns: 28px 1fr 110px 110px;
+  grid-template-columns: 28px minmax(160px, 1fr) 110px 105px 105px auto;
   align-items: center;
   gap: 7px;
   border-top: 1px solid var(--gray-100);
@@ -8280,6 +8280,34 @@ svg {
   color: var(--gray-500);
   background: transparent;
 }
+.route-editor-stop-list .route-pick-button,
+.route-add-stop .route-pick-button {
+  color: var(--teal-700);
+  border: 1px solid var(--gray-200);
+  background: white;
+  cursor: pointer;
+}
+.route-editor-stop-list .route-pick-button--active,
+.route-add-stop .route-pick-button--active {
+  color: white;
+  border-color: var(--teal-700);
+  background: var(--teal-700);
+}
+.route-add-stop .route-pick-button {
+  min-height: 44px;
+  padding: 0 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border-radius: 8px;
+  font-size: 0.65rem;
+  font-weight: 800;
+}
+.route-add-stop .route-pick-button svg {
+  width: 16px;
+  height: 16px;
+}
 .route-editor-stop-list button:last-child {
   color: #a43a3a;
 }
@@ -8290,7 +8318,7 @@ svg {
   margin-top: 11px;
   padding: 10px;
   display: grid;
-  grid-template-columns: 1.2fr 0.7fr 0.7fr 0.7fr auto;
+  grid-template-columns: minmax(150px, 1.2fr) 105px 105px 105px auto auto;
   gap: 7px;
   border-radius: 9px;
   background: var(--gray-50);
@@ -8316,6 +8344,12 @@ svg {
 .route-map-empty strong {
   margin-top: 10px;
   font-size: 0.7rem;
+}
+.route-map-picker-hint {
+  margin: 9px 0 0;
+  color: var(--gray-500);
+  font-size: 0.64rem;
+  line-height: 1.45;
 }
 .route-editor-actions {
   margin-top: 13px;
@@ -8645,13 +8679,20 @@ svg {
   }
   .route-editor-stop-list > div {
     padding: 8px 0;
-    grid-template-columns: 28px 1fr 85px;
+    grid-template-columns: 28px 1fr;
+  }
+  .route-editor-stop-list input,
+  .route-editor-stop-list > div > div {
+    grid-column: 2;
   }
   .route-editor-stop-list > div > div {
-    grid-column: 2/-1;
+    justify-content: flex-start;
   }
   .route-add-stop {
     grid-template-columns: 1fr 1fr;
+  }
+  .route-add-stop .route-pick-button {
+    width: 100%;
   }
   .route-add-stop .button {
     grid-column: 1/-1;
