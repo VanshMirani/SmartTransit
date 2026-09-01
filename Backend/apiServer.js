@@ -891,6 +891,17 @@ function busNumberForRoute(data, route) {
         "";
 }
 
+function fleetBusMatchesRouteSelection(data, bus, route) {
+    if (!bus || !route)
+        return false;
+    const busNumber = busNumberForRoute(data, route);
+    if (route.busId)
+        return bus.id === route.busId || bus.number === busNumber;
+    if (busNumber)
+        return bus.number === busNumber;
+    return bus.route === route.code;
+}
+
 function busRegistrationForRoute(data, route) {
     const busRecord = busRecordForRoute(data, route);
     const busNumber = busNumberForRoute(data, route);
@@ -934,7 +945,11 @@ function staffAssignmentForRoute(data, route) {
 
 function findFleetBusForRoute(data, route) {
     const busNumber = busNumberForRoute(data, route);
-    return data.admin?.fleetVehicles?.find((bus) => bus.route === route?.code || bus.id === route?.busId || bus.number === busNumber) ?? null;
+    const fleet = data.admin?.fleetVehicles ?? [];
+    return fleet.find((bus) => bus.id === route?.busId) ??
+        fleet.find((bus) => bus.number === busNumber) ??
+        fleet.find((bus) => bus.route === route?.code && fleetBusMatchesRouteSelection(data, bus, route)) ??
+        null;
 }
 
 function buildFleetBusForRoute(data, route) {
@@ -1111,7 +1126,7 @@ function adminDataWithConsistentAssignments(data) {
                 .find((item) => item && (item.busId === bus.id || bus.number === busNumberForRoute(data, item)));
         if (!route)
             fleetById.set(bus.id ?? bus.number, bus);
-        else
+        else if (fleetBusMatchesRouteSelection(data, bus, route))
             fleetById.set(bus.id ?? bus.number, {
             ...bus,
             id: bus.id || busRecordForRoute(data, route)?.id || `bus-${busNumberForRoute(data, route)}`,
@@ -1172,9 +1187,15 @@ function operationsWithLiveLocation(data, sourceOperations = data.operations) {
         ? withStopProgress(route, currentStopId)
         : sourceOperations?.operationalStops;
     const location = sourceOperations?.tripStatus === "active" && trip ? liveLocationMap(data)[trip.id] : null;
+    const allSeatUpdates = data.operations?.seatUpdates ?? [];
+    const currentTripSeatUpdates = trip ? allSeatUpdates.filter((update) => update.tripId === trip.id) : [];
+    const legacySeatUpdates = trip && !trip.startedAt && sourceOperations === data.operations
+        ? allSeatUpdates.filter((update) => !update.tripId)
+        : [];
     return {
         ...data.operations,
         ...sourceOperations,
+        seatUpdates: currentTripSeatUpdates.length ? currentTripSeatUpdates : legacySeatUpdates,
         operationalStops,
         operationalCurrentStopId: currentStopId,
         gpsUpdatedAt: location ? locationAgeLabel(location.updatedAt) : sourceOperations?.gpsUpdatedAt,
@@ -1539,9 +1560,39 @@ function currentSeatCount(data, trip) {
     const fleetBus = fleetBusForRoute(data, route);
     const updates = data.operations?.seatUpdates ?? [];
     const latestTripUpdate = updates.find((update) => update.tripId === trip.id);
-    const legacyUpdate = updates.find((update) => !update.tripId && normalizeTripDirection(trip.direction) === "morning");
+    const canUseLegacyUpdate = !trip.startedAt &&
+        data.operations?.activeStaffTrip?.id === trip.id &&
+        data.operations?.activeStaffTrip?.routeCode === trip.routeCode;
+    const legacyUpdate = canUseLegacyUpdate
+        ? updates.find((update) => !update.tripId && normalizeTripDirection(trip.direction) === "morning")
+        : null;
     const value = Number(latestTripUpdate?.occupiedSeats ?? legacyUpdate?.occupiedSeats ?? fleetBus?.occupancy ?? 0);
-    return Number.isFinite(value) ? value : 0;
+    const occupiedSeats = Number.isFinite(value) ? value : 0;
+    const capacity = Number(trip.capacity ?? fleetBus?.capacity);
+    if (!Number.isFinite(capacity) || capacity <= 0)
+        return Math.max(0, occupiedSeats);
+    return Math.min(capacity, Math.max(0, occupiedSeats));
+}
+
+function resetTripSeatState(data, tripState) {
+    const trip = tripState?.activeStaffTrip;
+    if (!trip)
+        return;
+    const capacity = Number(trip.capacity);
+    const safeCapacity = Number.isFinite(capacity) && capacity > 0 ? capacity : 0;
+    tripState.activeStaffTrip = {
+        ...trip,
+        occupiedSeats: 0,
+        availableSeats: safeCapacity,
+    };
+    if (Array.isArray(data.operations?.seatUpdates)) {
+        data.operations.seatUpdates = data.operations.seatUpdates.filter((update) => update.tripId !== trip.id);
+    }
+    const fleetBus = ensureFleetBusForRoute(data, routeForTrip(data, tripState.activeStaffTrip));
+    if (fleetBus) {
+        fleetBus.occupancy = 0;
+        fleetBus.seatsUpdatedAt = "Awaiting conductor update";
+    }
 }
 
 function updateTripProgressFromSeatUpdate(data, tripId, body) {
@@ -2374,9 +2425,12 @@ export function createApiServer(store, options = {}) {
                         startedAt: new Date().toISOString(),
                         completedAt: undefined,
                     };
+                    resetTripSeatState(db, tripState);
                     saveRouteTripState(db, tripState.activeStaffTrip.routeCode, tripState);
                     const fleetBus = ensureFleetBusForRoute(db, routeForTrip(db, tripState.activeStaffTrip));
                     if (fleetBus) {
+                        fleetBus.occupancy = 0;
+                        fleetBus.seatsUpdatedAt = "Awaiting conductor update";
                         fleetBus.tripActive = true;
                         fleetBus.gpsUpdated = "Waiting for driver phone";
                         fleetBus.direction = normalizeTripDirection(tripState.activeStaffTrip.direction);

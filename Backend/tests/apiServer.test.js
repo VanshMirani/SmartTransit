@@ -357,6 +357,162 @@ test("custom admin route assignments appear correctly for new driver and conduct
     }
 });
 
+test("newly assigned bus starts trips with zero occupied seats even when route had older occupancy", async () => {
+    const app = await startTestServer();
+    try {
+        const loginAs = async (email, password) => {
+            const login = await fetch(`${app.baseUrl}/auth/login`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email, password }),
+            });
+            assert.equal(login.status, 200);
+            return (await json(login)).token;
+        };
+
+        const adminToken = await loginAs("admin@transport.indusuni.ac.in", "Admin@123");
+        const bootstrapResponse = await fetch(`${app.baseUrl}/admin/bootstrap`, {
+            headers: { Authorization: `Bearer ${adminToken}` },
+        });
+        assert.equal(bootstrapResponse.status, 200);
+        const bootstrap = await json(bootstrapResponse);
+        const route = bootstrap.routes.find((item) => item.code === "IU-R1");
+        const oldFleetBus = bootstrap.fleetVehicles.find((item) => item.route === "IU-R1");
+        assert.equal(oldFleetBus.occupancy, 37);
+
+        const bus = {
+            id: "bus-0522",
+            name: "0522",
+            code: "GJ-01-FT-0522",
+            detail: "Faculty demo mini bus",
+            contact: "3 seats",
+            assignment: "Unassigned",
+            status: "active",
+        };
+        const createBus = await fetch(`${app.baseUrl}/admin/buses/${bus.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+            body: JSON.stringify(bus),
+        });
+        assert.equal(createBus.status, 200);
+
+        const issueDriverLogin = await fetch(`${app.baseUrl}/admin/drivers/driver-104`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+            body: JSON.stringify({
+                accountEmail: "nadeem.r1@transport.indusuni.ac.in",
+                temporaryPassword: "Nadeem@123",
+                status: "active",
+            }),
+        });
+        assert.equal(issueDriverLogin.status, 200);
+
+        const issueConductorLogin = await fetch(`${app.baseUrl}/admin/conductors/conductor-104`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+            body: JSON.stringify({
+                accountEmail: "dev.r1@transport.indusuni.ac.in",
+                temporaryPassword: "Devshah@123",
+                status: "active",
+            }),
+        });
+        assert.equal(issueConductorLogin.status, 200);
+
+        const assignRoute = await fetch(`${app.baseUrl}/admin/routes/${route.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+            body: JSON.stringify({
+                ...route,
+                busId: bus.id,
+                primaryBusNumber: bus.name,
+                busNumbers: [bus.name],
+                driverId: "driver-104",
+                conductorId: "conductor-104",
+            }),
+        });
+        assert.equal(assignRoute.status, 200);
+
+        const [driverToken, conductorToken] = await Promise.all([
+            loginAs("nadeem.r1@transport.indusuni.ac.in", "Nadeem@123"),
+            loginAs("dev.r1@transport.indusuni.ac.in", "Devshah@123"),
+        ]);
+
+        const preparedTripResponse = await fetch(`${app.baseUrl}/driver/trips/current`, {
+            headers: { Authorization: `Bearer ${driverToken}` },
+        });
+        assert.equal(preparedTripResponse.status, 200);
+        const preparedTrip = await json(preparedTripResponse);
+        assert.equal(preparedTrip.activeStaffTrip.routeCode, "IU-R1");
+        assert.equal(preparedTrip.activeStaffTrip.busNumber, "0522");
+        assert.equal(preparedTrip.activeStaffTrip.capacity, 3);
+        assert.equal(preparedTrip.activeStaffTrip.occupiedSeats, 0);
+        assert.equal(preparedTrip.activeStaffTrip.availableSeats, 3);
+
+        const startTripResponse = await fetch(`${app.baseUrl}/driver/trips/${preparedTrip.activeStaffTrip.id}/start`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${driverToken}` },
+        });
+        assert.equal(startTripResponse.status, 200);
+        const startedTrip = await json(startTripResponse);
+        assert.equal(startedTrip.tripStatus, "active");
+        assert.equal(startedTrip.activeStaffTrip.busNumber, "0522");
+        assert.equal(startedTrip.activeStaffTrip.capacity, 3);
+        assert.equal(startedTrip.activeStaffTrip.occupiedSeats, 0);
+        assert.equal(startedTrip.activeStaffTrip.availableSeats, 3);
+        assert.equal(startedTrip.seatUpdates.length, 0);
+
+        const conductorTripResponse = await fetch(`${app.baseUrl}/conductor/trips/current`, {
+            headers: { Authorization: `Bearer ${conductorToken}` },
+        });
+        assert.equal(conductorTripResponse.status, 200);
+        const conductorTrip = await json(conductorTripResponse);
+        assert.equal(conductorTrip.activeStaffTrip.busNumber, "0522");
+        assert.equal(conductorTrip.activeStaffTrip.occupiedSeats, 0);
+        assert.equal(conductorTrip.activeStaffTrip.availableSeats, 3);
+
+        const firstStop = conductorTrip.operationalStops.find((stop) => stop.id === conductorTrip.operationalCurrentStopId);
+        const seatUpdateResponse = await fetch(`${app.baseUrl}/conductor/trips/${conductorTrip.activeStaffTrip.id}/seat-updates`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${conductorToken}` },
+            body: JSON.stringify({
+                stopId: firstStop.id,
+                stopName: firstStop.name,
+                boarded: 2,
+                deboarded: 0,
+            }),
+        });
+        assert.equal(seatUpdateResponse.status, 201);
+        const seatUpdate = await json(seatUpdateResponse);
+        assert.equal(seatUpdate.update.occupiedSeats, 2);
+        assert.equal(seatUpdate.update.availableSeats, 1);
+
+        const overCapacityResponse = await fetch(`${app.baseUrl}/conductor/trips/${conductorTrip.activeStaffTrip.id}/seat-updates`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${conductorToken}` },
+            body: JSON.stringify({
+                stopId: seatUpdate.operationalCurrentStopId,
+                boarded: 2,
+                deboarded: 0,
+            }),
+        });
+        assert.equal(overCapacityResponse.status, 400);
+        assert.match((await json(overCapacityResponse)).message, /between 0 and 3/);
+
+        const finalAdminResponse = await fetch(`${app.baseUrl}/admin/bootstrap`, {
+            headers: { Authorization: `Bearer ${adminToken}` },
+        });
+        assert.equal(finalAdminResponse.status, 200);
+        const finalAdmin = await json(finalAdminResponse);
+        const currentFleetBus = finalAdmin.fleetVehicles.find((item) => item.route === "IU-R1");
+        assert.equal(currentFleetBus.number, "0522");
+        assert.equal(currentFleetBus.capacity, 3);
+        assert.equal(currentFleetBus.occupancy, 2);
+    }
+    finally {
+        await app.close();
+    }
+});
+
 test("driver dashboard recovers existing named driver accounts with stale route data", async () => {
     const app = await startTestServer();
     try {

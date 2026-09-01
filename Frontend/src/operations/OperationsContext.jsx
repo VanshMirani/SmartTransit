@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, } from
 import { apiRequest, backendConfig } from "../services/apiClient";
 import { activeStaffTrip as fallbackActiveTrip, buildStaffTripForDirection, operationalCurrentStopId as fallbackCurrentStopId, operationalStops as fallbackStops, preTripItems } from "../services/operationsData";
 import { defaultStaffRoute, routeForTripDirection, withStopProgress } from "../services/indusRoutes";
-import { formatTime, minutesAgo } from "../utils/dateLabels";
+import { formatTime } from "../utils/dateLabels";
 import { calculateSeatUpdate } from "../utils/seatCalculation";
 const DriverContext = createContext(null);
 const driverGpsSendIntervalMs = 10000;
@@ -236,29 +236,8 @@ export function ConductorOperationsProvider({ children, }) {
     const [stops, setStops] = useState(fallbackStops);
     const [tripStatus, setTripStatus] = useState("active");
     const [currentStopId, setCurrentStopId] = useState(fallbackCurrentStopId);
-    const [occupiedSeats, setOccupiedSeats] = useState(30);
-    const [updates, setUpdates] = useState([
-        {
-            id: "SEAT-001",
-            stopId: fallbackStops[1].id,
-            stopName: fallbackStops[1].name,
-            boarded: 12,
-            deboarded: 2,
-            occupiedSeats: 30,
-            availableSeats: 20,
-            timestamp: formatTime(minutesAgo(8)),
-        },
-        {
-            id: "SEAT-000",
-            stopId: fallbackStops[0].id,
-            stopName: fallbackStops[0].name,
-            boarded: 20,
-            deboarded: 0,
-            occupiedSeats: 20,
-            availableSeats: 30,
-            timestamp: formatTime(minutesAgo(21)),
-        },
-    ]);
+    const [occupiedSeats, setOccupiedSeats] = useState(0);
+    const [updates, setUpdates] = useState([]);
     const [emergency, setEmergency] = useState(null);
     useEffect(() => {
         if (!backendConfig.enabled)
