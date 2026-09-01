@@ -206,6 +206,95 @@ test("driver dashboard uses the signed-in driver's assigned route and bus", asyn
     }
 });
 
+test("assigned drivers can start their route when another route is active", async () => {
+    const app = await startTestServer();
+    try {
+        const loginAs = async (email, password) => {
+            const login = await fetch(`${app.baseUrl}/auth/login`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email, password }),
+            });
+            assert.equal(login.status, 200);
+            return await json(login);
+        };
+
+        const adminSession = await loginAs("admin@transport.indusuni.ac.in", "Admin@123");
+        const driverSession = await loginAs("driver@transport.indusuni.ac.in", "Driver@123");
+
+        const defaultTrip = await fetch(`${app.baseUrl}/driver/trips/current`, {
+            headers: { Authorization: `Bearer ${driverSession.token}` },
+        });
+        const defaultTripData = await json(defaultTrip);
+        assert.equal(defaultTripData.activeStaffTrip.routeCode, "IU-R4");
+
+        const defaultStarted = await fetch(`${app.baseUrl}/driver/trips/${defaultTripData.activeStaffTrip.id}/start`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${driverSession.token}` },
+        });
+        assert.equal(defaultStarted.status, 200);
+        assert.equal((await json(defaultStarted)).tripStatus, "active");
+
+        const bootstrap = await fetch(`${app.baseUrl}/admin/bootstrap`, {
+            headers: { Authorization: `Bearer ${adminSession.token}` },
+        });
+        const data = await json(bootstrap);
+        const bhavesh = data.records.drivers.find((record) => record.name === "Bhavesh Rana");
+        assert.ok(bhavesh);
+
+        const enabled = await fetch(`${app.baseUrl}/admin/drivers/${bhavesh.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminSession.token}` },
+            body: JSON.stringify({
+                ...bhavesh,
+                accountEmail: "bhavesh.active@transport.indusuni.ac.in",
+                temporaryPassword: "Bhavesh@123",
+            }),
+        });
+        assert.equal(enabled.status, 200);
+
+        const bhaveshSession = await loginAs("bhavesh.active@transport.indusuni.ac.in", "Bhavesh@123");
+        const bhaveshCurrent = await fetch(`${app.baseUrl}/driver/trips/current`, {
+            headers: { Authorization: `Bearer ${bhaveshSession.token}` },
+        });
+        const bhaveshCurrentData = await json(bhaveshCurrent);
+        assert.equal(bhaveshCurrentData.tripStatus, "not-started");
+        assert.equal(bhaveshCurrentData.activeStaffTrip.routeCode, "IU-R6");
+        assert.equal(bhaveshCurrentData.activeStaffTrip.busNumber, "6999");
+
+        const returnTrip = await fetch(`${app.baseUrl}/driver/trips/current/direction`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${bhaveshSession.token}` },
+            body: JSON.stringify({ direction: "return" }),
+        });
+        assert.equal(returnTrip.status, 200);
+        const returnData = await json(returnTrip);
+        assert.equal(returnData.activeStaffTrip.routeCode, "IU-R6");
+        assert.equal(returnData.activeStaffTrip.direction, "return");
+
+        const bhaveshStarted = await fetch(`${app.baseUrl}/driver/trips/${returnData.activeStaffTrip.id}/start`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${bhaveshSession.token}` },
+        });
+        assert.equal(bhaveshStarted.status, 200);
+        const bhaveshStartedData = await json(bhaveshStarted);
+        assert.equal(bhaveshStartedData.tripStatus, "active");
+        assert.equal(bhaveshStartedData.activeStaffTrip.routeCode, "IU-R6");
+        assert.equal(bhaveshStartedData.activeStaffTrip.busNumber, "6999");
+
+        const defaultStillActive = await fetch(`${app.baseUrl}/driver/trips/current`, {
+            headers: { Authorization: `Bearer ${driverSession.token}` },
+        });
+        const defaultStillActiveData = await json(defaultStillActive);
+        assert.equal(defaultStillActiveData.tripStatus, "active");
+        assert.equal(defaultStillActiveData.activeStaffTrip.routeCode, "IU-R4");
+        assert.equal(defaultStillActiveData.activeStaffTrip.busNumber, "9468");
+    }
+    finally {
+        await app.close();
+    }
+});
+
 test("route stop changes stay aligned across student, staff, and admin dashboards", async () => {
     const app = await startTestServer();
     try {

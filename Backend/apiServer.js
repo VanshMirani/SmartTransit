@@ -525,6 +525,60 @@ function ensureLiveLocations(data) {
     return data.operations.liveLocations;
 }
 
+function ensureRouteTrips(data) {
+    if (!data.operations)
+        data.operations = {};
+    if (!data.operations.routeTrips || typeof data.operations.routeTrips !== "object" || Array.isArray(data.operations.routeTrips))
+        data.operations.routeTrips = {};
+    return data.operations.routeTrips;
+}
+
+function routeTripSnapshot(state) {
+    return {
+        activeStaffTrip: state.activeStaffTrip,
+        operationalStops: state.operationalStops ?? [],
+        operationalCurrentStopId: state.operationalCurrentStopId ?? state.activeStaffTrip?.nextStopId ?? "",
+        tripStatus: state.tripStatus ?? "not-started",
+        gpsUpdatedAt: state.gpsUpdatedAt ?? "Not sharing",
+        activeSeatTripId: state.activeSeatTripId ?? state.activeStaffTrip?.id,
+    };
+}
+
+function routeTripStateForRoute(data, routeCode) {
+    const routeTrips = data.operations?.routeTrips;
+    const routeState = routeTrips && typeof routeTrips === "object" && !Array.isArray(routeTrips)
+        ? routeTrips[routeCode]
+        : null;
+    if (routeState?.activeStaffTrip) {
+        return {
+            ...data.operations,
+            ...routeState,
+        };
+    }
+    if (data.operations?.activeStaffTrip?.routeCode === routeCode)
+        return data.operations;
+    return null;
+}
+
+function routeTripStateForTripId(data, tripId) {
+    if (data.operations?.activeStaffTrip?.id === tripId)
+        return data.operations;
+    const routeTrips = data.operations?.routeTrips;
+    if (!routeTrips || typeof routeTrips !== "object" || Array.isArray(routeTrips))
+        return null;
+    const state = Object.values(routeTrips).find((item) => item?.activeStaffTrip?.id === tripId);
+    return state ? { ...data.operations, ...state } : null;
+}
+
+function saveRouteTripState(data, routeCode, state) {
+    const snapshot = routeTripSnapshot(state);
+    ensureRouteTrips(data)[routeCode] = snapshot;
+    if (!data.operations.activeStaffTrip || data.operations.activeStaffTrip.routeCode === routeCode) {
+        Object.assign(data.operations, snapshot);
+    }
+    return snapshot;
+}
+
 function roundCoordinate(value) {
     return Number(Number(value).toFixed(6));
 }
@@ -720,16 +774,13 @@ function liveLocationForRoute(data, routeCode) {
     return Object.values(liveLocationMap(data)).find((location) => location.routeCode === routeCode) ?? null;
 }
 
-function isDriverTripRoute(data, routeCode) {
-    return data.operations?.activeStaffTrip?.routeCode === routeCode;
-}
-
 function tripIsSharingLocation(data, routeCode) {
-    return isDriverTripRoute(data, routeCode) && data.operations?.tripStatus === "active";
+    return routeTripStateForRoute(data, routeCode)?.tripStatus === "active";
 }
 
 function busWithLiveLocation(data, bus, routeCode) {
-    if (!isDriverTripRoute(data, routeCode)) {
+    const routeState = routeTripStateForRoute(data, routeCode);
+    if (!routeState?.activeStaffTrip) {
         return {
             ...bus,
             gpsStatus: bus.status === "stale-gps" ? "stale" : bus.tripActive ? "live" : "not-sharing",
@@ -737,9 +788,9 @@ function busWithLiveLocation(data, bus, routeCode) {
             etaSource: bus.etaSource ?? "scheduled",
         };
     }
-    const tripActive = tripIsSharingLocation(data, routeCode);
+    const tripActive = routeState.tripStatus === "active";
     const location = tripActive ? liveLocationForRoute(data, routeCode) : null;
-    const trip = data.operations?.activeStaffTrip;
+    const trip = routeState.activeStaffTrip;
     const route = trip ? routeForTrip(data, trip) : routeFromData(data, routeCode);
     const etaContext = buildLiveEtaContext(data, route, trip, location);
     const gpsStatus = tripActive ? liveLocationStatus(location) : "not-sharing";
@@ -932,21 +983,22 @@ function adminDataWithLiveLocations(data) {
     };
 }
 
-function operationsWithLiveLocation(data) {
-    const trip = activeTripWithConsistentAssignments(data, data.operations?.activeStaffTrip);
+function operationsWithLiveLocation(data, sourceOperations = data.operations) {
+    const trip = activeTripWithConsistentAssignments(data, sourceOperations?.activeStaffTrip);
     const route = trip ? routeForTrip(data, trip) : null;
     const currentStopId = route?.stops?.some((stop) => stop.id === trip?.nextStopId)
         ? trip.nextStopId
-        : data.operations?.operationalCurrentStopId;
+        : sourceOperations?.operationalCurrentStopId;
     const operationalStops = route?.stops?.length
         ? withStopProgress(route, currentStopId)
-        : data.operations?.operationalStops;
-    const location = data.operations?.tripStatus === "active" && trip ? liveLocationMap(data)[trip.id] : null;
+        : sourceOperations?.operationalStops;
+    const location = sourceOperations?.tripStatus === "active" && trip ? liveLocationMap(data)[trip.id] : null;
     return {
         ...data.operations,
+        ...sourceOperations,
         operationalStops,
         operationalCurrentStopId: currentStopId,
-        gpsUpdatedAt: location ? locationAgeLabel(location.updatedAt) : data.operations?.gpsUpdatedAt,
+        gpsUpdatedAt: location ? locationAgeLabel(location.updatedAt) : sourceOperations?.gpsUpdatedAt,
         liveLocation: location
             ? {
                 ...location,
@@ -1004,10 +1056,11 @@ function validateLocationPayload(body) {
 }
 
 function validateDriverTripUpdate(data, user, tripId) {
-    const trip = data.operations?.activeStaffTrip;
+    const tripState = routeTripStateForTripId(data, tripId);
+    const trip = tripState?.activeStaffTrip;
     if (!trip || trip.id !== tripId)
         return "Trip not found.";
-    if (data.operations?.tripStatus !== "active")
+    if (tripState.tripStatus !== "active")
         return "Start the trip before sharing phone GPS.";
     if (user.role === "driver" && user.routeCode && user.routeCode !== trip.routeCode)
         return "This trip is not assigned to your account.";
@@ -1015,7 +1068,8 @@ function validateDriverTripUpdate(data, user, tripId) {
 }
 
 function storeDriverLocation(data, user, tripId, locationInput) {
-    const trip = data.operations.activeStaffTrip;
+    const tripState = routeTripStateForTripId(data, tripId);
+    const trip = tripState.activeStaffTrip;
     const updatedAt = new Date().toISOString();
     const location = {
         tripId,
@@ -1030,8 +1084,8 @@ function storeDriverLocation(data, user, tripId, locationInput) {
     ensureLiveLocations(data)[tripId] = location;
     const route = routeForTrip(data, trip);
     const etaContext = buildLiveEtaContext(data, route, trip, location);
-    data.operations.gpsUpdatedAt = updatedAt;
-    data.operations.activeStaffTrip = {
+    tripState.gpsUpdatedAt = updatedAt;
+    tripState.activeStaffTrip = {
         ...trip,
         nextStopId: etaContext.nextStopId || trip.nextStopId,
         nextStopName: etaContext.nextStopName || trip.nextStopName,
@@ -1046,6 +1100,7 @@ function storeDriverLocation(data, user, tripId, locationInput) {
         currentSpeed: location.speedKmh,
         gpsUpdatedAt: updatedAt,
     };
+    saveRouteTripState(data, trip.routeCode, tripState);
     const fleetBus = data.admin?.fleetVehicles?.find((bus) => bus.route === trip.routeCode || bus.number === trip.busNumber);
     if (fleetBus) {
         fleetBus.coordinates = location.coordinates;
@@ -1068,7 +1123,7 @@ function storeDriverLocation(data, user, tripId, locationInput) {
         ok: true,
         location,
         gpsUpdatedAt: locationAgeLabel(updatedAt),
-        activeStaffTrip: data.operations.activeStaffTrip,
+        activeStaffTrip: tripState.activeStaffTrip,
     };
 }
 
@@ -1112,7 +1167,7 @@ function assignedRouteForStaff(data, user) {
 function buildStaffTripForRoute(data, route, direction = "morning", overrides = {}) {
     const normalizedDirection = normalizeTripDirection(direction);
     const directedRoute = routeForTripDirection(route, normalizedDirection);
-    const currentTrip = data.operations?.activeStaffTrip ?? {};
+    const currentTrip = routeTripStateForRoute(data, route.code)?.activeStaffTrip ?? {};
     const fleetBus = fleetBusForRoute(data, route);
     const capacity = fleetBus?.capacity ?? currentTrip.capacity ?? 50;
     const nextStop = overrides.nextStopId
@@ -1157,9 +1212,9 @@ function operationsForAssignedStaff(data, user) {
             seatUpdates: [],
         };
     }
-    const currentTrip = data.operations?.activeStaffTrip;
-    if (currentTrip?.routeCode === assignedRoute.code)
-        return operationsWithLiveLocation(data);
+    const routeState = routeTripStateForRoute(data, assignedRoute.code);
+    if (routeState?.activeStaffTrip)
+        return operationsWithLiveLocation(data, routeState);
     const direction = normalizeTripDirection(fleetBusForRoute(data, assignedRoute)?.direction ?? "morning");
     const trip = buildStaffTripForRoute(data, assignedRoute, direction);
     const directedRoute = routeForTripDirection(assignedRoute, direction);
@@ -1187,28 +1242,30 @@ function prepareAssignedStaffTrip(data, user, tripId) {
     const assignedRoute = assignedRouteForStaff(data, user);
     if (!assignedRoute)
         return "No route is assigned to this staff account.";
-    const currentTrip = data.operations?.activeStaffTrip;
+    const routeState = routeTripStateForRoute(data, assignedRoute.code);
+    const currentTrip = routeState?.activeStaffTrip;
     if (currentTrip?.routeCode === assignedRoute.code)
         return "";
-    if (data.operations?.tripStatus === "active")
-        return "Another route is currently active in this demo session. End that trip before starting this route.";
     const direction = directionFromTripId(tripId, currentTrip?.direction);
     const trip = buildStaffTripForRoute(data, assignedRoute, direction);
     const directedRoute = routeForTripDirection(assignedRoute, direction);
-    data.operations.activeStaffTrip = trip;
-    data.operations.operationalCurrentStopId = trip.nextStopId;
-    data.operations.operationalStops = withStopProgress(directedRoute, trip.nextStopId);
-    data.operations.tripStatus = "not-started";
-    data.operations.gpsUpdatedAt = "Not sharing";
-    data.operations.activeSeatTripId = trip.id;
+    saveRouteTripState(data, assignedRoute.code, {
+        activeStaffTrip: trip,
+        operationalCurrentStopId: trip.nextStopId,
+        operationalStops: withStopProgress(directedRoute, trip.nextStopId),
+        tripStatus: "not-started",
+        gpsUpdatedAt: "Not sharing",
+        activeSeatTripId: trip.id,
+    });
     return "";
 }
 
 function resetTripForDirection(data, requestedDirection, user = null) {
-    const currentTrip = data.operations?.activeStaffTrip;
-    if (data.operations?.tripStatus === "active")
-        return { error: "End the active trip before changing trip direction." };
     const staffRoute = user ? assignedRouteForStaff(data, user) : null;
+    const routeState = staffRoute ? routeTripStateForRoute(data, staffRoute.code) : data.operations;
+    const currentTrip = routeState?.activeStaffTrip;
+    if (routeState?.tripStatus === "active")
+        return { error: "End the active trip before changing trip direction." };
     const baseRoute = staffRoute ?? routeFromData(data, currentTrip?.routeCode);
     if (!currentTrip && !baseRoute)
         return { error: "Trip not found." };
@@ -1219,7 +1276,7 @@ function resetTripForDirection(data, requestedDirection, user = null) {
     const nextStop = direction === "return"
         ? route.stops[0]
         : route.stops.find((stop) => stop.id === currentTrip?.nextStopId) ??
-            route.stops.find((stop) => stop.id === data.operations?.operationalCurrentStopId) ??
+            route.stops.find((stop) => stop.id === routeState?.operationalCurrentStopId) ??
             route.stops[0];
     const fleetBus = data.admin?.fleetVehicles?.find((bus) => bus.route === baseRoute.code || bus.number === baseRoute.primaryBusNumber);
     const capacity = fleetBus?.capacity ?? currentTrip?.capacity ?? 50;
@@ -1245,12 +1302,15 @@ function resetTripForDirection(data, requestedDirection, user = null) {
         startedAt: undefined,
         completedAt: undefined,
     });
-    data.operations.activeStaffTrip = trip;
-    data.operations.operationalCurrentStopId = nextStop.id;
-    data.operations.operationalStops = withStopProgress(route, nextStop.id);
-    data.operations.tripStatus = "not-started";
-    data.operations.gpsUpdatedAt = "Not sharing";
-    data.operations.activeSeatTripId = trip.id;
+    const nextState = {
+        activeStaffTrip: trip,
+        operationalCurrentStopId: nextStop.id,
+        operationalStops: withStopProgress(route, nextStop.id),
+        tripStatus: "not-started",
+        gpsUpdatedAt: "Not sharing",
+        activeSeatTripId: trip.id,
+    };
+    saveRouteTripState(data, baseRoute.code, nextState);
     if (fleetBus) {
         fleetBus.tripActive = false;
         fleetBus.status = "stopped";
@@ -1264,7 +1324,7 @@ function resetTripForDirection(data, requestedDirection, user = null) {
         fleetBus.remainingDistance = trip.remainingDistance;
         fleetBus.direction = direction;
     }
-    return operationsWithLiveLocation(data);
+    return operationsWithLiveLocation(data, nextState);
 }
 
 function currentSeatCount(data, trip) {
@@ -1277,7 +1337,8 @@ function currentSeatCount(data, trip) {
 }
 
 function updateTripProgressFromSeatUpdate(data, tripId, body) {
-    const trip = data.operations?.activeStaffTrip;
+    const tripState = routeTripStateForTripId(data, tripId);
+    const trip = tripState?.activeStaffTrip;
     if (!trip || trip.id !== tripId) {
         return { error: "Trip not found." };
     }
@@ -1297,7 +1358,7 @@ function updateTripProgressFromSeatUpdate(data, tripId, body) {
         return { error: `Seat count must stay between 0 and ${capacity}.` };
     }
     const stop = route.stops.find((item) => item.id === body.stopId) ??
-        route.stops.find((item) => item.id === data.operations?.operationalCurrentStopId) ??
+        route.stops.find((item) => item.id === tripState?.operationalCurrentStopId) ??
         route.stops[0];
     const stopIndex = route.stops.findIndex((item) => item.id === stop.id);
     const nextStop = route.stops[Math.min(stopIndex + 1, route.stops.length - 1)] ?? stop;
@@ -1318,14 +1379,14 @@ function updateTripProgressFromSeatUpdate(data, tripId, body) {
         }).format(new Date()),
     };
     data.operations.seatUpdates.unshift(update);
-    data.operations.operationalCurrentStopId = nextStop.id;
-    data.operations.operationalStops = withStopProgress(route, nextStop.id);
+    tripState.operationalCurrentStopId = nextStop.id;
+    tripState.operationalStops = withStopProgress(route, nextStop.id);
     const etaContext = buildLiveEtaContext(data, route, {
         ...trip,
         nextStopId: nextStop.id,
         nextStopName: nextStop.name,
     });
-    data.operations.activeStaffTrip = {
+    tripState.activeStaffTrip = {
         ...trip,
         nextStopId: nextStop.id,
         nextStopName: nextStop.name,
@@ -1337,6 +1398,7 @@ function updateTripProgressFromSeatUpdate(data, tripId, body) {
             ? etaContext.remainingDistance
             : distanceLabel(etaContext.distanceToNextStopKm),
     };
+    saveRouteTripState(data, trip.routeCode, tripState);
     const fleetBus = data.admin?.fleetVehicles?.find((bus) => bus.route === trip.routeCode || bus.number === trip.busNumber);
     if (fleetBus) {
         fleetBus.occupancy = occupiedSeats;
@@ -1354,9 +1416,9 @@ function updateTripProgressFromSeatUpdate(data, tripId, body) {
     return {
         ...update,
         update,
-        activeStaffTrip: data.operations.activeStaffTrip,
-        operationalStops: data.operations.operationalStops,
-        operationalCurrentStopId: data.operations.operationalCurrentStopId,
+        activeStaffTrip: tripState.activeStaffTrip,
+        operationalStops: tripState.operationalStops,
+        operationalCurrentStopId: tripState.operationalCurrentStopId,
     };
 }
 
@@ -1404,7 +1466,8 @@ function buildStudentTransitData(data, user) {
     const selectedStopId = assignedRoute.stops.some((stop) => stop.id === preferredStopId)
         ? preferredStopId
         : assignedRoute.stops[Math.max(0, assignedRoute.stops.length - 2)]?.id ?? assignedRoute.stops[0]?.id;
-    const activeTrip = activeTripWithConsistentAssignments(data, data.operations?.activeStaffTrip);
+    const routeState = routeTripStateForRoute(data, assignedRoute.code);
+    const activeTrip = activeTripWithConsistentAssignments(data, routeState?.activeStaffTrip);
     const route = activeTrip?.routeCode === assignedRoute.code
         ? routeForTrip(data, activeTrip) ?? assignedRoute
         : assignedRoute;
@@ -2092,24 +2155,26 @@ export function createApiServer(store, options = {}) {
                     const assignmentError = prepareAssignedStaffTrip(db, user, startTripMatch[1]);
                     if (assignmentError)
                         return { error: assignmentError };
-                    if (db.operations.activeStaffTrip.id !== startTripMatch[1])
+                    const tripState = routeTripStateForTripId(db, startTripMatch[1]);
+                    if (!tripState?.activeStaffTrip || tripState.activeStaffTrip.id !== startTripMatch[1])
                         return { error: "Trip not found." };
-                    db.operations.tripStatus = "active";
-                    db.operations.gpsUpdatedAt = "Waiting for driver phone";
-                    db.operations.activeStaffTrip = {
-                        ...db.operations.activeStaffTrip,
+                    tripState.tripStatus = "active";
+                    tripState.gpsUpdatedAt = "Waiting for driver phone";
+                    tripState.activeStaffTrip = {
+                        ...tripState.activeStaffTrip,
                         startedAt: new Date().toISOString(),
                         completedAt: undefined,
                     };
-                    const fleetBus = db.admin?.fleetVehicles?.find((bus) => bus.route === db.operations.activeStaffTrip.routeCode || bus.number === db.operations.activeStaffTrip.busNumber);
+                    saveRouteTripState(db, tripState.activeStaffTrip.routeCode, tripState);
+                    const fleetBus = db.admin?.fleetVehicles?.find((bus) => bus.route === tripState.activeStaffTrip.routeCode || bus.number === tripState.activeStaffTrip.busNumber);
                     if (fleetBus) {
                         fleetBus.tripActive = true;
                         fleetBus.gpsUpdated = "Waiting for driver phone";
-                        fleetBus.direction = normalizeTripDirection(db.operations.activeStaffTrip.direction);
+                        fleetBus.direction = normalizeTripDirection(tripState.activeStaffTrip.direction);
                         if (fleetBus.status === "stopped")
                             fleetBus.status = "stale-gps";
                     }
-                    return db.operations;
+                    return operationsWithLiveLocation(db, tripState);
                 });
                 if (data.error) {
                     badRequest(response, data.error);
@@ -2154,22 +2219,24 @@ export function createApiServer(store, options = {}) {
                 const data = await store.update((db) => {
                     const error = user.role === "driver"
                         ? validateDriverTripUpdate(db, user, endTripId)
-                        : db.operations?.activeStaffTrip?.id === endTripId ? "" : "Trip not found.";
+                        : routeTripStateForTripId(db, endTripId)?.activeStaffTrip?.id === endTripId ? "" : "Trip not found.";
                     if (error)
                         return { error };
-                    db.operations.tripStatus = "completed";
-                    db.operations.gpsUpdatedAt = "Sharing stopped";
-                    db.operations.activeStaffTrip = {
-                        ...db.operations.activeStaffTrip,
+                    const tripState = routeTripStateForTripId(db, endTripId);
+                    tripState.tripStatus = "completed";
+                    tripState.gpsUpdatedAt = "Sharing stopped";
+                    tripState.activeStaffTrip = {
+                        ...tripState.activeStaffTrip,
                         completedAt: new Date().toISOString(),
                     };
-                    const fleetBus = db.admin?.fleetVehicles?.find((bus) => bus.route === db.operations.activeStaffTrip.routeCode || bus.number === db.operations.activeStaffTrip.busNumber);
+                    saveRouteTripState(db, tripState.activeStaffTrip.routeCode, tripState);
+                    const fleetBus = db.admin?.fleetVehicles?.find((bus) => bus.route === tripState.activeStaffTrip.routeCode || bus.number === tripState.activeStaffTrip.busNumber);
                     if (fleetBus) {
                         fleetBus.tripActive = false;
                         fleetBus.gpsUpdated = "Not sharing";
                         fleetBus.status = "stopped";
                     }
-                    return db.operations;
+                    return operationsWithLiveLocation(db, tripState);
                 });
                 if (data.error) {
                     badRequest(response, data.error);
