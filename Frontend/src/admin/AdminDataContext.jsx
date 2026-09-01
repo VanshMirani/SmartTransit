@@ -59,6 +59,8 @@ export function AdminDataProvider({ children }) {
             if (!target)
                 throw new Error('Record not found.');
             const patched = { ...target, status: nextRecordStatus(target.status) };
+            if (kind === 'students' && patched.status === 'active' && (!patched.routeCode || !patched.stopId))
+                throw new Error('Assign a route and pickup stop before approving this student.');
             if (backendConfig.enabled) {
                 const saved = await apiRequest(`/admin/${kind}/${id}/status`, { method: 'PATCH', body: patched });
                 setRecords((current) => ({ ...current, [kind]: current[kind].map((item) => item.id === id ? saved : item) }));

@@ -40,7 +40,7 @@ export function LiveTrackingPage() {
     if (assignmentPending)
         return (<>
         <PageHeading title="Live tracking" description="Live bus tracking will be available after admin assigns your route."/>
-        <AssignmentPendingState />
+        <AssignmentPendingState status={data.approvalStatus}/>
       </>);
     const selectedStop = data.route.stops.find((stop) => stop.id === data.route.selectedStopId) ?? data.route.stops[0];
     const currentStop = data.route.stops.find((stop) => stop.id === data.route.currentStopId) ??

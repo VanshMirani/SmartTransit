@@ -311,3 +311,51 @@ export const withStopProgress = (route, currentStopId) => route.stops.map((stop)
         status: stopIndex < currentIndex ? "completed" : stop.id === currentStopId ? "current" : "upcoming",
     };
 });
+
+export function normalizeTripDirection(direction) {
+    return direction === "return" ? "return" : "morning";
+}
+
+export function tripDirectionLabel(direction) {
+    return normalizeTripDirection(direction) === "return" ? "Return" : "Morning";
+}
+
+function formatScheduleMinutes(totalMinutes) {
+    const normalized = ((totalMinutes % 1440) + 1440) % 1440;
+    const hours24 = Math.floor(normalized / 60);
+    const minutes = normalized % 60;
+    const period = hours24 >= 12 ? "PM" : "AM";
+    const hours12 = hours24 % 12 || 12;
+    return `${hours12}:${String(minutes).padStart(2, "0")} ${period}`;
+}
+
+export function routeStopsForDirection(route, direction = "morning") {
+    if (normalizeTripDirection(direction) !== "return")
+        return route.stops;
+    const returnDepartureMinutes = 16 * 60 + 35;
+    return [...route.stops].reverse().map((stop, index) => ({
+        ...stop,
+        scheduledTime: formatScheduleMinutes(returnDepartureMinutes + index * 5),
+    }));
+}
+
+export function routeForTripDirection(route, direction = "morning") {
+    const normalizedDirection = normalizeTripDirection(direction);
+    if (normalizedDirection !== "return") {
+        return {
+            ...route,
+            direction: "morning",
+            stops: routeStopsForDirection(route, "morning"),
+        };
+    }
+    const stops = routeStopsForDirection(route, "return");
+    return {
+        ...route,
+        direction: "return",
+        name: `${route.destination} - ${route.startPoint}`,
+        startPoint: route.destination,
+        destination: route.startPoint,
+        campusArrival: stops.at(-1)?.scheduledTime ?? route.campusArrival,
+        stops,
+    };
+}

@@ -20,7 +20,7 @@ export function StudentDashboardPage() {
     if (assignmentPending)
         return (<div className="student-dashboard">
       <PageHeading eyebrow={currentDisplayDate()} title={`Good morning, ${user?.name.split(" ")[0] ?? "Student"}`} description="Your student account is waiting for admin approval and route assignment."/>
-      <AssignmentPendingState action={<Link className="button button--secondary" to="/student/help">
+      <AssignmentPendingState status={data.approvalStatus} action={<Link className="button button--secondary" to="/student/help">
             Contact transport support <ArrowRight />
           </Link>}/>
     </div>);

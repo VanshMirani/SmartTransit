@@ -1,5 +1,6 @@
 import { initialComplaints, studentTransitData } from './mockData';
 import { apiRequest, backendConfig } from './apiClient';
+import { relativeTimeLabel } from '../utils/dateLabels';
 const wait = (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 let complaints = [...initialComplaints];
 export const studentService = {
@@ -27,8 +28,8 @@ export const studentService = {
             ...input,
             id: `CMP-${now.getFullYear()}-${String(complaints.length + 443).padStart(4, '0')}`,
             status: 'new',
-            createdAt: 'Just now',
-            updatedAt: 'Just now',
+            createdAt: relativeTimeLabel(now.toISOString()),
+            updatedAt: relativeTimeLabel(now.toISOString()),
         };
         complaints = [complaint, ...complaints];
         return complaint;

@@ -5,6 +5,7 @@ import L from "leaflet";
 import { useAdminData } from "../../admin/AdminDataContext";
 import { AdminModal, AdminPageHeading, AdminStatusBadge, } from "../../components/admin/AdminUI";
 import { indusRoutes } from "../../services/indusRoutes";
+import { minutesAgo, relativeTimeLabel } from "../../utils/dateLabels";
 const liveIcon = (status, selected) => L.divIcon({
     className: `admin-live-marker admin-live-marker--${status} ${selected ? "admin-live-marker--selected" : ""}`,
     html: "<span>BUS</span>",
@@ -31,6 +32,7 @@ export function AdminLiveOperationsPage() {
     const emergencyBus = fleet.find((bus) => bus.status === "stale-gps") ?? fleet[0];
     const emergencyRoute = routes.find((item) => item.code === emergencyBus?.route) ?? fallbackRoute;
     const emergencyLocation = emergencyRoute?.stops?.at(-2)?.name ?? emergencyRoute?.startPoint ?? "the assigned route";
+    const emergencyAge = relativeTimeLabel(minutesAgo(2));
     useEffect(() => {
         refreshData?.();
         const timer = window.setInterval(() => refreshData?.(), 15000);
@@ -57,7 +59,7 @@ export function AdminLiveOperationsPage() {
         <div>
           <strong>Emergency alert: Medical assistance requested</strong>
           <span>
-            Bus {emergencyBus.number} · Route {emergencyBus.route} · Near {emergencyLocation} · Submitted 2 min ago
+            Bus {emergencyBus.number} · Route {emergencyBus.route} · Near {emergencyLocation} · Submitted {emergencyAge}
           </span>
         </div>
         <button onClick={() => setShowEmergency(true)}>View alert</button>
@@ -115,7 +117,7 @@ export function AdminLiveOperationsPage() {
                 </Marker>))}
           </MapContainer>
           <div className="live-map-updated">
-            <i /> Last fleet update: {selected.gpsUpdatedAt ?? selected.gpsUpdated ?? "just now"}
+            <i /> Last fleet update: {selected.gpsUpdatedAt ?? selected.gpsUpdated ?? relativeTimeLabel(new Date().toISOString())}
           </div>
         </section>
         <aside className="live-bus-detail">
@@ -191,7 +193,7 @@ export function AdminLiveOperationsPage() {
           </div>
         </aside>
       </div>
-      {showEmergency && emergencyBus && (<AdminModal title="Medical assistance requested" description="Emergency EMG-2026-118 · Submitted 2 minutes ago" close={() => setShowEmergency(false)} footer={<button className="button admin-primary-button" onClick={() => setShowEmergency(false)}>
+      {showEmergency && emergencyBus && (<AdminModal title="Medical assistance requested" description={`Emergency EMG-2026-118 · Submitted ${emergencyAge}`} close={() => setShowEmergency(false)} footer={<button className="button admin-primary-button" onClick={() => setShowEmergency(false)}>
               Acknowledge alert
             </button>}>
           <dl className="admin-detail-list">

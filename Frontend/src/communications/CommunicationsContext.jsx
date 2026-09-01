@@ -4,17 +4,12 @@ import { useAuth } from "../auth/AuthContext";
 import { initialComplaintCases, initialNotificationCampaigns, initialStudentNotifications, } from "../services/communicationsData";
 import { apiRequest, backendConfig } from "../services/apiClient";
 import { defaultStudentRoute, indusRoutes } from "../services/indusRoutes";
+import { formatShortDateTime, relativeTimeLabel } from "../utils/dateLabels";
 const CommunicationsContext = createContext(null);
 const wait = (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 const totalStudentCount = indusRoutes.reduce((sum, route) => sum + route.studentCount, 0);
 const findRoute = (routeCode) => indusRoutes.find((route) => route.code === routeCode);
 const findRouteFromService = (service) => indusRoutes.find((route) => service.includes(route.code));
-const nowLabel = () => new Intl.DateTimeFormat("en-IN", {
-    day: "numeric",
-    month: "short",
-    hour: "numeric",
-    minute: "2-digit",
-}).format(new Date());
 export function CommunicationsProvider({ children }) {
     const { user } = useAuth();
     const userId = user?.id;
@@ -70,7 +65,7 @@ export function CommunicationsProvider({ children }) {
             const campaign = {
                 ...input,
                 id,
-                createdAt: nowLabel(),
+                createdAt: formatShortDateTime(),
                 status: input.deliveryMode === "scheduled" ? "scheduled" : "delivered",
                 deliveredCount: input.deliveryMode === "scheduled" ? 0 : recipientCount,
                 recipientCount,
@@ -85,7 +80,7 @@ export function CommunicationsProvider({ children }) {
                         type: campaign.type,
                         title: campaign.title,
                         message: campaign.message,
-                        createdAt: "Just now",
+                        createdAt: relativeTimeLabel(new Date().toISOString()),
                         unread: true,
                         routeCode: campaign.routeCode,
                     },
@@ -103,7 +98,7 @@ export function CommunicationsProvider({ children }) {
             }
 
             await wait(650);
-            const label = nowLabel();
+            const label = formatShortDateTime();
             const route = findRouteFromService(input.relatedService);
             const complaint = {
                 ...input,
@@ -139,7 +134,7 @@ export function CommunicationsProvider({ children }) {
             }
 
             await wait(450);
-            const label = nowLabel();
+            const label = formatShortDateTime();
             const current = complaints.find((item) => item.id === input.id);
             if (!current)
                 throw new Error("Complaint not found.");

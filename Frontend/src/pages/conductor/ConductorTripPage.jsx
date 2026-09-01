@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { StaffPageHeading } from '../../components/staff/StaffUI';
 import { useConductorOperations } from '../../operations/OperationsContext';
+import { tripDirectionLabel } from '../../services/indusRoutes';
 export function ConductorTripPage() {
     const { activeTrip, stops, currentStopId, setCurrentStop, occupiedSeats, submitSeatUpdate } = useConductorOperations();
     const [boarded, setBoarded] = useState(0);
@@ -34,7 +35,7 @@ export function ConductorTripPage() {
             setSubmitting(false);
         }
     };
-    return <div><StaffPageHeading eyebrow={`${activeTrip.routeCode} · Active trip`} title="Passenger & seat update" description="Enter counts after the bus stops and boarding is complete." status={<span className="staff-status staff-status--active"><i /> On duty</span>}/>
+    return <div><StaffPageHeading eyebrow={`${activeTrip.routeCode} · ${tripDirectionLabel(activeTrip.direction)} active trip`} title="Passenger & seat update" description="Enter counts after the bus stops and boarding is complete." status={<span className="staff-status staff-status--active"><i /> On duty</span>}/>
     {success && <div className="staff-success-banner" role="status"><CheckCircle2 /><div><strong>Seat update confirmed</strong><span>{success.stopName}: {success.occupiedSeats} occupied, {success.availableSeats} available · {success.timestamp}</span></div><button onClick={() => setSuccess(null)} aria-label="Dismiss confirmation">×</button></div>}
     {error && <div className="counter-error" role="alert"><AlertCircle /> {error}</div>}
     <section className="stop-selector-card"><div><MapPin /><span><small>Current stop</small><strong>{currentStop.name}</strong></span></div><label><span>Select stop</span><div className="select-wrap"><select value={currentStopId} onChange={(event) => { setCurrentStop(event.target.value); setSuccess(null); }}>{stops.map((stop) => <option key={stop.id} value={stop.id}>{stop.name} · {stop.scheduledTime}</option>)}</select><ChevronDown /></div></label></section>

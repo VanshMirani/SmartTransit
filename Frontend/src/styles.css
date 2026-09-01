@@ -4347,6 +4347,47 @@ svg {
   font-size: 0.67rem;
   font-style: normal;
 }
+.trip-direction-control {
+  grid-column: 1 / -1;
+  padding: 0 22px 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--gray-100);
+}
+.trip-direction-control > span {
+  color: var(--gray-500);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+.trip-direction-control > div {
+  padding: 4px;
+  display: inline-flex;
+  gap: 4px;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  background: var(--gray-50);
+}
+.trip-direction-control button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--gray-600);
+  background: transparent;
+  font: 800 0.72rem var(--font-body);
+  cursor: pointer;
+}
+.trip-direction-control button.active {
+  color: white;
+  background: var(--teal-700);
+  box-shadow: 0 6px 16px rgba(11, 148, 143, 0.18);
+}
+.trip-direction-control button:disabled {
+  cursor: progress;
+  opacity: 0.72;
+}
 .staff-home-grid {
   margin-top: 18px;
   display: grid;
@@ -6079,6 +6120,17 @@ svg {
   .staff-assignment-card__route {
     padding: 17px;
   }
+  .trip-direction-control {
+    padding: 0 17px 17px;
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .trip-direction-control > div {
+    width: 100%;
+  }
+  .trip-direction-control button {
+    flex: 1;
+  }
   .staff-home-grid {
     grid-template-columns: 1fr;
   }
@@ -7302,7 +7354,8 @@ svg {
   background: #fff0d1;
 }
 .admin-status--stale-gps,
-.admin-status--new {
+.admin-status--new,
+.admin-status--rejected {
   color: #a33c3c;
   background: #ffebeb;
 }

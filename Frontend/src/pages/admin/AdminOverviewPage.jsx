@@ -6,6 +6,7 @@ import { useAdminData } from "../../admin/AdminDataContext";
 import { AdminPageHeading, AdminStatusBadge, } from "../../components/admin/AdminUI";
 import { useCommunications } from "../../communications/CommunicationsContext";
 import { indusRoutes } from "../../services/indusRoutes";
+import { formatTime, minutesAgo, relativeTimeLabel } from "../../utils/dateLabels";
 const fleetIcon = (status) => L.divIcon({
     className: `admin-fleet-marker admin-fleet-marker--${status}`,
     html: "<span>▣</span>",
@@ -29,9 +30,12 @@ export function AdminOverviewPage() {
     const delayedBus = fleet.find((item) => item.status === "delayed");
     const staleBus = fleet.find((item) => item.status === "stale-gps");
     const stoppedBus = fleet.find((item) => item.status === "stopped");
+    const hour = new Date().getHours();
+    const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+    const lastChangedAt = formatTime(minutesAgo(35));
     return (<div>
-      <AdminPageHeading eyebrow="Operations command center" title="Good morning, Admin Operator" description="Here’s what’s happening across Indus University transport today." actions={<span className="admin-last-updated">
-            <Radio /> Updated just now
+      <AdminPageHeading eyebrow="Operations command center" title={`${greeting}, Admin Operator`} description="Here’s what’s happening across Indus University transport today." actions={<span className="admin-last-updated">
+            <Radio /> Updated {relativeTimeLabel(new Date().toISOString())}
           </span>}/>
       <section className="admin-kpi-grid">
         <article>
@@ -136,7 +140,7 @@ export function AdminOverviewPage() {
             </span>
             <div>
               <strong>{staleBus.number} · Route {staleBus.route}</strong>
-              <p>No GPS update for 12 minutes</p>
+              <p>No GPS update for {staleBus.gpsUpdated}</p>
               <small>Driver: {staleBus.driver}</small>
             </div>
             <AdminStatusBadge status="stale-gps"/>
@@ -148,7 +152,7 @@ export function AdminOverviewPage() {
             <div>
               <strong>Route {stoppedBus.route}</strong>
               <p>Scheduled service inactive today</p>
-              <small>Last changed 9:02 AM</small>
+              <small>Last changed {lastChangedAt}</small>
             </div>
             <AdminStatusBadge status="stopped"/>
           </article>}
@@ -205,7 +209,7 @@ export function AdminOverviewPage() {
             {activity.map((item, index) => (<div key={item}>
                 <span>{index + 1}</span>
                 <p>{item}</p>
-                <time>{index * 4 + 2} min ago</time>
+                <time>{relativeTimeLabel(minutesAgo(index * 4 + 2))}</time>
               </div>))}
           </div>
         </section>

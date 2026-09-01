@@ -80,6 +80,25 @@ function nextRecordStatus(status) {
     return status === "active" ? "inactive" : "active";
 }
 
+function recordStatusLabel(kind, status) {
+    if (kind === "students") {
+        if (status === "active")
+            return "Approved";
+        if (status === "pending")
+            return "Pending";
+        if (status === "rejected")
+            return "Rejected";
+    }
+    return status.replaceAll("-", " ");
+}
+
+function recordStatusAction(kind, status) {
+    if (kind === "students") {
+        return status === "active" ? "Deactivate" : "Approve";
+    }
+    return nextRecordStatus(status) === "inactive" ? "Deactivate" : "Activate";
+}
+
 function assignmentForStudentRoute(routeCode, stopId, routes) {
     if (!routeCode)
         return "Unassigned";
@@ -244,8 +263,11 @@ export function ManagementPage({ kind }) {
             setPage(1);
         }} aria-label={`Filter ${kind} by status`}>
               <option value="all">All statuses</option>
-              <option value="active">Active</option>
-              {kind === "students" && (<option value="pending">Pending approval</option>)}
+              <option value="active">{kind === "students" ? "Approved" : "Active"}</option>
+              {kind === "students" && (<>
+                  <option value="pending">Pending approval</option>
+                  <option value="rejected">Rejected</option>
+                </>)}
               <option value="inactive">Inactive</option>
               {kind === "buses" && (<option value="maintenance">Maintenance</option>)}
             </select>
@@ -279,7 +301,7 @@ export function ManagementPage({ kind }) {
                   <td>{item.contact}</td>
                   <td>{item.assignment}</td>
                   <td>
-                    <AdminStatusBadge status={item.status}/>
+                    <AdminStatusBadge status={item.status} label={recordStatusLabel(kind, item.status)}/>
                   </td>
                   <td>
                     <div className="admin-row-actions">
@@ -292,7 +314,7 @@ export function ManagementPage({ kind }) {
             }} aria-label={`Edit ${item.name}`}>
                         <Pencil />
                       </button>
-                      <button onClick={() => setConfirming(item)} aria-label={`${nextRecordStatus(item.status) === "inactive" ? "Deactivate" : "Activate"} ${item.name}`}>
+                      <button onClick={() => setConfirming(item)} aria-label={`${recordStatusAction(kind, item.status)} ${item.name}`}>
                         {item.status === "active" ? (<ToggleRight />) : (<ToggleLeft />)}
                       </button>
                     </div>
@@ -344,8 +366,11 @@ export function ManagementPage({ kind }) {
                 ...editing,
                 status: e.target.value,
             })}>
-                {kind === "students" && (<option value="pending">Pending approval</option>)}
-                <option value="active">Active</option>
+                {kind === "students" && (<>
+                    <option value="pending">Pending approval</option>
+                    <option value="rejected">Rejected</option>
+                  </>)}
+                <option value="active">{kind === "students" ? "Approved" : "Active"}</option>
                 <option value="inactive">Inactive</option>
                 {kind === "buses" && (<option value="maintenance">Maintenance</option>)}
               </select>
@@ -377,12 +402,12 @@ export function ManagementPage({ kind }) {
             <div>
               <dt>Status</dt>
               <dd>
-                <AdminStatusBadge status={viewing.status}/>
+                <AdminStatusBadge status={viewing.status} label={recordStatusLabel(kind, viewing.status)}/>
               </dd>
             </div>
           </dl>
         </AdminModal>)}
-      {confirming && (<AdminModal title={`${nextRecordStatus(confirming.status) === "inactive" ? "Deactivate" : "Activate"} ${confirming.name}?`} description={`This will change access and availability for this ${config.singular}.`} close={() => setConfirming(null)} footer={<>
+      {confirming && (<AdminModal title={`${recordStatusAction(kind, confirming.status)} ${confirming.name}?`} description={`This will change access and availability for this ${config.singular}.`} close={() => setConfirming(null)} footer={<>
               <button className="button button--secondary" onClick={() => setConfirming(null)}>
                 Cancel
               </button>
@@ -393,7 +418,7 @@ export function ManagementPage({ kind }) {
                         setFeedback({
                             type: "success",
                             title: "Status updated",
-                            message: `${saved.name} is now ${saved.status}.`,
+                            message: `${saved.name} is now ${recordStatusLabel(kind, saved.status)}.`,
                         });
                         setConfirming(null);
                     }

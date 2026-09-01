@@ -12,8 +12,17 @@ const presentationAccountEmails = [
     "student@iite.indusuni.ac.in",
 ];
 
+const defaultStudentStopId = defaultStudentRoute.stops.find((stop) => stop.name === "Shilaj Circle")?.id ?? "";
+
+function timeLabel(minutesAgo = 0) {
+    return new Intl.DateTimeFormat("en-IN", {
+        hour: "numeric",
+        minute: "2-digit",
+    }).format(new Date(Date.now() - minutesAgo * 60 * 1000));
+}
+
 export const demoUsers = [
-    { id: "stu-2023", name: "Aarav Shah", email: "student@iite.indusuni.ac.in", passwordHash: hashPassword("Student@123"), role: "student", status: "active", initials: "AS", enrollment: "IU23CSE2023", routeCode: defaultStudentRoute.code },
+    { id: "stu-2023", name: "Aarav Shah", email: "student@iite.indusuni.ac.in", passwordHash: hashPassword("Student@123"), role: "student", status: "active", initials: "AS", enrollment: "IU23CSE2023", routeCode: defaultStudentRoute.code, stopId: defaultStudentStopId },
     { id: "drv-101", name: "Imran Hussain", email: "driver@transport.indusuni.ac.in", passwordHash: hashPassword("Driver@123"), role: "driver", status: "active", initials: "IH", routeCode: defaultStudentRoute.code },
     { id: "con-101", name: "Rahul Patel", email: "conductor@transport.indusuni.ac.in", passwordHash: hashPassword("Conductor@123"), role: "conductor", status: "active", initials: "RP", routeCode: defaultStudentRoute.code },
     { id: "adm-001", name: "Admin Operator", email: "admin@transport.indusuni.ac.in", passwordHash: hashPassword("Admin@123"), role: "admin", status: "active", initials: "AO" },
@@ -110,7 +119,7 @@ export function createSeedData() {
                     deboarded: 2,
                     occupiedSeats: 30,
                     availableSeats: 20,
-                    timestamp: "8:05 AM",
+                    timestamp: timeLabel(8),
                 },
                 {
                     id: "SEAT-000",
@@ -120,7 +129,7 @@ export function createSeedData() {
                     deboarded: 0,
                     occupiedSeats: 20,
                     availableSeats: 30,
-                    timestamp: "7:51 AM",
+                    timestamp: timeLabel(21),
                 },
             ],
             emergencies: [],

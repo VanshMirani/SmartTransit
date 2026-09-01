@@ -1,4 +1,5 @@
 import { getBusRegistration, indusRoutes } from "./indusRoutes.js";
+import { minutesAgo, relativeTimeLabel } from "../utils/dateLabels.js";
 
 const drivers = [
     ["driver-101", "Imran Hussain", "GJ05-2021-4567", "+91 98765 44330"],
@@ -201,7 +202,7 @@ export const fleetVehicles = indusRoutes.map((route, index) => {
         eta: status === "stopped" ? "--" : `${8 + index} min`,
         occupancy: occupancies[index],
         capacity: capacities[index],
-        gpsUpdated: status === "stale-gps" ? "12 min ago" : status === "stopped" ? "Not sharing" : "Just now",
+        gpsUpdated: status === "stale-gps" ? relativeTimeLabel(minutesAgo(12)) : status === "stopped" ? "Not sharing" : relativeTimeLabel(minutesAgo(0)),
         status,
         tripActive: status !== "stopped",
         coordinates: currentStop.coordinates,

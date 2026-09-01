@@ -1,10 +1,11 @@
 import { Bell, BusFront, Clock3, MapPin, Navigation, Users } from 'lucide-react';
+import { formatTime } from '../utils/dateLabels';
 export function PhonePreview() {
     return (<div className="phone-wrap" aria-label="SmartTransit mobile application preview">
       <div className="route-orbit route-orbit--one"/>
       <div className="route-orbit route-orbit--two"/>
       <div className="phone">
-        <div className="phone__top"><span>9:41</span><span>● ●●</span></div>
+        <div className="phone__top"><span>{formatTime()}</span><span>● ●●</span></div>
         <div className="phone__header"><span className="phone__logo"><BusFront /> SmartTransit</span><Bell /></div>
         <div className="phone__body">
           <p className="eyebrow">Good morning, Aarav</p>

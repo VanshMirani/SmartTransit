@@ -1,4 +1,5 @@
 import { defaultStudentRoute, getRouteServiceLabel, indusRoutes } from "./indusRoutes.js";
+import { formatDateTime, formatShortDateTime, minutesAgo, relativeTimeLabel } from "../utils/dateLabels.js";
 
 const route4 = defaultStudentRoute;
 const selectedStop = route4.stops.find((stop) => stop.name === "Shilaj Circle");
@@ -9,7 +10,7 @@ export const initialStudentNotifications = [
         type: "delay",
         title: `Traffic near ${selectedStop.name}`,
         message: "Your bus may be delayed by approximately 10 minutes.",
-        createdAt: "2 min ago",
+        createdAt: relativeTimeLabel(minutesAgo(2)),
         unread: true,
         routeCode: defaultStudentRoute.code,
     },
@@ -18,7 +19,7 @@ export const initialStudentNotifications = [
         type: "general",
         title: "Transport help desk",
         message: "The campus transport office is available from 8 AM to 5 PM.",
-        createdAt: "18 Aug, 10:30 AM",
+        createdAt: formatShortDateTime(minutesAgo(24 * 60)),
         unread: false,
     },
 ];
@@ -32,7 +33,7 @@ export const initialNotificationCampaigns = [
         audience: "route",
         routeCode: route4.code,
         deliveryMode: "now",
-        createdAt: "Today, 8:02 AM",
+        createdAt: formatShortDateTime(minutesAgo(18)),
         status: "delivered",
         deliveredCount: route4.studentCount,
         recipientCount: route4.studentCount,
@@ -45,8 +46,8 @@ export const initialNotificationCampaigns = [
         message: "Evening buses will depart from the Indus University main gate.",
         audience: "all",
         deliveryMode: "scheduled",
-        scheduledFor: "22 Aug 2026, 4:00 PM",
-        createdAt: "20 Aug, 4:00 PM",
+        scheduledFor: formatDateTime(new Date(Date.now() + 60 * 60 * 1000)),
+        createdAt: formatShortDateTime(minutesAgo(2 * 24 * 60)),
         status: "scheduled",
         deliveredCount: 0,
         recipientCount: indusRoutes.reduce((sum, route) => sum + route.studentCount, 0),

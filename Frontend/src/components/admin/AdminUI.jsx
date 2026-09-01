@@ -8,4 +8,4 @@ export function AdminFeedback({ type, title, message, dismiss }) {
 export function AdminModal({ title, description, children, close, footer }) {
     return <div className="admin-modal-backdrop"><section className="admin-modal" role="dialog" aria-modal="true" aria-labelledby="admin-modal-title"><header><div><h2 id="admin-modal-title">{title}</h2>{description && <p>{description}</p>}</div><button onClick={close} aria-label="Close dialog"><X /></button></header><div className="admin-modal__body">{children}</div>{footer && <footer>{footer}</footer>}</section></div>;
 }
-export function AdminStatusBadge({ status }) { return <span className={`admin-status admin-status--${status.replaceAll(' ', '-')}`}>{status.replaceAll('-', ' ')}</span>; }
+export function AdminStatusBadge({ status, label }) { return <span className={`admin-status admin-status--${status.replaceAll(' ', '-')}`}>{label ?? status.replaceAll('-', ' ')}</span>; }

@@ -4,6 +4,7 @@ import { useAdminData } from "../../admin/AdminDataContext";
 import { useCommunications } from "../../communications/CommunicationsContext";
 import { AdminFeedback, AdminPageHeading, AdminStatusBadge, } from "../../components/admin/AdminUI";
 import { defaultStudentRoute } from "../../services/indusRoutes";
+import { formatTime, relativeTimeLabel } from "../../utils/dateLabels";
 const typeLabels = {
     delay: "Delay",
     "route-change": "Route Change",
@@ -185,7 +186,7 @@ export function AdminNotificationsPage() {
           </div>
           <div className="notification-preview-phone">
             <div className="notification-preview-phone__top">
-              <span>9:41</span>
+              <span>{formatTime()}</span>
               <strong>SmartTransit</strong>
               <span>●●●</span>
             </div>
@@ -197,7 +198,7 @@ export function AdminNotificationsPage() {
                 {form.audience === "all"
             ? "All students"
             : `Route ${form.routeCode}`}{" "}
-                · Just now
+                · {relativeTimeLabel(new Date().toISOString())}
               </small>
             </article>
             <div className="notification-preview-phone__safe">

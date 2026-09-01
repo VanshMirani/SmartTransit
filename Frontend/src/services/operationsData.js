@@ -1,38 +1,48 @@
 import { getRouteStaffAssignment } from "./adminData.js";
-import { defaultStaffRoute, getBusRegistration, withStopProgress } from "./indusRoutes.js";
+import { defaultStaffRoute, getBusRegistration, normalizeTripDirection, routeForTripDirection, tripDirectionLabel, withStopProgress } from "./indusRoutes.js";
 
 export const operationalCurrentStopId = "iu-r4-13";
-export const operationalStops = withStopProgress(defaultStaffRoute, operationalCurrentStopId);
-const currentStop = operationalStops.find((stop) => stop.id === operationalCurrentStopId);
+export const operationalStops = withStopProgress(routeForTripDirection(defaultStaffRoute), operationalCurrentStopId);
 const staffAssignment = getRouteStaffAssignment(defaultStaffRoute.code);
 
-export const activeStaffTrip = {
-    id: "TRIP-2026-0821-IU-R4",
-    routeCode: defaultStaffRoute.code,
-    routeName: defaultStaffRoute.name,
-    busNumber: defaultStaffRoute.primaryBusNumber,
-    registration: getBusRegistration(defaultStaffRoute),
-    capacity: 50,
-    scheduledStart: defaultStaffRoute.stops[0].scheduledTime,
-    scheduledEnd: defaultStaffRoute.campusArrival,
-    distance: defaultStaffRoute.distance,
-    nextStopId: currentStop.id,
-    nextStopName: currentStop.name,
-    nextStopEta: "8 min",
-    remainingDistance: "5.8 km",
-    conductor: {
-        id: staffAssignment.conductor.accountUserId,
-        name: staffAssignment.conductor.name,
-        phone: staffAssignment.conductor.phone,
-        initials: staffAssignment.conductor.name.split(/\s+/).map((part) => part[0]).join(""),
-    },
-    driver: {
-        id: staffAssignment.driver.accountUserId,
-        name: staffAssignment.driver.name,
-        phone: staffAssignment.driver.phone,
-        initials: staffAssignment.driver.name.split(/\s+/).map((part) => part[0]).join(""),
-    },
-};
+export function buildStaffTripForDirection(sourceRoute = defaultStaffRoute, direction = "morning") {
+    const normalizedDirection = normalizeTripDirection(direction);
+    const route = routeForTripDirection(sourceRoute, normalizedDirection);
+    const nextStop = normalizedDirection === "return"
+        ? route.stops[0]
+        : route.stops.find((stop) => stop.id === operationalCurrentStopId) ?? route.stops[0];
+    return {
+        id: normalizedDirection === "return" ? `TRIP-2026-0821-${sourceRoute.code}-PM` : `TRIP-2026-0821-${sourceRoute.code}`,
+        direction: normalizedDirection,
+        directionLabel: tripDirectionLabel(normalizedDirection),
+        routeCode: sourceRoute.code,
+        routeName: route.name,
+        busNumber: sourceRoute.primaryBusNumber,
+        registration: getBusRegistration(sourceRoute),
+        capacity: 50,
+        scheduledStart: route.stops[0]?.scheduledTime ?? sourceRoute.stops[0]?.scheduledTime,
+        scheduledEnd: route.stops.at(-1)?.scheduledTime ?? sourceRoute.campusArrival,
+        distance: sourceRoute.distance,
+        nextStopId: nextStop.id,
+        nextStopName: nextStop.name,
+        nextStopEta: normalizedDirection === "return" ? "Ready to depart" : "8 min",
+        remainingDistance: normalizedDirection === "return" ? "At campus" : "5.8 km",
+        conductor: {
+            id: staffAssignment.conductor.accountUserId,
+            name: staffAssignment.conductor.name,
+            phone: staffAssignment.conductor.phone,
+            initials: staffAssignment.conductor.name.split(/\s+/).map((part) => part[0]).join(""),
+        },
+        driver: {
+            id: staffAssignment.driver.accountUserId,
+            name: staffAssignment.driver.name,
+            phone: staffAssignment.driver.phone,
+            initials: staffAssignment.driver.name.split(/\s+/).map((part) => part[0]).join(""),
+        },
+    };
+}
+
+export const activeStaffTrip = buildStaffTripForDirection(defaultStaffRoute);
 
 export const driverTripHistory = [
     { id: "TRIP-0820-AM", date: "20 Aug 2026", routeCode: defaultStaffRoute.code, routeName: defaultStaffRoute.name, busNumber: defaultStaffRoute.primaryBusNumber, startTime: "7:49 AM", endTime: "8:38 AM", duration: "49m", status: "completed" },

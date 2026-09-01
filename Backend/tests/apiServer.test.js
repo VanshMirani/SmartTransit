@@ -130,6 +130,82 @@ test("route, bus, driver, and conductor assignments match across dashboards", as
     }
 });
 
+test("driver dashboard uses the signed-in driver's assigned route and bus", async () => {
+    const app = await startTestServer();
+    try {
+        const adminLogin = await fetch(`${app.baseUrl}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "admin@transport.indusuni.ac.in", password: "Admin@123" }),
+        });
+        assert.equal(adminLogin.status, 200);
+        const { token: adminToken } = await json(adminLogin);
+
+        const bootstrap = await fetch(`${app.baseUrl}/admin/bootstrap`, {
+            headers: { Authorization: `Bearer ${adminToken}` },
+        });
+        const data = await json(bootstrap);
+        const bhavesh = data.records.drivers.find((record) => record.name === "Bhavesh Rana");
+        assert.ok(bhavesh);
+
+        const enabled = await fetch(`${app.baseUrl}/admin/drivers/${bhavesh.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+            body: JSON.stringify({
+                ...bhavesh,
+                accountEmail: "bhavesh@transport.indusuni.ac.in",
+                temporaryPassword: "Bhavesh@123",
+            }),
+        });
+        assert.equal(enabled.status, 200);
+
+        const login = await fetch(`${app.baseUrl}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "bhavesh@transport.indusuni.ac.in", password: "Bhavesh@123" }),
+        });
+        assert.equal(login.status, 200);
+        const session = await json(login);
+        assert.equal(session.user.role, "driver");
+        assert.equal(session.user.routeCode, "IU-R6");
+
+        const driverTrip = await fetch(`${app.baseUrl}/driver/trips/current`, {
+            headers: { Authorization: `Bearer ${session.token}` },
+        });
+        assert.equal(driverTrip.status, 200);
+        const driverData = await json(driverTrip);
+        assert.equal(driverData.activeStaffTrip.routeCode, "IU-R6");
+        assert.equal(driverData.activeStaffTrip.busNumber, "6999");
+        assert.equal(driverData.activeStaffTrip.registration, "GJ-01-FT-6999");
+        assert.equal(driverData.activeStaffTrip.driver.name, "Bhavesh Rana");
+        assert.notEqual(driverData.activeStaffTrip.busNumber, "9468");
+
+        const returnTrip = await fetch(`${app.baseUrl}/driver/trips/current/direction`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` },
+            body: JSON.stringify({ direction: "return" }),
+        });
+        assert.equal(returnTrip.status, 200);
+        const returnData = await json(returnTrip);
+        assert.equal(returnData.activeStaffTrip.routeCode, "IU-R6");
+        assert.equal(returnData.activeStaffTrip.busNumber, "6999");
+        assert.equal(returnData.activeStaffTrip.direction, "return");
+
+        const started = await fetch(`${app.baseUrl}/driver/trips/${returnData.activeStaffTrip.id}/start`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${session.token}` },
+        });
+        assert.equal(started.status, 200);
+        const startedData = await json(started);
+        assert.equal(startedData.activeStaffTrip.routeCode, "IU-R6");
+        assert.equal(startedData.activeStaffTrip.busNumber, "6999");
+        assert.equal(startedData.tripStatus, "active");
+    }
+    finally {
+        await app.close();
+    }
+});
+
 test("route stop changes stay aligned across student, staff, and admin dashboards", async () => {
     const app = await startTestServer();
     try {
@@ -448,6 +524,113 @@ test("conductor seat update advances shared stop and occupancy", async () => {
     }
 });
 
+test("return trip reverses stops and supports deboarding seat updates", async () => {
+    const app = await startTestServer();
+    try {
+        const loginAs = async (email, password) => {
+            const login = await fetch(`${app.baseUrl}/auth/login`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email, password }),
+            });
+            assert.equal(login.status, 200);
+            return (await json(login)).token;
+        };
+
+        const [driverToken, conductorToken, studentToken, adminToken] = await Promise.all([
+            loginAs("driver@transport.indusuni.ac.in", "Driver@123"),
+            loginAs("conductor@transport.indusuni.ac.in", "Conductor@123"),
+            loginAs("student@iite.indusuni.ac.in", "Student@123"),
+            loginAs("admin@transport.indusuni.ac.in", "Admin@123"),
+        ]);
+
+        const directionResponse = await fetch(`${app.baseUrl}/driver/trips/current/direction`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${driverToken}` },
+            body: JSON.stringify({ direction: "return" }),
+        });
+        assert.equal(directionResponse.status, 200);
+        const returnTrip = await json(directionResponse);
+        const tripId = returnTrip.activeStaffTrip.id;
+        const campusStop = returnTrip.operationalStops[0];
+        const firstDropStop = returnTrip.operationalStops[1];
+        assert.equal(returnTrip.activeStaffTrip.direction, "return");
+        assert.equal(returnTrip.activeStaffTrip.directionLabel, "Return");
+        assert.equal(campusStop.name, "Indus University");
+        assert.equal(firstDropStop.name, "Shilaj Circle");
+        assert.equal(returnTrip.operationalCurrentStopId, campusStop.id);
+
+        const firstUpdate = await fetch(`${app.baseUrl}/conductor/trips/${tripId}/seat-updates`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${conductorToken}` },
+            body: JSON.stringify({
+                stopId: campusStop.id,
+                stopName: campusStop.name,
+                boarded: 35,
+                deboarded: 0,
+            }),
+        });
+        assert.equal(firstUpdate.status, 201);
+        const firstSeatData = await json(firstUpdate);
+        assert.equal(firstSeatData.update.occupiedSeats, 35);
+        assert.equal(firstSeatData.update.availableSeats, 15);
+        assert.equal(firstSeatData.operationalCurrentStopId, firstDropStop.id);
+
+        const secondUpdate = await fetch(`${app.baseUrl}/conductor/trips/${tripId}/seat-updates`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${conductorToken}` },
+            body: JSON.stringify({
+                stopId: firstDropStop.id,
+                stopName: firstDropStop.name,
+                boarded: 0,
+                deboarded: 5,
+            }),
+        });
+        assert.equal(secondUpdate.status, 201);
+        const secondSeatData = await json(secondUpdate);
+        assert.equal(secondSeatData.update.occupiedSeats, 30);
+        assert.equal(secondSeatData.update.availableSeats, 20);
+        assert.equal(secondSeatData.activeStaffTrip.nextStopName, "Zydus Hospital");
+
+        const invalidUpdate = await fetch(`${app.baseUrl}/conductor/trips/${tripId}/seat-updates`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${conductorToken}` },
+            body: JSON.stringify({
+                stopId: secondSeatData.operationalCurrentStopId,
+                boarded: 0,
+                deboarded: 99,
+            }),
+        });
+        assert.equal(invalidUpdate.status, 400);
+        assert.match((await json(invalidUpdate)).message, /between 0 and 50/);
+
+        const studentTransit = await fetch(`${app.baseUrl}/student/transit`, {
+            headers: { Authorization: `Bearer ${studentToken}` },
+        });
+        assert.equal(studentTransit.status, 200);
+        const studentData = await json(studentTransit);
+        assert.equal(studentData.route.direction, "return");
+        assert.equal(studentData.route.startPoint, "Indus University");
+        assert.equal(studentData.route.destination, "Vyaswadi");
+        assert.equal(studentData.route.stops[0].name, "Indus University");
+        assert.equal(studentData.route.currentStopId, secondSeatData.operationalCurrentStopId);
+        assert.equal(studentData.bus.occupiedSeats, 30);
+
+        const adminBootstrap = await fetch(`${app.baseUrl}/admin/bootstrap`, {
+            headers: { Authorization: `Bearer ${adminToken}` },
+        });
+        assert.equal(adminBootstrap.status, 200);
+        const adminData = await json(adminBootstrap);
+        const liveBus = adminData.fleetVehicles.find((bus) => bus.route === "IU-R4");
+        assert.equal(liveBus.occupancy, 30);
+        assert.equal(liveBus.direction, "return");
+        assert.equal(liveBus.nextStopName, "Zydus Hospital");
+    }
+    finally {
+        await app.close();
+    }
+});
+
 test("session endpoint validates saved backend tokens", async () => {
     const app = await startTestServer();
     try {
@@ -707,6 +890,7 @@ test("student signup uses institute email OTP verification", async () => {
         assert.equal(pendingTransit.status, 200);
         const pendingTransitData = await json(pendingTransit);
         assert.equal(pendingTransitData.assignmentStatus, "unassigned");
+        assert.equal(pendingTransitData.approvalStatus, "pending");
         assert.equal(pendingTransitData.route.code, "");
         assert.equal(pendingTransitData.route.stops.length, 0);
 
@@ -746,6 +930,7 @@ test("student signup uses institute email OTP verification", async () => {
         assert.equal(assignedTransit.status, 200);
         const assignedTransitData = await json(assignedTransit);
         assert.equal(assignedTransitData.assignmentStatus, "assigned");
+        assert.equal(assignedTransitData.approvalStatus, "approved");
         assert.equal(assignedTransitData.route.code, "IU-R2");
         assert.equal(assignedTransitData.route.selectedStopId, stop.id);
     }
@@ -810,6 +995,44 @@ test("admin can issue staff accounts and staff can sign in", async () => {
         const staffSession = await json(staffLogin);
         assert.equal(staffSession.user.role, "driver");
         assert.equal(staffSession.user.status, "active");
+    }
+    finally {
+        await app.close();
+    }
+});
+
+test("rejected students are blocked with a clear approval message", async () => {
+    const app = await startTestServer();
+    try {
+        const adminLogin = await fetch(`${app.baseUrl}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "admin@transport.indusuni.ac.in", password: "Admin@123" }),
+        });
+        assert.equal(adminLogin.status, 200);
+        const { token: adminToken } = await json(adminLogin);
+
+        const bootstrap = await fetch(`${app.baseUrl}/admin/bootstrap`, {
+            headers: { Authorization: `Bearer ${adminToken}` },
+        });
+        const data = await json(bootstrap);
+        const student = data.records.students.find((item) => item.contact === "student@iite.indusuni.ac.in");
+
+        const rejected = await fetch(`${app.baseUrl}/admin/students/${student.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+            body: JSON.stringify({ ...student, status: "rejected" }),
+        });
+        assert.equal(rejected.status, 200);
+        assert.equal((await json(rejected)).status, "rejected");
+
+        const login = await fetch(`${app.baseUrl}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "student@iite.indusuni.ac.in", password: "Student@123" }),
+        });
+        assert.equal(login.status, 403);
+        assert.equal((await json(login)).message, "Your account has been rejected. Please contact transport admin.");
     }
     finally {
         await app.close();

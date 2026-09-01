@@ -107,6 +107,10 @@ SMARTTRANSIT_MONGODB_DB=smarttransit
 
 When MongoDB is enabled, accounts, OTP records, sessions, complaints, notifications and transport-operation changes are stored in MongoDB. The backend seeds the initial Indus University data automatically when the database is empty.
 
+## Demo Login Credentials
+
+Faculty demonstration credentials are stored in [docs/LOGIN_CREDENTIALS.txt](./docs/LOGIN_CREDENTIALS.txt). They are for presentation testing only and should not be used in production.
+
 ## Seeded staff accounts
 
 | Role             | Email                      | Password        | Landing route |

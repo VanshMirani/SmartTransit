@@ -1,4 +1,5 @@
 import { defaultStudentRoute, getBusRegistration, getRouteServiceLabel, withStopProgress } from "./indusRoutes.js";
+import { formatShortDateTime, minutesAgo, relativeTimeLabel } from "../utils/dateLabels.js";
 
 const selectedStopId = "iu-r4-13";
 const routeStops = withStopProgress(defaultStudentRoute, selectedStopId).map((stop) => ({
@@ -21,8 +22,8 @@ export const studentTransitData = {
         occupiedSeats: 33,
         status: "on-time",
         speed: 32,
-        gpsUpdatedAt: "Just now",
-        seatsUpdatedAt: "2 minutes ago",
+        gpsUpdatedAt: relativeTimeLabel(minutesAgo(0)),
+        seatsUpdatedAt: relativeTimeLabel(minutesAgo(2)),
         coordinates: [23.056, 72.476],
     },
     route: {
@@ -40,10 +41,10 @@ export const studentTransitData = {
         stops: routeStops,
     },
     notifications: [
-        { id: "notif-1", type: "delay", title: `Traffic near ${selectedStop.name}`, message: "Your bus may be delayed by approximately 10 minutes.", createdAt: "2 min ago", unread: true },
-        { id: "notif-2", type: "route-change", title: `Route ${defaultStudentRoute.code} pickup note`, message: `${selectedStop.name} pickup is operating from the regular marked point today.`, createdAt: "Yesterday, 7:00 PM", unread: true },
-        { id: "notif-3", type: "general", title: "Transport help desk", message: "The campus transport office is available from 8 AM to 5 PM.", createdAt: "18 Aug, 10:30 AM", unread: false },
-        { id: "notif-4", type: "cancellation", title: "Evening return reminder", message: "Evening buses will depart from the Indus University main gate.", createdAt: "16 Aug, 4:15 PM", unread: false },
+        { id: "notif-1", type: "delay", title: `Traffic near ${selectedStop.name}`, message: "Your bus may be delayed by approximately 10 minutes.", createdAt: relativeTimeLabel(minutesAgo(2)), unread: true },
+        { id: "notif-2", type: "route-change", title: `Route ${defaultStudentRoute.code} pickup note`, message: `${selectedStop.name} pickup is operating from the regular marked point today.`, createdAt: formatShortDateTime(minutesAgo(24 * 60)), unread: true },
+        { id: "notif-3", type: "general", title: "Transport help desk", message: "The campus transport office is available from 8 AM to 5 PM.", createdAt: formatShortDateTime(minutesAgo(3 * 24 * 60)), unread: false },
+        { id: "notif-4", type: "cancellation", title: "Evening return reminder", message: "Evening buses will depart from the Indus University main gate.", createdAt: formatShortDateTime(minutesAgo(5 * 24 * 60)), unread: false },
     ],
 };
 

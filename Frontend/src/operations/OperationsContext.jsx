@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, } from "react";
 import { apiRequest, backendConfig } from "../services/apiClient";
-import { activeStaffTrip as fallbackActiveTrip, operationalCurrentStopId as fallbackCurrentStopId, operationalStops as fallbackStops } from "../services/operationsData";
+import { activeStaffTrip as fallbackActiveTrip, buildStaffTripForDirection, operationalCurrentStopId as fallbackCurrentStopId, operationalStops as fallbackStops, preTripItems } from "../services/operationsData";
+import { defaultStaffRoute, routeForTripDirection, withStopProgress } from "../services/indusRoutes";
+import { formatTime, minutesAgo } from "../utils/dateLabels";
 import { calculateSeatUpdate } from "../utils/seatCalculation";
 const DriverContext = createContext(null);
 const driverGpsSendIntervalMs = 10000;
@@ -58,6 +60,7 @@ export function DriverOperationsProvider({ children, }) {
             setActiveTrip(data.activeStaffTrip ?? fallbackActiveTrip);
             setStops(data.operationalStops ?? fallbackStops);
             setTripStatus(data.tripStatus ?? "not-started");
+            setChecklist(data.tripStatus === "active" ? preTripItems.map((item) => item.id) : []);
             setGpsUpdatedAt(data.gpsUpdatedAt ?? "Not sharing");
             setLastGpsLocation(data.liveLocation ?? null);
             setEmergency(data.emergencies?.[0] ?? null);
@@ -103,7 +106,7 @@ export function DriverOperationsProvider({ children, }) {
                     return;
                 setGpsSharingStatus("sharing");
                 setGpsError("");
-                setGpsUpdatedAt(payload.gpsUpdatedAt ?? "Just now");
+                setGpsUpdatedAt(payload.gpsUpdatedAt ?? formatTime());
                 if (payload.activeStaffTrip)
                     setActiveTrip(payload.activeStaffTrip);
             })
@@ -146,11 +149,38 @@ export function DriverOperationsProvider({ children, }) {
                 const data = await apiRequest(`/driver/trips/${activeTrip.id}/start`, { method: "POST" });
                 setActiveTrip(data.activeStaffTrip ?? activeTrip);
                 setTripStatus(data.tripStatus ?? "active");
+                setChecklist(preTripItems.map((item) => item.id));
                 setGpsUpdatedAt(data.gpsUpdatedAt ?? "Waiting for driver phone");
                 return;
             }
             setTripStatus("active");
-            setGpsUpdatedAt("Just now");
+            setChecklist(preTripItems.map((item) => item.id));
+            setGpsUpdatedAt(formatTime());
+        },
+        setTripDirection: async (direction) => {
+            if (tripStatus === "active")
+                throw new Error("End the active trip before changing trip direction.");
+            if (backendConfig.enabled) {
+                const data = await apiRequest("/driver/trips/current/direction", {
+                    method: "POST",
+                    body: { direction },
+                });
+                setActiveTrip(data.activeStaffTrip ?? activeTrip);
+                setStops(data.operationalStops ?? stops);
+                setTripStatus(data.tripStatus ?? "not-started");
+                setGpsUpdatedAt(data.gpsUpdatedAt ?? "Not sharing");
+                setLastGpsLocation(data.liveLocation ?? null);
+                return data.activeStaffTrip;
+            }
+            const nextTrip = buildStaffTripForDirection(undefined, direction);
+            const nextRoute = routeForTripDirection(defaultStaffRoute, direction);
+            setActiveTrip(nextTrip);
+            setStops(withStopProgress(nextRoute, nextTrip.nextStopId));
+            setTripStatus("not-started");
+            setChecklist([]);
+            setGpsUpdatedAt("Not sharing");
+            setLastGpsLocation(null);
+            return nextTrip;
         },
         endTrip: async () => {
             if (backendConfig.enabled) {
@@ -173,7 +203,7 @@ export function DriverOperationsProvider({ children, }) {
                 note,
                 location: liveCoordinates ? "Driver phone GPS location" : `Near ${activeTrip.nextStopName}, Ahmedabad`,
                 coordinates: liveCoordinates ?? stops.find((stop) => stop.id === activeTrip.nextStopId)?.coordinates,
-                submittedAt: "Just now",
+                submittedAt: formatTime(),
             };
             setEmergency(report);
             syncBackend("/staff/emergencies", { method: "POST", body: report });
@@ -205,7 +235,7 @@ export function ConductorOperationsProvider({ children, }) {
             deboarded: 2,
             occupiedSeats: 30,
             availableSeats: 20,
-            timestamp: "7:44 AM",
+            timestamp: formatTime(minutesAgo(8)),
         },
         {
             id: "SEAT-000",
@@ -215,7 +245,7 @@ export function ConductorOperationsProvider({ children, }) {
             deboarded: 0,
             occupiedSeats: 20,
             availableSeats: 30,
-            timestamp: "7:31 AM",
+            timestamp: formatTime(minutesAgo(21)),
         },
     ]);
     const [emergency, setEmergency] = useState(null);
@@ -227,14 +257,19 @@ export function ConductorOperationsProvider({ children, }) {
             .then((data) => {
             if (cancelled)
                 return;
-            const seatUpdates = data.seatUpdates ?? [];
-            setActiveTrip(data.activeStaffTrip ?? fallbackActiveTrip);
+            const trip = data.activeStaffTrip ?? fallbackActiveTrip;
+            const seatUpdates = (data.seatUpdates ?? []).filter((update) => update.tripId ? update.tripId === trip.id : trip.direction !== "return");
+            setActiveTrip(trip);
             setStops(data.operationalStops ?? fallbackStops);
             setTripStatus(data.tripStatus ?? "active");
             setCurrentStopId(data.operationalCurrentStopId ?? fallbackCurrentStopId);
             if (seatUpdates.length) {
                 setUpdates(seatUpdates);
                 setOccupiedSeats(seatUpdates[0].occupiedSeats ?? 30);
+            }
+            else if (trip.direction === "return") {
+                setUpdates([]);
+                setOccupiedSeats(0);
             }
             setEmergency(data.emergencies?.[0] ?? null);
         })
@@ -252,7 +287,7 @@ export function ConductorOperationsProvider({ children, }) {
         updates,
         emergency,
         startTrip: () => setTripStatus("active"),
-        setCurrentStop: setCurrentStopId,
+            setCurrentStop: setCurrentStopId,
         submitSeatUpdate: async (boarded, deboarded) => {
             await new Promise((resolve) => window.setTimeout(resolve, 550));
             const calculation = calculateSeatUpdate(occupiedSeats, boarded, deboarded, activeTrip.capacity);
@@ -264,10 +299,7 @@ export function ConductorOperationsProvider({ children, }) {
                 boarded,
                 deboarded,
                 ...calculation,
-                timestamp: new Date().toLocaleTimeString([], {
-                    hour: "numeric",
-                    minute: "2-digit",
-                }),
+                timestamp: formatTime(),
             };
             const update = backendConfig.enabled
                 ? await apiRequest(`/conductor/trips/${activeTrip.id}/seat-updates`, { method: "POST", body: updatePayload })
@@ -290,7 +322,7 @@ export function ConductorOperationsProvider({ children, }) {
                 note,
                 location: `Near ${activeTrip.nextStopName}, Ahmedabad`,
                 coordinates: stops.find((stop) => stop.id === activeTrip.nextStopId)?.coordinates,
-                submittedAt: "Just now",
+                submittedAt: formatTime(),
             };
             setEmergency(report);
             syncBackend("/staff/emergencies", { method: "POST", body: report });

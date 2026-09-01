@@ -31,17 +31,33 @@ export function ErrorState({ message, retry, }) {
     </section>);
 }
 
-export function AssignmentPendingState({ action, }) {
+function assignmentStatusCopy(status) {
+    if (status === "approved") {
+        return {
+            title: "Your account has been approved.",
+            message: "Your route and pickup stop still need to be assigned by the transport admin before commute details appear.",
+        };
+    }
+    if (status === "rejected") {
+        return {
+            title: "Your account has been rejected.",
+            message: "Please contact transport admin for help with your student transport access.",
+        };
+    }
+    return {
+        title: "Your account is pending admin approval.",
+        message: "Your student account has been created. The transport admin will verify it, assign your route, bus and pickup stop, then activate full commute access.",
+    };
+}
+
+export function AssignmentPendingState({ action, status = "pending", }) {
+    const copy = assignmentStatusCopy(status);
     return (<section className="state-card state-card--large" role="status">
       <span className="state-card__icon">
         <BusFront />
       </span>
-      <h2>Admin approval pending</h2>
-      <p>
-        Your student account has been created. The transport admin will verify
-        it, assign your route, bus and pickup stop, then activate full commute
-        access.
-      </p>
+      <h2>{copy.title}</h2>
+      <p>{copy.message}</p>
       {action}
     </section>);
 }

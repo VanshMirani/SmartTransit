@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { ApiError } from '../services/apiClient';
 import { studentService } from '../services/studentService';
 export function useStudentData({ pollIntervalMs = 0 } = {}) {
     const [data, setData] = useState(null);
@@ -8,7 +9,9 @@ export function useStudentData({ pollIntervalMs = 0 } = {}) {
         if (!silent)
             setLoading(true);
         setError('');
-        studentService.getTransitData().then(setData).catch(() => setError('We couldn’t load your transit details.')).finally(() => {
+        studentService.getTransitData().then(setData).catch((reason) => {
+            setError(reason instanceof ApiError ? reason.message : 'We couldn’t load your transit details.');
+        }).finally(() => {
             if (!silent)
                 setLoading(false);
         });
