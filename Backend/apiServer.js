@@ -1097,9 +1097,6 @@ function staffRecordForUser(data, user) {
 function assignedRouteForStaff(data, user) {
     if (!user || (user.role !== "driver" && user.role !== "conductor"))
         return null;
-    const directRoute = routeForUser(data, user);
-    if (directRoute)
-        return directRoute;
     const record = staffRecordForUser(data, user);
     const assignedRouteCode = routeCodeFromAssignment(record?.assignment);
     if (assignedRouteCode)
@@ -1107,7 +1104,9 @@ function assignedRouteForStaff(data, user) {
     const staticRoute = user.role === "driver"
         ? routeForDriverRecord(record?.id)
         : routeForConductorRecord(record?.id);
-    return staticRoute ? routeFromData(data, staticRoute.code) : null;
+    if (staticRoute)
+        return routeFromData(data, staticRoute.code);
+    return routeForUser(data, user);
 }
 
 function buildStaffTripForRoute(data, route, direction = "morning", overrides = {}) {
