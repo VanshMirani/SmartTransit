@@ -208,6 +208,152 @@ test("driver dashboard uses the signed-in driver's assigned route and bus", asyn
     }
 });
 
+test("custom admin route assignments appear correctly for new driver and conductor accounts", async () => {
+    const app = await startTestServer();
+    try {
+        const adminLogin = await fetch(`${app.baseUrl}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "admin@transport.indusuni.ac.in", password: "Admin@123" }),
+        });
+        assert.equal(adminLogin.status, 200);
+        const { token: adminToken } = await json(adminLogin);
+
+        const bus = {
+            id: "bus-7711",
+            name: "7711",
+            code: "GJ-01-FT-7711",
+            detail: "Tata Starbus",
+            contact: "46 seats",
+            assignment: "Unassigned",
+            status: "active",
+        };
+        const driver = {
+            id: "driver-mahipal",
+            name: "Mahipal Solanki",
+            code: "DRV-909",
+            detail: "Licence GJ01-2026-9090",
+            contact: "+91 90000 09090",
+            assignment: "Unassigned",
+            accountEmail: "mahipal@transport.indusuni.ac.in",
+            temporaryPassword: "Mahipal@123",
+            status: "active",
+        };
+        const conductor = {
+            id: "conductor-vraj",
+            name: "Vraj Patel",
+            code: "CON-909",
+            detail: "Morning and evening shift",
+            contact: "+91 90000 08080",
+            assignment: "Unassigned",
+            accountEmail: "vraj@transport.indusuni.ac.in",
+            temporaryPassword: "Vraj@123",
+            status: "active",
+        };
+        const route = {
+            id: "route-iu-r9",
+            code: "IU-R9",
+            name: "Gota - Indus University",
+            startPoint: "Gota Cross Road",
+            destination: "Indus University",
+            campusArrival: "8:45 AM",
+            distance: "21.4 km",
+            mapCenter: [23.095, 72.525],
+            notes: "Faculty demo route.",
+            status: "active",
+            busId: bus.id,
+            driverId: driver.id,
+            conductorId: conductor.id,
+            stops: [
+                { id: "iu-r9-01", name: "Gota Cross Road", scheduledTime: "7:40 AM", coordinates: [23.1019, 72.5494] },
+                { id: "iu-r9-02", name: "Sola Bridge", scheduledTime: "7:55 AM", coordinates: [23.0755, 72.5265] },
+                { id: "iu-r9-03", name: "Indus University", scheduledTime: "8:45 AM", coordinates: [23.0652, 72.4402] },
+            ],
+        };
+
+        for (const [kind, record] of [
+            ["buses", bus],
+            ["drivers", driver],
+            ["conductors", conductor],
+        ]) {
+            const response = await fetch(`${app.baseUrl}/admin/${kind}/${record.id}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+                body: JSON.stringify(record),
+            });
+            assert.equal(response.status, 200);
+        }
+
+        const routeResponse = await fetch(`${app.baseUrl}/admin/routes/${route.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+            body: JSON.stringify(route),
+        });
+        assert.equal(routeResponse.status, 200);
+
+        const loginAs = async (email, password) => {
+            const login = await fetch(`${app.baseUrl}/auth/login`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email, password }),
+            });
+            assert.equal(login.status, 200);
+            return (await json(login)).token;
+        };
+        const [driverToken, conductorToken] = await Promise.all([
+            loginAs(driver.accountEmail, driver.temporaryPassword),
+            loginAs(conductor.accountEmail, conductor.temporaryPassword),
+        ]);
+
+        const [driverTrip, conductorTrip, adminBootstrap] = await Promise.all([
+            fetch(`${app.baseUrl}/driver/trips/current`, {
+                headers: { Authorization: `Bearer ${driverToken}` },
+            }),
+            fetch(`${app.baseUrl}/conductor/trips/current`, {
+                headers: { Authorization: `Bearer ${conductorToken}` },
+            }),
+            fetch(`${app.baseUrl}/admin/bootstrap`, {
+                headers: { Authorization: `Bearer ${adminToken}` },
+            }),
+        ]);
+        assert.equal(driverTrip.status, 200);
+        assert.equal(conductorTrip.status, 200);
+        assert.equal(adminBootstrap.status, 200);
+        const driverData = await json(driverTrip);
+        const conductorData = await json(conductorTrip);
+        const admin = await json(adminBootstrap);
+
+        for (const dashboard of [driverData, conductorData]) {
+            assert.equal(dashboard.activeStaffTrip.routeCode, "IU-R9");
+            assert.equal(dashboard.activeStaffTrip.routeName, "Gota - Indus University");
+            assert.equal(dashboard.activeStaffTrip.busNumber, "7711");
+            assert.equal(dashboard.activeStaffTrip.registration, "GJ-01-FT-7711");
+            assert.equal(dashboard.activeStaffTrip.capacity, 46);
+            assert.equal(dashboard.activeStaffTrip.driver.name, "Mahipal Solanki");
+            assert.equal(dashboard.activeStaffTrip.driver.phone, "+91 90000 09090");
+            assert.equal(dashboard.activeStaffTrip.conductor.name, "Vraj Patel");
+            assert.equal(dashboard.activeStaffTrip.conductor.phone, "+91 90000 08080");
+        }
+
+        const adminRoute = admin.routes.find((item) => item.code === "IU-R9");
+        const adminBus = admin.records.buses.find((item) => item.id === bus.id);
+        const adminDriver = admin.records.drivers.find((item) => item.id === driver.id);
+        const adminConductor = admin.records.conductors.find((item) => item.id === conductor.id);
+        const adminFleetBus = admin.fleetVehicles.find((item) => item.route === "IU-R9");
+
+        assert.equal(adminRoute.primaryBusNumber, "7711");
+        assert.equal(adminBus.assignment, "IU-R9 - Mahipal Solanki");
+        assert.equal(adminDriver.assignment, "7711 - IU-R9");
+        assert.equal(adminConductor.assignment, "7711 - IU-R9");
+        assert.equal(adminFleetBus.number, "7711");
+        assert.equal(adminFleetBus.driver, "Mahipal Solanki");
+        assert.equal(adminFleetBus.capacity, 46);
+    }
+    finally {
+        await app.close();
+    }
+});
+
 test("driver dashboard recovers existing named driver accounts with stale route data", async () => {
     const app = await startTestServer();
     try {

@@ -147,8 +147,12 @@ function routeValue(value, fallback) {
 
 function routeFromData(data, routeCode) {
     const normalizedRouteCode = String(routeCode ?? "").trim().toUpperCase();
-    const managedRoute = data.admin?.routes?.find((route) => route.code === normalizedRouteCode);
+    const managedRoute = data.admin?.routes?.find((route) => String(route.code ?? "").toUpperCase() === normalizedRouteCode);
     const routeTemplate = indusRoutes.find((route) => route.code === normalizedRouteCode);
+    const assignedBus = managedRoute?.busId
+        ? data.admin?.records?.buses?.find((bus) => bus.id === managedRoute.busId)
+        : null;
+    const assignedBusNumber = assignedBus?.name;
     if (managedRoute && routeTemplate) {
         return {
             ...routeTemplate,
@@ -156,8 +160,8 @@ function routeFromData(data, routeCode) {
             id: routeValue(managedRoute.id, routeTemplate.id),
             code: routeValue(managedRoute.code, routeTemplate.code),
             name: routeValue(managedRoute.name, routeTemplate.name),
-            busNumbers: managedRoute.busNumbers?.length ? managedRoute.busNumbers : routeTemplate.busNumbers,
-            primaryBusNumber: routeValue(managedRoute.primaryBusNumber, routeTemplate.primaryBusNumber),
+            busNumbers: managedRoute.busNumbers?.length ? managedRoute.busNumbers : assignedBusNumber ? [assignedBusNumber] : routeTemplate.busNumbers,
+            primaryBusNumber: routeValue(managedRoute.primaryBusNumber, assignedBusNumber ?? routeTemplate.primaryBusNumber),
             startPoint: routeValue(managedRoute.startPoint, routeTemplate.startPoint),
             destination: routeValue(managedRoute.destination, routeTemplate.destination),
             campusArrival: routeValue(managedRoute.campusArrival, routeTemplate.campusArrival),
@@ -168,7 +172,15 @@ function routeFromData(data, routeCode) {
             stops: managedRoute.stops?.length ? managedRoute.stops : routeTemplate.stops,
         };
     }
-    return managedRoute ?? routeTemplate ?? null;
+    if (managedRoute) {
+        return {
+            ...managedRoute,
+            code: normalizedRouteCode,
+            busNumbers: managedRoute.busNumbers?.length ? managedRoute.busNumbers : assignedBusNumber ? [assignedBusNumber] : [],
+            primaryBusNumber: routeValue(managedRoute.primaryBusNumber, assignedBusNumber),
+        };
+    }
+    return routeTemplate ?? null;
 }
 
 function routeForTrip(data, trip) {
@@ -847,20 +859,138 @@ function busWithLiveLocation(data, bus, routeCode) {
 }
 
 function initialsForName(name) {
-    return name.split(/\s+/).map((part) => part[0]?.toUpperCase()).join("");
+    return String(name ?? "").split(/\s+/).map((part) => part[0]?.toUpperCase()).join("");
+}
+
+function routeByStaffRecord(data, kind, recordId) {
+    if (!recordId)
+        return null;
+    const key = kind === "drivers" ? "driverId" : "conductorId";
+    const managedRoute = data.admin?.routes?.find((route) => route[key] === recordId);
+    if (managedRoute)
+        return routeFromData(data, managedRoute.code);
+    const staticRoute = kind === "drivers"
+        ? routeForDriverRecord(recordId)
+        : routeForConductorRecord(recordId);
+    return staticRoute ? routeFromData(data, staticRoute.code) : null;
+}
+
+function busRecordForRoute(data, route) {
+    if (!route)
+        return null;
+    const records = data.admin?.records?.buses ?? [];
+    return records.find((bus) => bus.id === route.busId) ??
+        records.find((bus) => bus.name === route.primaryBusNumber) ??
+        null;
+}
+
+function busNumberForRoute(data, route) {
+    return busRecordForRoute(data, route)?.name ??
+        route?.primaryBusNumber ??
+        route?.busNumbers?.[0] ??
+        "";
+}
+
+function busRegistrationForRoute(data, route) {
+    const busRecord = busRecordForRoute(data, route);
+    const busNumber = busNumberForRoute(data, route);
+    if (busRecord?.code)
+        return busRecord.code;
+    if (busNumber)
+        return `GJ-01-FT-${busNumber}`;
+    return route?.primaryBusNumber ? getBusRegistration(route) : "Not assigned";
+}
+
+function capacityFromBusRecord(busRecord) {
+    const match = String(busRecord?.contact ?? "").match(/\d+/);
+    const capacity = Number(match?.[0]);
+    return Number.isFinite(capacity) && capacity > 0 ? capacity : null;
+}
+
+function staffAssignmentForRoute(data, route) {
+    const fallback = getRouteStaffAssignment(route?.code);
+    const drivers = data.admin?.records?.drivers ?? [];
+    const conductors = data.admin?.records?.conductors ?? [];
+    const driverRecord = drivers.find((driver) => driver.id === route?.driverId);
+    const conductorRecord = conductors.find((conductor) => conductor.id === route?.conductorId);
+    return {
+        driver: {
+            id: driverRecord?.id ?? fallback.driver.id,
+            name: driverRecord?.name ?? fallback.driver.name,
+            licence: driverRecord?.detail ?? fallback.driver.licence,
+            phone: driverRecord?.contact ?? fallback.driver.phone,
+            accountEmail: driverRecord?.accountEmail ?? fallback.driver.accountEmail,
+            accountUserId: driverRecord?.accountUserId ?? fallback.driver.accountUserId,
+        },
+        conductor: {
+            id: conductorRecord?.id ?? fallback.conductor.id,
+            name: conductorRecord?.name ?? fallback.conductor.name,
+            phone: conductorRecord?.contact ?? fallback.conductor.phone,
+            accountEmail: conductorRecord?.accountEmail ?? fallback.conductor.accountEmail,
+            accountUserId: conductorRecord?.accountUserId ?? fallback.conductor.accountUserId,
+        },
+    };
+}
+
+function findFleetBusForRoute(data, route) {
+    const busNumber = busNumberForRoute(data, route);
+    return data.admin?.fleetVehicles?.find((bus) => bus.route === route?.code || bus.id === route?.busId || bus.number === busNumber) ?? null;
+}
+
+function buildFleetBusForRoute(data, route) {
+    const busRecord = busRecordForRoute(data, route);
+    const busNumber = busNumberForRoute(data, route);
+    if (!route || !busNumber)
+        return null;
+    const staff = staffAssignmentForRoute(data, route);
+    const firstStop = route.stops?.[0];
+    return {
+        id: busRecord?.id ?? route.busId ?? `bus-${busNumber}`,
+        number: busNumber,
+        route: route.code,
+        driver: staff.driver.name,
+        speed: 0,
+        eta: "--",
+        occupancy: 0,
+        capacity: capacityFromBusRecord(busRecord) ?? 50,
+        gpsUpdated: "Not sharing",
+        status: "stopped",
+        tripActive: false,
+        coordinates: firstStop?.coordinates,
+    };
+}
+
+function fleetBusForRoute(data, route) {
+    return findFleetBusForRoute(data, route) ?? buildFleetBusForRoute(data, route);
+}
+
+function ensureFleetBusForRoute(data, route) {
+    const existing = findFleetBusForRoute(data, route);
+    if (existing)
+        return existing;
+    const next = buildFleetBusForRoute(data, route);
+    if (!next)
+        return null;
+    if (!data.admin)
+        data.admin = {};
+    if (!Array.isArray(data.admin.fleetVehicles))
+        data.admin.fleetVehicles = [];
+    data.admin.fleetVehicles.unshift(next);
+    return next;
 }
 
 function activeTripWithConsistentAssignments(data, trip) {
     if (!trip)
         return trip;
     const templateRoute = indusRoutes.find((item) => item.code === trip.routeCode || item.primaryBusNumber === trip.busNumber);
-    const baseRoute = routeFromData(data, templateRoute?.code ?? trip.routeCode);
+    const baseRoute = routeFromData(data, trip.routeCode) ?? (templateRoute ? routeFromData(data, templateRoute.code) : null);
     if (!baseRoute)
         return trip;
     const direction = normalizeTripDirection(trip.direction);
     const route = routeForTripDirection(baseRoute, direction);
-    const staff = getRouteStaffAssignment(baseRoute.code);
-    const fleetBus = data.admin?.fleetVehicles?.find((bus) => bus.route === baseRoute.code || bus.number === baseRoute.primaryBusNumber);
+    const staff = staffAssignmentForRoute(data, baseRoute);
+    const fleetBus = fleetBusForRoute(data, baseRoute);
+    const busNumber = busNumberForRoute(data, baseRoute) || trip.busNumber;
     const nextStopId = route.stops?.some((stop) => stop.id === trip.nextStopId)
         ? trip.nextStopId
         : route.stops?.[0]?.id;
@@ -877,8 +1007,8 @@ function activeTripWithConsistentAssignments(data, trip) {
         directionLabel: tripDirectionLabel(direction),
         routeCode: baseRoute.code,
         routeName: route.name,
-        busNumber: baseRoute.primaryBusNumber,
-        registration: getBusRegistration(baseRoute),
+        busNumber,
+        registration: busRegistrationForRoute(data, baseRoute),
         capacity: fleetBus?.capacity ?? trip.capacity,
         scheduledStart: route.stops[0]?.scheduledTime ?? trip.scheduledStart,
         scheduledEnd: route.stops.at(-1)?.scheduledTime ?? route.campusArrival ?? trip.scheduledEnd,
@@ -921,60 +1051,82 @@ function adminDataWithConsistentAssignments(data) {
     const admin = data.admin ?? {};
     const records = admin.records ?? {};
     const buses = (records.buses ?? []).map((bus) => {
-        const route = indusRoutes.find((item) => bus.id === `bus-${item.primaryBusNumber}` || bus.name === item.primaryBusNumber);
+        const route = (admin.routes ?? [])
+            .map((routeRecord) => routeFromData(data, routeRecord.code))
+            .find((item) => item && (item.busId === bus.id || item.primaryBusNumber === bus.name));
         if (!route)
             return bus;
+        const staff = staffAssignmentForRoute(data, route);
         return {
             ...bus,
-            id: `bus-${route.primaryBusNumber}`,
-            name: route.primaryBusNumber,
-            code: getBusRegistration(route),
-            assignment: `${route.code} - ${getRouteStaffAssignment(route.code).driver.name}`,
+            name: bus.name || busNumberForRoute(data, route),
+            code: bus.code || busRegistrationForRoute(data, route),
+            assignment: `${route.code} - ${staff.driver.name}`,
         };
     });
     const drivers = (records.drivers ?? []).map((driver) => {
-        const route = routeForDriverRecord(driver.id);
+        const route = routeByStaffRecord(data, "drivers", driver.id);
+        const busNumber = route ? busNumberForRoute(data, route) : "";
         return {
             ...driver,
-            assignment: route ? `${route.primaryBusNumber} - ${route.code}` : "Unassigned",
+            assignment: route ? `${busNumber || "Unassigned bus"} - ${route.code}` : "Unassigned",
             accountEmail: driver.accountEmail || (driver.id === "driver-101" ? "driver@transport.indusuni.ac.in" : ""),
             accountUserId: driver.accountUserId || (driver.id === "driver-101" ? "drv-101" : ""),
         };
     });
     const conductors = (records.conductors ?? []).map((conductor) => {
-        const route = routeForConductorRecord(conductor.id);
+        const route = routeByStaffRecord(data, "conductors", conductor.id);
+        const busNumber = route ? busNumberForRoute(data, route) : "";
         return {
             ...conductor,
-            assignment: route ? `${route.primaryBusNumber} - ${route.code}` : "Unassigned",
+            assignment: route ? `${busNumber || "Unassigned bus"} - ${route.code}` : "Unassigned",
             accountEmail: conductor.accountEmail || (conductor.id === "conductor-101" ? "conductor@transport.indusuni.ac.in" : ""),
             accountUserId: conductor.accountUserId || (conductor.id === "conductor-101" ? "con-101" : ""),
         };
     });
     const routes = (admin.routes ?? []).map((routeRecord) => {
-        const route = indusRoutes.find((item) => item.code === routeRecord.code || item.id === routeRecord.id);
+        const route = routeFromData(data, routeRecord.code) ?? indusRoutes.find((item) => item.id === routeRecord.id);
         if (!route)
             return routeRecord;
-        const staff = getRouteStaffAssignment(route.code);
+        const staff = staffAssignmentForRoute(data, route);
+        const busRecord = busRecordForRoute(data, route);
         return {
             ...routeRecord,
-            busId: `bus-${route.primaryBusNumber}`,
-            driverId: staff.driver.id,
-            conductorId: staff.conductor.id,
-            primaryBusNumber: route.primaryBusNumber,
+            busId: routeRecord.busId || busRecord?.id || `bus-${busNumberForRoute(data, route)}`,
+            driverId: routeRecord.driverId || staff.driver.id,
+            conductorId: routeRecord.conductorId || staff.conductor.id,
+            primaryBusNumber: busNumberForRoute(data, route),
         };
     });
-    const fleetVehicles = (admin.fleetVehicles ?? []).map((bus) => {
-        const route = indusRoutes.find((item) => item.code === bus.route || item.primaryBusNumber === bus.number);
+    const fleetById = new Map();
+    for (const bus of admin.fleetVehicles ?? []) {
+        const route = routeFromData(data, bus.route) ??
+            (admin.routes ?? [])
+                .map((routeRecord) => routeFromData(data, routeRecord.code))
+                .find((item) => item && (item.busId === bus.id || bus.number === busNumberForRoute(data, item)));
         if (!route)
-            return bus;
-        return {
+            fleetById.set(bus.id ?? bus.number, bus);
+        else
+            fleetById.set(bus.id ?? bus.number, {
             ...bus,
-            id: `bus-${route.primaryBusNumber}`,
-            number: route.primaryBusNumber,
+            id: bus.id || busRecordForRoute(data, route)?.id || `bus-${busNumberForRoute(data, route)}`,
+            number: busNumberForRoute(data, route),
             route: route.code,
-            driver: getRouteStaffAssignment(route.code).driver.name,
-        };
-    });
+            driver: staffAssignmentForRoute(data, route).driver.name,
+            capacity: bus.capacity ?? capacityFromBusRecord(busRecordForRoute(data, route)) ?? 50,
+        });
+    }
+    for (const route of routes.map((routeRecord) => routeFromData(data, routeRecord.code)).filter(Boolean)) {
+        const bus = fleetBusForRoute(data, route);
+        if (bus)
+            fleetById.set(bus.id ?? bus.number, {
+                ...bus,
+                number: busNumberForRoute(data, route),
+                route: route.code,
+                driver: staffAssignmentForRoute(data, route).driver.name,
+            });
+    }
+    const fleetVehicles = [...fleetById.values()];
     const stopStatusById = new Map((records.stops ?? []).map((stop) => [stop.id, stop.status]));
     const stops = routes.flatMap((route) => route.stops.map((stop, index) => {
         const record = buildRouteStopRecord(route, index, stop);
@@ -1084,7 +1236,25 @@ function validateDriverTripUpdate(data, user, tripId) {
         return "Trip not found.";
     if (tripState.tripStatus !== "active")
         return "Start the trip before sharing phone GPS.";
-    if (user.role === "driver" && user.routeCode && user.routeCode !== trip.routeCode)
+    if (user.role === "driver") {
+        const assignedRoute = assignedRouteForStaff(data, user);
+        if (assignedRoute && assignedRoute.code !== trip.routeCode)
+            return "This trip is not assigned to your account.";
+        if (!assignedRoute && user.routeCode && user.routeCode !== trip.routeCode)
+            return "This trip is not assigned to your account.";
+    }
+    return "";
+}
+
+function validateConductorTripUpdate(data, user, tripId) {
+    const tripState = routeTripStateForTripId(data, tripId);
+    const trip = tripState?.activeStaffTrip;
+    if (!trip || trip.id !== tripId)
+        return "Trip not found.";
+    const assignedRoute = assignedRouteForStaff(data, user);
+    if (assignedRoute && assignedRoute.code !== trip.routeCode)
+        return "This trip is not assigned to your account.";
+    if (!assignedRoute && user.routeCode && user.routeCode !== trip.routeCode)
         return "This trip is not assigned to your account.";
     return "";
 }
@@ -1123,7 +1293,7 @@ function storeDriverLocation(data, user, tripId, locationInput) {
         gpsUpdatedAt: updatedAt,
     };
     saveRouteTripState(data, trip.routeCode, tripState);
-    const fleetBus = data.admin?.fleetVehicles?.find((bus) => bus.route === trip.routeCode || bus.number === trip.busNumber);
+    const fleetBus = ensureFleetBusForRoute(data, route);
     if (fleetBus) {
         fleetBus.coordinates = location.coordinates;
         fleetBus.speed = Number.isFinite(location.speedKmh) ? Math.round(location.speedKmh) : fleetBus.speed;
@@ -1147,10 +1317,6 @@ function storeDriverLocation(data, user, tripId, locationInput) {
         gpsUpdatedAt: locationAgeLabel(updatedAt),
         activeStaffTrip: tripState.activeStaffTrip,
     };
-}
-
-function fleetBusForRoute(data, route) {
-    return data.admin?.fleetVehicles?.find((bus) => bus.route === route.code || bus.number === route.primaryBusNumber) ?? null;
 }
 
 function tripIdForRoute(routeCode, direction) {
@@ -1182,6 +1348,9 @@ function assignedRouteForStaff(data, user) {
     if (!user || (user.role !== "driver" && user.role !== "conductor"))
         return null;
     const record = staffRecordForUser(data, user);
+    const managedRoute = routeByStaffRecord(data, user.role === "driver" ? "drivers" : "conductors", record?.id);
+    if (managedRoute)
+        return managedRoute;
     const assignedRouteCode = routeCodeFromAssignment(record?.assignment);
     if (assignedRouteCode)
         return routeFromData(data, assignedRouteCode);
@@ -1199,6 +1368,7 @@ function buildStaffTripForRoute(data, route, direction = "morning", overrides = 
     const currentTrip = routeTripStateForRoute(data, route.code)?.activeStaffTrip ?? {};
     const fleetBus = fleetBusForRoute(data, route);
     const capacity = fleetBus?.capacity ?? currentTrip.capacity ?? 50;
+    const busNumber = busNumberForRoute(data, route) || currentTrip.busNumber;
     const nextStop = overrides.nextStopId
         ? directedRoute.stops.find((stop) => stop.id === overrides.nextStopId) ?? directedRoute.stops[0]
         : directedRoute.stops[0];
@@ -1210,8 +1380,8 @@ function buildStaffTripForRoute(data, route, direction = "morning", overrides = 
         directionLabel: tripDirectionLabel(normalizedDirection),
         routeCode: route.code,
         routeName: directedRoute.name,
-        busNumber: route.primaryBusNumber,
-        registration: getBusRegistration(route),
+        busNumber,
+        registration: busRegistrationForRoute(data, route),
         capacity,
         scheduledStart: directedRoute.stops[0]?.scheduledTime,
         scheduledEnd: directedRoute.stops.at(-1)?.scheduledTime,
@@ -1307,9 +1477,10 @@ function resetTripForDirection(data, requestedDirection, user = null) {
         : route.stops.find((stop) => stop.id === currentTrip?.nextStopId) ??
             route.stops.find((stop) => stop.id === routeState?.operationalCurrentStopId) ??
             route.stops[0];
-    const fleetBus = data.admin?.fleetVehicles?.find((bus) => bus.route === baseRoute.code || bus.number === baseRoute.primaryBusNumber);
+    const fleetBus = ensureFleetBusForRoute(data, baseRoute);
     const capacity = fleetBus?.capacity ?? currentTrip?.capacity ?? 50;
     const initialOccupiedSeats = direction === "return" ? 0 : Math.min(capacity, Math.max(0, Number(fleetBus?.occupancy ?? 0)));
+    const busNumber = busNumberForRoute(data, baseRoute) || currentTrip?.busNumber;
     const trip = activeTripWithConsistentAssignments(data, {
         ...(currentTrip ?? {}),
         id: direction === "return" ? `TRIP-2026-0821-${baseRoute.code}-PM` : `TRIP-2026-0821-${baseRoute.code}`,
@@ -1317,8 +1488,8 @@ function resetTripForDirection(data, requestedDirection, user = null) {
         directionLabel: tripDirectionLabel(direction),
         routeCode: baseRoute.code,
         routeName: route.name,
-        busNumber: baseRoute.primaryBusNumber,
-        registration: getBusRegistration(baseRoute),
+        busNumber,
+        registration: busRegistrationForRoute(data, baseRoute),
         capacity,
         scheduledStart: route.stops[0]?.scheduledTime,
         scheduledEnd: route.stops.at(-1)?.scheduledTime,
@@ -1357,7 +1528,8 @@ function resetTripForDirection(data, requestedDirection, user = null) {
 }
 
 function currentSeatCount(data, trip) {
-    const fleetBus = data.admin?.fleetVehicles?.find((bus) => bus.route === trip.routeCode || bus.number === trip.busNumber);
+    const route = routeForTrip(data, trip);
+    const fleetBus = fleetBusForRoute(data, route);
     const updates = data.operations?.seatUpdates ?? [];
     const latestTripUpdate = updates.find((update) => update.tripId === trip.id);
     const legacyUpdate = updates.find((update) => !update.tripId && normalizeTripDirection(trip.direction) === "morning");
@@ -1428,7 +1600,7 @@ function updateTripProgressFromSeatUpdate(data, tripId, body) {
             : distanceLabel(etaContext.distanceToNextStopKm),
     };
     saveRouteTripState(data, trip.routeCode, tripState);
-    const fleetBus = data.admin?.fleetVehicles?.find((bus) => bus.route === trip.routeCode || bus.number === trip.busNumber);
+    const fleetBus = ensureFleetBusForRoute(data, route);
     if (fleetBus) {
         fleetBus.occupancy = occupiedSeats;
         fleetBus.seatsUpdatedAt = update.timestamp;
@@ -1520,12 +1692,13 @@ function buildStudentTransitData(data, user) {
                     ? { eta: stop.name === route.destination ? "23 min" : "14 min" }
                     : {})),
     }));
-    const fleetBus = data.admin?.fleetVehicles?.find((bus) => bus.route === assignedRoute.code);
+    const fleetBus = fleetBusForRoute(data, assignedRoute);
+    const assignedBusNumber = busNumberForRoute(data, assignedRoute);
     const bus = busWithLiveLocation(data, {
         ...data.studentTransitData.bus,
-        id: fleetBus?.id ?? `bus-${assignedRoute.primaryBusNumber}`,
-        number: fleetBus?.number ?? assignedRoute.primaryBusNumber,
-        registration: getBusRegistration(assignedRoute),
+        id: fleetBus?.id ?? `bus-${assignedBusNumber}`,
+        number: fleetBus?.number ?? assignedBusNumber,
+        registration: busRegistrationForRoute(data, assignedRoute),
         capacity: fleetBus?.capacity ?? data.studentTransitData.bus.capacity,
         occupiedSeats: fleetBus?.occupancy ?? data.studentTransitData.bus.occupiedSeats,
         status: fleetBus?.status === "delayed" ? "delayed" : data.studentTransitData.bus.status,
@@ -2195,7 +2368,7 @@ export function createApiServer(store, options = {}) {
                         completedAt: undefined,
                     };
                     saveRouteTripState(db, tripState.activeStaffTrip.routeCode, tripState);
-                    const fleetBus = db.admin?.fleetVehicles?.find((bus) => bus.route === tripState.activeStaffTrip.routeCode || bus.number === tripState.activeStaffTrip.busNumber);
+                    const fleetBus = ensureFleetBusForRoute(db, routeForTrip(db, tripState.activeStaffTrip));
                     if (fleetBus) {
                         fleetBus.tripActive = true;
                         fleetBus.gpsUpdated = "Waiting for driver phone";
@@ -2259,7 +2432,7 @@ export function createApiServer(store, options = {}) {
                         completedAt: new Date().toISOString(),
                     };
                     saveRouteTripState(db, tripState.activeStaffTrip.routeCode, tripState);
-                    const fleetBus = db.admin?.fleetVehicles?.find((bus) => bus.route === tripState.activeStaffTrip.routeCode || bus.number === tripState.activeStaffTrip.busNumber);
+                    const fleetBus = ensureFleetBusForRoute(db, routeForTrip(db, tripState.activeStaffTrip));
                     if (fleetBus) {
                         fleetBus.tripActive = false;
                         fleetBus.gpsUpdated = "Not sharing";
@@ -2292,7 +2465,14 @@ export function createApiServer(store, options = {}) {
                     return;
                 }
                 const body = await readBody(request);
-                const update = await store.update((data) => updateTripProgressFromSeatUpdate(data, seatUpdateMatch[1], body));
+                const update = await store.update((data) => {
+                    if (user.role === "conductor") {
+                        const assignmentError = validateConductorTripUpdate(data, user, seatUpdateMatch[1]);
+                        if (assignmentError)
+                            return { error: assignmentError };
+                    }
+                    return updateTripProgressFromSeatUpdate(data, seatUpdateMatch[1], body);
+                });
                 if (update.error) {
                     badRequest(response, update.error);
                     return;
