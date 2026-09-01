@@ -991,6 +991,9 @@ function activeTripWithConsistentAssignments(data, trip) {
     const staff = staffAssignmentForRoute(data, baseRoute);
     const fleetBus = fleetBusForRoute(data, baseRoute);
     const busNumber = busNumberForRoute(data, baseRoute) || trip.busNumber;
+    const capacity = Number(fleetBus?.capacity ?? trip.capacity ?? 50);
+    const occupiedSeatValue = Number(fleetBus?.occupancy ?? trip.occupiedSeats ?? 0);
+    const occupiedSeats = Math.min(capacity, Math.max(0, Number.isFinite(occupiedSeatValue) ? occupiedSeatValue : 0));
     const nextStopId = route.stops?.some((stop) => stop.id === trip.nextStopId)
         ? trip.nextStopId
         : route.stops?.[0]?.id;
@@ -1009,7 +1012,9 @@ function activeTripWithConsistentAssignments(data, trip) {
         routeName: route.name,
         busNumber,
         registration: busRegistrationForRoute(data, baseRoute),
-        capacity: fleetBus?.capacity ?? trip.capacity,
+        capacity,
+        occupiedSeats,
+        availableSeats: capacity - occupiedSeats,
         scheduledStart: route.stops[0]?.scheduledTime ?? trip.scheduledStart,
         scheduledEnd: route.stops.at(-1)?.scheduledTime ?? route.campusArrival ?? trip.scheduledEnd,
         distance: baseRoute.distance ?? trip.distance,
@@ -1479,7 +1484,9 @@ function resetTripForDirection(data, requestedDirection, user = null) {
             route.stops[0];
     const fleetBus = ensureFleetBusForRoute(data, baseRoute);
     const capacity = fleetBus?.capacity ?? currentTrip?.capacity ?? 50;
-    const initialOccupiedSeats = direction === "return" ? 0 : Math.min(capacity, Math.max(0, Number(fleetBus?.occupancy ?? 0)));
+    const initialOccupiedSeats = 0;
+    if (fleetBus)
+        fleetBus.occupancy = initialOccupiedSeats;
     const busNumber = busNumberForRoute(data, baseRoute) || currentTrip?.busNumber;
     const trip = activeTripWithConsistentAssignments(data, {
         ...(currentTrip ?? {}),

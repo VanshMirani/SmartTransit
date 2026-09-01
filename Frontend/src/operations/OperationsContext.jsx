@@ -270,17 +270,19 @@ export function ConductorOperationsProvider({ children, }) {
                 return;
             const trip = data.activeStaffTrip ?? fallbackActiveTrip;
             const seatUpdates = (data.seatUpdates ?? []).filter((update) => update.tripId ? update.tripId === trip.id : trip.direction !== "return");
+            const tripOccupiedSeats = Number(trip.occupiedSeats);
+            const initialOccupiedSeats = Number.isFinite(tripOccupiedSeats) ? tripOccupiedSeats : 0;
             setActiveTrip(trip);
             setStops(data.operationalStops ?? fallbackStops);
             setTripStatus(data.tripStatus ?? "active");
             setCurrentStopId(data.operationalCurrentStopId ?? fallbackCurrentStopId);
             if (seatUpdates.length) {
                 setUpdates(seatUpdates);
-                setOccupiedSeats(seatUpdates[0].occupiedSeats ?? 30);
+                setOccupiedSeats(seatUpdates[0].occupiedSeats ?? initialOccupiedSeats);
             }
-            else if (trip.direction === "return") {
+            else {
                 setUpdates([]);
-                setOccupiedSeats(0);
+                setOccupiedSeats(initialOccupiedSeats);
             }
             setEmergency(data.emergencies?.[0] ?? null);
         })

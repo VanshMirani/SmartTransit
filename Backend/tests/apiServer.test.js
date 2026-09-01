@@ -329,6 +329,9 @@ test("custom admin route assignments appear correctly for new driver and conduct
             assert.equal(dashboard.activeStaffTrip.busNumber, "7711");
             assert.equal(dashboard.activeStaffTrip.registration, "GJ-01-FT-7711");
             assert.equal(dashboard.activeStaffTrip.capacity, 46);
+            assert.equal(dashboard.activeStaffTrip.occupiedSeats, 0);
+            assert.equal(dashboard.activeStaffTrip.availableSeats, 46);
+            assert.equal(dashboard.seatUpdates.length, 0);
             assert.equal(dashboard.activeStaffTrip.driver.name, "Mahipal Solanki");
             assert.equal(dashboard.activeStaffTrip.driver.phone, "+91 90000 09090");
             assert.equal(dashboard.activeStaffTrip.conductor.name, "Vraj Patel");
