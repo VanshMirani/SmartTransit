@@ -67,7 +67,7 @@ export function StudentLayout() {
           </div>
           <div className="student-topbar__actions">
             <span className="sync-status">
-              <i /> Live
+              <i /> Online
             </span>
             <NavLink to="/student/alerts" aria-label="Notifications">
               <Bell />

@@ -62,8 +62,9 @@ export function AssignmentPendingState({ action, status = "pending", }) {
     </section>);
 }
 
-export function BusOverviewCard({ bus, routeName, stopName, eta, }) {
+export function BusOverviewCard({ bus, routeName, stopName, eta, tripActive = false, }) {
     const available = bus.capacity - bus.occupiedSeats;
+    const gpsLabel = tripActive ? `GPS updated ${bus.gpsUpdatedAt}` : `GPS ${bus.gpsUpdatedAt}`;
     return (<article className="assigned-bus-card">
       <div className="assigned-bus-card__top">
         <span className="app-icon">
@@ -82,7 +83,7 @@ export function BusOverviewCard({ bus, routeName, stopName, eta, }) {
         <div>
           <Clock3 />
           <span>
-            <small>ETA to {stopName}</small>
+            <small>{tripActive ? `ETA to ${stopName}` : "Scheduled pickup"}</small>
             <strong>{eta}</strong>
           </span>
         </div>
@@ -98,7 +99,7 @@ export function BusOverviewCard({ bus, routeName, stopName, eta, }) {
       </div>
       <div className="assigned-bus-card__updates">
         <span>
-          <i /> GPS updated {bus.gpsUpdatedAt}
+          <i /> {gpsLabel}
         </span>
         <span>Seats updated {bus.seatsUpdatedAt}</span>
       </div>

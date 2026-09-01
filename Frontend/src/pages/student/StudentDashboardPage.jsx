@@ -24,23 +24,30 @@ export function StudentDashboardPage() {
             Contact transport support <ArrowRight />
           </Link>}/>
     </div>);
-    const selectedStop = data.route.stops.find((stop) => stop.id === data.route.selectedStopId) ?? data.route.stops[0];
-    const currentStop = data.route.stops.find((stop) => stop.id === data.route.currentStopId) ??
-        data.route.stops.find((stop) => stop.status === "current") ??
-        selectedStop;
-    const currentStopIndex = Math.max(0, data.route.stops.findIndex((stop) => stop.id === currentStop.id));
-    const compactStart = Math.max(0, Math.min(currentStopIndex - 1, data.route.stops.length - 4));
-    const compactStops = data.route.stops.slice(compactStart, compactStart + 4);
-    const selectedStopEta = selectedStop.status === "completed" ? "Departed" : selectedStop.eta ?? "—";
-    const busPassedPickup = selectedStop.status === "completed";
     const tripActive = data.bus.tripActive === true;
+    const selectedStop = data.route.stops.find((stop) => stop.id === data.route.selectedStopId) ?? data.route.stops[0];
+    const currentStop = tripActive
+        ? data.route.stops.find((stop) => stop.id === data.route.currentStopId) ??
+            data.route.stops.find((stop) => stop.status === "current") ??
+            selectedStop
+        : selectedStop;
+    const selectedStopIndex = Math.max(0, data.route.stops.findIndex((stop) => stop.id === selectedStop.id));
+    const currentStopIndex = Math.max(0, data.route.stops.findIndex((stop) => stop.id === currentStop.id));
+    const compactAnchorIndex = tripActive ? currentStopIndex : selectedStopIndex;
+    const compactStart = Math.max(0, Math.min(compactAnchorIndex - 1, Math.max(0, data.route.stops.length - 4)));
+    const compactStops = data.route.stops.slice(compactStart, compactStart + 4);
+    const selectedStopEta = tripActive
+        ? selectedStop.status === "completed" ? "Departed" : selectedStop.eta ?? "—"
+        : selectedStop.scheduledTime ?? "Not started";
+    const busPassedPickup = tripActive && selectedStop.status === "completed";
+    const displayStopStatus = (stop) => tripActive ? stop.status : stop.id === selectedStop.id ? "current" : "upcoming";
     return (<div className="student-dashboard">
       <PageHeading eyebrow={currentDisplayDate()} title={`Good morning, ${user?.name.split(" ")[0]} 👋`} description={tripActive ? busPassedPickup ? "Your bus has passed your pickup stop and is continuing toward campus." : "Your bus is active and moving toward your stop." : "Your route is assigned. Live tracking starts when the driver begins the trip."} action={<Link className="button button--primary desktop-action" to="/student/track">
-            <Navigation /> Track live
+            <Navigation /> {tripActive ? "Track live" : "View tracking"}
           </Link>}/>
       <div className="dashboard-grid">
         <div className="dashboard-primary">
-          <BusOverviewCard bus={data.bus} routeName={`${data.route.code} · ${data.route.name}`} stopName={selectedStop.name} eta={selectedStopEta}/>
+          <BusOverviewCard bus={data.bus} routeName={`${data.route.code} · ${data.route.name}`} stopName={selectedStop.name} eta={selectedStopEta} tripActive={tripActive}/>
           <section className="progress-card">
             <div className="card-title">
               <div>
@@ -48,8 +55,8 @@ export function StudentDashboardPage() {
                   <Route />
                 </span>
                 <span>
-                  <small>Trip progress</small>
-                  <h2>Next stop: {currentStop.name}</h2>
+                  <small>{tripActive ? "Trip progress" : "Scheduled pickup"}</small>
+                  <h2>{tripActive ? `Next stop: ${currentStop.name}` : `Your stop: ${selectedStop.name}`}</h2>
                 </span>
               </div>
               <Link to="/student/routes">
@@ -58,11 +65,14 @@ export function StudentDashboardPage() {
             </div>
             <div className="compact-route">
               <div className="compact-route__line"/>
-              {compactStops.map((stop) => (<div key={stop.id} className={`compact-route__stop compact-route__stop--${stop.status}`}>
-                  <span>{stop.status === "completed" ? "✓" : ""}</span>
+              {compactStops.map((stop) => {
+                const stopStatus = displayStopStatus(stop);
+                return (<div key={stop.id} className={`compact-route__stop compact-route__stop--${stopStatus}`}>
+                  <span>{tripActive && stopStatus === "completed" ? "✓" : ""}</span>
                   <small>{stop.name}</small>
-                  <time>{stop.eta ?? stop.scheduledTime}</time>
-                </div>))}
+                  <time>{tripActive ? stop.eta ?? stop.scheduledTime : stop.scheduledTime}</time>
+                </div>);
+            })}
             </div>
           </section>
           <section className="recent-card">
@@ -137,7 +147,7 @@ export function StudentDashboardPage() {
         </aside>
       </div>
       <Link className="mobile-track-fab" to="/student/track">
-        <Navigation /> Track bus live
+        <Navigation /> {tripActive ? "Track bus live" : "View tracking"}
       </Link>
     </div>);
 }
