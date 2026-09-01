@@ -4071,7 +4071,7 @@ svg {
   left: 0;
   right: 0;
   height: 70px;
-  padding: 0 clamp(18px, 2vw, 32px) 0 240px;
+  padding: 0 clamp(18px, 2vw, 32px);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -5954,9 +5954,6 @@ svg {
   flex-direction: column;
 }
 @media (max-width: 900px) {
-  .staff-topbar {
-    padding-left: 100px;
-  }
   .staff-content {
     width: calc(100% - 120px);
     margin-left: 100px;
