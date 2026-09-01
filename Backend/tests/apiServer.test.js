@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { createApiServer } from "../apiServer.js";
 import { createDataStore } from "../dataStore.js";
+import { hashPassword } from "../passwords.js";
 
 async function startTestServer(options = {}) {
     const dir = await mkdtemp(path.join(tmpdir(), "smarttransit-api-"));
@@ -15,6 +16,7 @@ async function startTestServer(options = {}) {
     const { port } = server.address();
     return {
         baseUrl: `http://127.0.0.1:${port}/api`,
+        store,
         close: () => new Promise((resolve) => server.close(resolve)),
     };
 }
@@ -200,6 +202,57 @@ test("driver dashboard uses the signed-in driver's assigned route and bus", asyn
         assert.equal(startedData.activeStaffTrip.routeCode, "IU-R6");
         assert.equal(startedData.activeStaffTrip.busNumber, "6999");
         assert.equal(startedData.tripStatus, "active");
+    }
+    finally {
+        await app.close();
+    }
+});
+
+test("driver dashboard recovers existing named driver accounts with stale route data", async () => {
+    const app = await startTestServer();
+    try {
+        await app.store.update((data) => {
+            data.users.push({
+                id: "drv-live-bhavesh",
+                name: "Bhavesh Rana",
+                email: "bhavesh.live@transport.indusuni.ac.in",
+                passwordHash: hashPassword("Bhavesh@123"),
+                role: "driver",
+                status: "active",
+                initials: "BR",
+                routeCode: "IU-R4",
+            });
+            return data;
+        });
+
+        const login = await fetch(`${app.baseUrl}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "bhavesh.live@transport.indusuni.ac.in", password: "Bhavesh@123" }),
+        });
+        assert.equal(login.status, 200);
+        const session = await json(login);
+        assert.equal(session.user.routeCode, "IU-R4");
+
+        const driverTrip = await fetch(`${app.baseUrl}/driver/trips/current`, {
+            headers: { Authorization: `Bearer ${session.token}` },
+        });
+        assert.equal(driverTrip.status, 200);
+        const driverData = await json(driverTrip);
+        assert.equal(driverData.activeStaffTrip.routeCode, "IU-R6");
+        assert.equal(driverData.activeStaffTrip.busNumber, "6999");
+        assert.equal(driverData.activeStaffTrip.driver.name, "Bhavesh Rana");
+
+        const returnTrip = await fetch(`${app.baseUrl}/driver/trips/current/direction`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` },
+            body: JSON.stringify({ direction: "return" }),
+        });
+        assert.equal(returnTrip.status, 200);
+        const returnData = await json(returnTrip);
+        assert.equal(returnData.activeStaffTrip.routeCode, "IU-R6");
+        assert.equal(returnData.activeStaffTrip.busNumber, "6999");
+        assert.equal(returnData.activeStaffTrip.direction, "return");
     }
     finally {
         await app.close();

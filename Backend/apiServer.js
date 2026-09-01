@@ -452,7 +452,7 @@ function validateActiveStudentAssignment(record) {
 }
 
 function buildStaffUserId(kind, recordId) {
-    return `${kind === "drivers" ? "drv" : "con"}-${recordId.replace(/^(driver|conductor)-/i, "")}`;
+    return `${kind === "drivers" ? "drv" : "con"}-${String(recordId ?? randomUUID()).replace(/^(driver|conductor)-/i, "")}`;
 }
 
 function buildStaffNameInitials(name) {
@@ -500,6 +500,10 @@ function syncStaffUser(data, kind, record) {
     cleaned.accountEmail = accountEmail;
     cleaned.accountUserId = user.id;
     return { record: cleaned };
+}
+
+function normalizedStaffName(name) {
+    return String(name ?? "").trim().replace(/\s+/g, " ").toLowerCase();
 }
 
 function routeForUser(data, user) {
@@ -1146,7 +1150,14 @@ function staffRecordForUser(data, user) {
     if (!kind)
         return null;
     const email = normalizeEmail(user.email);
-    return data.admin?.records?.[kind]?.find((record) => record.accountUserId === user.id || normalizeEmail(record.accountEmail) === email) ?? null;
+    const records = data.admin?.records?.[kind] ?? [];
+    const linkedRecord = records.find((record) => record.accountUserId === user.id || normalizeEmail(record.accountEmail) === email);
+    if (linkedRecord)
+        return linkedRecord;
+    const staffName = normalizedStaffName(user.name);
+    if (!staffName)
+        return null;
+    return records.find((record) => normalizedStaffName(record.name) === staffName) ?? null;
 }
 
 function assignedRouteForStaff(data, user) {
