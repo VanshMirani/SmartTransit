@@ -64,6 +64,87 @@ test("student can login and load transit data", async () => {
     }
 });
 
+test("student transit stays inactive until the assigned driver starts the route", async () => {
+    const app = await startTestServer();
+    try {
+        await app.store.update((data) => {
+            const route = data.routes.find((item) => item.code === "IU-R6");
+            assert.ok(route);
+            data.users.push({
+                id: "stu-r6-trip-state",
+                name: "Riya Patel",
+                email: "riya.tripstate@iite.indusuni.ac.in",
+                passwordHash: hashPassword("Student@123"),
+                role: "student",
+                status: "active",
+                initials: "RP",
+                routeCode: route.code,
+                stopId: route.stops[1].id,
+            }, {
+                id: "drv-r6-trip-state",
+                name: "Bhavesh Rana",
+                email: "bhavesh.tripstate@transport.indusuni.ac.in",
+                passwordHash: hashPassword("Bhavesh@123"),
+                role: "driver",
+                status: "active",
+                initials: "BR",
+                routeCode: route.code,
+            });
+            return data;
+        });
+
+        const loginAs = async (email, password) => {
+            const login = await fetch(`${app.baseUrl}/auth/login`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email, password }),
+            });
+            assert.equal(login.status, 200);
+            return (await json(login)).token;
+        };
+
+        const studentToken = await loginAs("riya.tripstate@iite.indusuni.ac.in", "Student@123");
+        const beforeStart = await fetch(`${app.baseUrl}/student/transit`, {
+            headers: { Authorization: `Bearer ${studentToken}` },
+        });
+        assert.equal(beforeStart.status, 200);
+        const beforeStartData = await json(beforeStart);
+        assert.equal(beforeStartData.route.code, "IU-R6");
+        assert.equal(beforeStartData.bus.tripActive, false);
+        assert.equal(beforeStartData.bus.gpsStatus, "not-sharing");
+        assert.equal(beforeStartData.bus.gpsUpdatedAt, "Not sharing");
+        assert.equal(beforeStartData.bus.status, "stopped");
+
+        const driverToken = await loginAs("bhavesh.tripstate@transport.indusuni.ac.in", "Bhavesh@123");
+        const currentTrip = await fetch(`${app.baseUrl}/driver/trips/current`, {
+            headers: { Authorization: `Bearer ${driverToken}` },
+        });
+        assert.equal(currentTrip.status, 200);
+        const currentTripData = await json(currentTrip);
+        assert.equal(currentTripData.tripStatus, "not-started");
+        assert.equal(currentTripData.activeStaffTrip.routeCode, "IU-R6");
+
+        const startTrip = await fetch(`${app.baseUrl}/driver/trips/${currentTripData.activeStaffTrip.id}/start`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${driverToken}` },
+        });
+        assert.equal(startTrip.status, 200);
+        assert.equal((await json(startTrip)).tripStatus, "active");
+
+        const afterStart = await fetch(`${app.baseUrl}/student/transit`, {
+            headers: { Authorization: `Bearer ${studentToken}` },
+        });
+        assert.equal(afterStart.status, 200);
+        const afterStartData = await json(afterStart);
+        assert.equal(afterStartData.bus.tripActive, true);
+        assert.equal(afterStartData.bus.gpsStatus, "waiting");
+        assert.equal(afterStartData.bus.gpsUpdatedAt, "Waiting for driver phone");
+    }
+    finally {
+        await app.close();
+    }
+});
+
 test("route, bus, driver, and conductor assignments match across dashboards", async () => {
     const app = await startTestServer();
     try {

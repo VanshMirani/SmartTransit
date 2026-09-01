@@ -817,9 +817,12 @@ function busWithLiveLocation(data, bus, routeCode) {
     if (!routeState?.activeStaffTrip) {
         return {
             ...bus,
-            gpsStatus: bus.status === "stale-gps" ? "stale" : bus.tripActive ? "live" : "not-sharing",
-            gpsUpdatedAt: bus.gpsUpdated ?? bus.gpsUpdatedAt,
+            tripActive: false,
+            gpsStatus: "not-sharing",
+            gpsUpdated: "Not sharing",
+            gpsUpdatedAt: "Not sharing",
             etaSource: bus.etaSource ?? "scheduled",
+            status: "stopped",
         };
     }
     const tripActive = routeState.tripStatus === "active";
@@ -1727,15 +1730,17 @@ function buildStudentTransitData(data, user) {
         : assignedRoute.stops[Math.max(0, assignedRoute.stops.length - 2)]?.id ?? assignedRoute.stops[0]?.id;
     const routeState = routeTripStateForRoute(data, assignedRoute.code);
     const activeTrip = activeTripWithConsistentAssignments(data, routeState?.activeStaffTrip);
-    const route = activeTrip?.routeCode === assignedRoute.code
+    const hasRouteTrip = activeTrip?.routeCode === assignedRoute.code;
+    const tripActive = routeState?.tripStatus === "active" && hasRouteTrip;
+    const route = hasRouteTrip
         ? routeForTrip(data, activeTrip) ?? assignedRoute
         : assignedRoute;
-    const tripNextStopId = activeTrip?.routeCode === assignedRoute.code ? activeTrip.nextStopId : "";
+    const tripNextStopId = hasRouteTrip ? activeTrip.nextStopId : "";
     const progressStopId = route.stops.some((stop) => stop.id === tripNextStopId)
         ? tripNextStopId
         : selectedStopId;
     const progressIndex = Math.max(0, route.stops.findIndex((stop) => stop.id === progressStopId));
-    const etaContext = activeTrip?.routeCode === assignedRoute.code
+    const etaContext = tripActive
         ? buildLiveEtaContext(data, route, activeTrip)
         : null;
     const stops = withStopProgress(route, progressStopId).map((stop, index) => ({
@@ -1763,7 +1768,7 @@ function buildStudentTransitData(data, user) {
         speed: fleetBus?.speed ?? data.studentTransitData.bus.speed,
         gpsUpdatedAt: fleetBus?.gpsUpdated ?? data.studentTransitData.bus.gpsUpdatedAt,
         gpsUpdated: fleetBus?.gpsUpdated ?? data.studentTransitData.bus.gpsUpdatedAt,
-        tripActive: fleetBus?.tripActive ?? true,
+        tripActive,
         coordinates: fleetBus?.coordinates ?? data.studentTransitData.bus.coordinates,
     }, assignedRoute.code);
     return {

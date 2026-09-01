@@ -33,7 +33,7 @@ export function StudentDashboardPage() {
     const compactStops = data.route.stops.slice(compactStart, compactStart + 4);
     const selectedStopEta = selectedStop.status === "completed" ? "Departed" : selectedStop.eta ?? "—";
     const busPassedPickup = selectedStop.status === "completed";
-    const tripActive = data.bus.tripActive !== false;
+    const tripActive = data.bus.tripActive === true;
     return (<div className="student-dashboard">
       <PageHeading eyebrow={currentDisplayDate()} title={`Good morning, ${user?.name.split(" ")[0]} 👋`} description={tripActive ? busPassedPickup ? "Your bus has passed your pickup stop and is continuing toward campus." : "Your bus is active and moving toward your stop." : "Your route is assigned. Live tracking starts when the driver begins the trip."} action={<Link className="button button--primary desktop-action" to="/student/track">
             <Navigation /> Track live
