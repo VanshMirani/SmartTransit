@@ -22,12 +22,17 @@ function gpsSharingLabel(status, active) {
 }
 export function DriverHomePage() {
     const { user } = useAuth();
-    const { tripStatus, activeTrip, checklist, gpsUpdatedAt, gpsSharingStatus, gpsError, setTripDirection } = useDriverOperations();
+    const { tripStatus, activeTrip, checklist, tripLoadError, gpsUpdatedAt, gpsSharingStatus, gpsError, setTripDirection } = useDriverOperations();
     const [changingDirection, setChangingDirection] = useState(false);
     const [directionError, setDirectionError] = useState('');
     const active = tripStatus === 'active';
     const firstName = user?.name?.split(' ')[0] ?? 'Driver';
     const gpsNeedsAttention = active && (gpsSharingStatus === "error" || gpsSharingStatus === "unsupported");
+    if (tripLoadError) {
+        return <div><StaffPageHeading eyebrow={currentDisplayDate()} title={`Good morning, ${firstName}`} description="We could not load your assigned bus and route yet." status={<span className="staff-status staff-status--not-started">Route check needed</span>}/>
+        <section className="staff-state-card"><span><AlertTriangle /></span><h1>Assigned trip could not load</h1><p>{tripLoadError}</p><button className="button staff-primary-button" type="button" onClick={() => window.location.reload()}>Refresh driver dashboard</button></section>
+      </div>;
+    }
     const chooseDirection = async (direction) => {
         if (changingDirection || activeTrip.direction === direction)
             return;

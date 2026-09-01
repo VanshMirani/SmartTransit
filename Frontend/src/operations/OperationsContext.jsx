@@ -46,6 +46,7 @@ export function DriverOperationsProvider({ children, }) {
     const [gpsUpdatedAt, setGpsUpdatedAt] = useState("Not sharing");
     const [gpsSharingStatus, setGpsSharingStatus] = useState("idle");
     const [gpsError, setGpsError] = useState("");
+    const [tripLoadError, setTripLoadError] = useState("");
     const [lastGpsLocation, setLastGpsLocation] = useState(null);
     const [emergency, setEmergency] = useState(null);
     const lastGpsSentAt = useRef(0);
@@ -64,8 +65,13 @@ export function DriverOperationsProvider({ children, }) {
             setGpsUpdatedAt(data.gpsUpdatedAt ?? "Not sharing");
             setLastGpsLocation(data.liveLocation ?? null);
             setEmergency(data.emergencies?.[0] ?? null);
+            setTripLoadError("");
         })
-            .catch(() => undefined);
+            .catch((reason) => {
+            if (cancelled)
+                return;
+            setTripLoadError(reason instanceof Error ? reason.message : "Unable to load your assigned trip.");
+        });
         return () => {
             cancelled = true;
         };
@@ -136,6 +142,7 @@ export function DriverOperationsProvider({ children, }) {
         activeTrip,
         stops,
         checklist,
+        tripLoadError,
         gpsUpdatedAt,
         gpsSharingStatus,
         gpsError,
@@ -151,6 +158,7 @@ export function DriverOperationsProvider({ children, }) {
                 setTripStatus(data.tripStatus ?? "active");
                 setChecklist(preTripItems.map((item) => item.id));
                 setGpsUpdatedAt(data.gpsUpdatedAt ?? "Waiting for driver phone");
+                setTripLoadError("");
                 return;
             }
             setTripStatus("active");
@@ -170,6 +178,7 @@ export function DriverOperationsProvider({ children, }) {
                 setTripStatus(data.tripStatus ?? "not-started");
                 setGpsUpdatedAt(data.gpsUpdatedAt ?? "Not sharing");
                 setLastGpsLocation(data.liveLocation ?? null);
+                setTripLoadError("");
                 return data.activeStaffTrip;
             }
             const nextTrip = buildStaffTripForDirection(undefined, direction);
@@ -209,7 +218,7 @@ export function DriverOperationsProvider({ children, }) {
             syncBackend("/staff/emergencies", { method: "POST", body: report });
             return report;
         },
-    }), [activeTrip, stops, tripStatus, checklist, gpsUpdatedAt, gpsSharingStatus, gpsError, lastGpsLocation, emergency]);
+    }), [activeTrip, stops, tripStatus, checklist, tripLoadError, gpsUpdatedAt, gpsSharingStatus, gpsError, lastGpsLocation, emergency]);
     return (<DriverContext.Provider value={value}>{children}</DriverContext.Provider>);
 }
 // eslint-disable-next-line react-refresh/only-export-components

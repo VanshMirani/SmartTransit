@@ -259,6 +259,71 @@ test("driver dashboard recovers existing named driver accounts with stale route 
     }
 });
 
+test("assigned driver route ignores stale active trips and incomplete managed route records", async () => {
+    const app = await startTestServer();
+    try {
+        await app.store.update((data) => {
+            data.users.push({
+                id: "drv-live-bhavesh-partial",
+                name: "Bhavesh Rana",
+                email: "bhavesh.partial@transport.indusuni.ac.in",
+                passwordHash: hashPassword("Bhavesh@123"),
+                role: "driver",
+                status: "active",
+                initials: "BR",
+                routeCode: "IU-R4",
+            });
+            data.operations.tripStatus = "active";
+            data.operations.gpsUpdatedAt = "Just now";
+            data.admin.routes = data.admin.routes.map((route) => route.code === "IU-R6"
+                ? {
+                    id: route.id,
+                    code: route.code,
+                    name: route.name,
+                    status: route.status,
+                    stops: [],
+                }
+                : route);
+            return data;
+        });
+
+        const login = await fetch(`${app.baseUrl}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "bhavesh.partial@transport.indusuni.ac.in", password: "Bhavesh@123" }),
+        });
+        assert.equal(login.status, 200);
+        const session = await json(login);
+
+        const driverTrip = await fetch(`${app.baseUrl}/driver/trips/current`, {
+            headers: { Authorization: `Bearer ${session.token}` },
+        });
+        assert.equal(driverTrip.status, 200);
+        const driverData = await json(driverTrip);
+        assert.equal(driverData.tripStatus, "not-started");
+        assert.equal(driverData.activeStaffTrip.routeCode, "IU-R6");
+        assert.equal(driverData.activeStaffTrip.busNumber, "6999");
+        assert.equal(driverData.activeStaffTrip.distance, "30.6 km");
+        assert.equal(driverData.activeStaffTrip.driver.name, "Bhavesh Rana");
+        assert.notEqual(driverData.activeStaffTrip.busNumber, "9468");
+
+        const returnTrip = await fetch(`${app.baseUrl}/driver/trips/current/direction`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` },
+            body: JSON.stringify({ direction: "return" }),
+        });
+        assert.equal(returnTrip.status, 200);
+        const returnData = await json(returnTrip);
+        assert.equal(returnData.activeStaffTrip.routeCode, "IU-R6");
+        assert.equal(returnData.activeStaffTrip.busNumber, "6999");
+        assert.equal(returnData.activeStaffTrip.direction, "return");
+        assert.equal(returnData.operationalStops[0].name, "Indus University");
+    }
+    finally {
+        await app.close();
+    }
+});
+
 test("assigned drivers can start their route when another route is active", async () => {
     const app = await startTestServer();
     try {

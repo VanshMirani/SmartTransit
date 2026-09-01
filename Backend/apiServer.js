@@ -141,13 +141,30 @@ function routeCodeFromAssignment(assignment) {
     return String(assignment ?? "").match(/\bIU-R\d+\b/i)?.[0]?.toUpperCase() ?? "";
 }
 
+function routeValue(value, fallback) {
+    return value === undefined || value === null || value === "" ? fallback : value;
+}
+
 function routeFromData(data, routeCode) {
-    const managedRoute = data.admin?.routes?.find((route) => route.code === routeCode);
-    const routeTemplate = indusRoutes.find((route) => route.code === routeCode);
+    const normalizedRouteCode = String(routeCode ?? "").trim().toUpperCase();
+    const managedRoute = data.admin?.routes?.find((route) => route.code === normalizedRouteCode);
+    const routeTemplate = indusRoutes.find((route) => route.code === normalizedRouteCode);
     if (managedRoute && routeTemplate) {
         return {
             ...routeTemplate,
             ...managedRoute,
+            id: routeValue(managedRoute.id, routeTemplate.id),
+            code: routeValue(managedRoute.code, routeTemplate.code),
+            name: routeValue(managedRoute.name, routeTemplate.name),
+            busNumbers: managedRoute.busNumbers?.length ? managedRoute.busNumbers : routeTemplate.busNumbers,
+            primaryBusNumber: routeValue(managedRoute.primaryBusNumber, routeTemplate.primaryBusNumber),
+            startPoint: routeValue(managedRoute.startPoint, routeTemplate.startPoint),
+            destination: routeValue(managedRoute.destination, routeTemplate.destination),
+            campusArrival: routeValue(managedRoute.campusArrival, routeTemplate.campusArrival),
+            distance: routeValue(managedRoute.distance, routeTemplate.distance),
+            mapCenter: managedRoute.mapCenter?.length ? managedRoute.mapCenter : routeTemplate.mapCenter,
+            notes: routeValue(managedRoute.notes, routeTemplate.notes),
+            studentCount: routeValue(managedRoute.studentCount, routeTemplate.studentCount),
             stops: managedRoute.stops?.length ? managedRoute.stops : routeTemplate.stops,
         };
     }
@@ -554,10 +571,7 @@ function routeTripStateForRoute(data, routeCode) {
         ? routeTrips[routeCode]
         : null;
     if (routeState?.activeStaffTrip) {
-        return {
-            ...data.operations,
-            ...routeState,
-        };
+        return routeTripSnapshot(routeState);
     }
     if (data.operations?.activeStaffTrip?.routeCode === routeCode)
         return data.operations;
@@ -2301,6 +2315,7 @@ export function createApiServer(store, options = {}) {
             notFound(response);
         }
         catch (error) {
+            console.error("[smarttransit-api]", request.method, new URL(request.url, "http://localhost").pathname, error);
             send(response, 500, { message: error instanceof Error ? error.message : "Unexpected server error." });
         }
     });
