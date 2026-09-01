@@ -78,7 +78,7 @@ export function AdminLayout() {
             logout();
             navigate("/login", { replace: true });
         }}>
-          <LogOut /> Log out
+          <LogOut /> <span>Log out</span>
         </button>
       </aside>
       {open && (<button className="admin-scrim" onClick={() => setOpen(false)} aria-label="Close navigation"/>)}
