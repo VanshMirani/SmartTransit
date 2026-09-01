@@ -178,6 +178,7 @@ export function DriverOperationsProvider({ children, }) {
                 setTripStatus(data.tripStatus ?? "not-started");
                 setGpsUpdatedAt(data.gpsUpdatedAt ?? "Not sharing");
                 setLastGpsLocation(data.liveLocation ?? null);
+                setChecklist([]);
                 setTripLoadError("");
                 return data.activeStaffTrip;
             }
@@ -203,6 +204,7 @@ export function DriverOperationsProvider({ children, }) {
             }
             setGpsSharingStatus("idle");
             setLastGpsLocation(null);
+            setChecklist([]);
         },
         submitEmergency: (type, note) => {
             const liveCoordinates = lastGpsLocation?.coordinates;

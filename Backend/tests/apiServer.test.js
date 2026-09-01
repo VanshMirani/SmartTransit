@@ -838,6 +838,65 @@ test("return trip reverses stops and supports deboarding seat updates", async ()
     }
 });
 
+test("completed driver trips can be prepared again for morning or return", async () => {
+    const app = await startTestServer();
+    try {
+        const login = await fetch(`${app.baseUrl}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "driver@transport.indusuni.ac.in", password: "Driver@123" }),
+        });
+        assert.equal(login.status, 200);
+        const { token } = await json(login);
+
+        const returnDirection = await fetch(`${app.baseUrl}/driver/trips/current/direction`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ direction: "return" }),
+        });
+        assert.equal(returnDirection.status, 200);
+        const returnTrip = await json(returnDirection);
+
+        const started = await fetch(`${app.baseUrl}/driver/trips/${returnTrip.activeStaffTrip.id}/start`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        assert.equal(started.status, 200);
+
+        const ended = await fetch(`${app.baseUrl}/driver/trips/${returnTrip.activeStaffTrip.id}/end`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        assert.equal(ended.status, 200);
+        assert.equal((await json(ended)).tripStatus, "completed");
+
+        const repeatReturn = await fetch(`${app.baseUrl}/driver/trips/current/direction`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ direction: "return" }),
+        });
+        assert.equal(repeatReturn.status, 200);
+        const repeatReturnData = await json(repeatReturn);
+        assert.equal(repeatReturnData.tripStatus, "not-started");
+        assert.equal(repeatReturnData.activeStaffTrip.direction, "return");
+        assert.equal(repeatReturnData.operationalStops[0].name, "Indus University");
+
+        const nextMorning = await fetch(`${app.baseUrl}/driver/trips/current/direction`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ direction: "morning" }),
+        });
+        assert.equal(nextMorning.status, 200);
+        const nextMorningData = await json(nextMorning);
+        assert.equal(nextMorningData.tripStatus, "not-started");
+        assert.equal(nextMorningData.activeStaffTrip.direction, "morning");
+        assert.notEqual(nextMorningData.operationalStops[0].name, "Indus University");
+    }
+    finally {
+        await app.close();
+    }
+});
+
 test("session endpoint validates saved backend tokens", async () => {
     const app = await startTestServer();
     try {
