@@ -2653,6 +2653,55 @@ svg {
   background: var(--teal-600);
   box-shadow: 0 0 0 6px rgba(11, 148, 143, 0.16);
 }
+.campus-map-marker {
+  display: grid !important;
+  place-items: center;
+  border: 3px solid white;
+  border-radius: 10px;
+  color: white;
+  background: linear-gradient(135deg, #0b314f, #0b948f);
+  box-shadow: 0 8px 18px rgba(7, 29, 47, 0.3);
+  font-size: 0.6rem;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+.campus-map-marker span {
+  line-height: 1;
+}
+.leaflet-tooltip.map-stop-label,
+.leaflet-tooltip.map-campus-label {
+  border: 0;
+  border-radius: 999px;
+  box-shadow: 0 5px 16px rgba(7, 29, 47, 0.18);
+  font-family: var(--font-body);
+  font-weight: 800;
+  letter-spacing: 0;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.leaflet-tooltip.map-stop-label {
+  max-width: 150px;
+  overflow: hidden;
+  padding: 4px 8px;
+  color: var(--navy-800);
+  background: rgba(255, 255, 255, 0.92);
+  text-overflow: ellipsis;
+  font-size: 0.58rem;
+}
+.leaflet-tooltip.map-stop-label--active {
+  color: #6a4712;
+  background: #fff3cf;
+}
+.leaflet-tooltip.map-campus-label {
+  padding: 5px 10px;
+  color: white;
+  background: var(--navy-800);
+  font-size: 0.62rem;
+}
+.leaflet-tooltip.map-stop-label::before,
+.leaflet-tooltip.map-campus-label::before {
+  display: none;
+}
 .map-updated {
   height: 40px;
   padding: 0 15px;

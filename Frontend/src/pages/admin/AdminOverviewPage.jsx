@@ -4,9 +4,9 @@ import L from "leaflet";
 import { Link } from "react-router-dom";
 import { useAdminData } from "../../admin/AdminDataContext";
 import { AdminPageHeading, AdminStatusBadge, } from "../../components/admin/AdminUI";
-import { MapFitBounds, SmartTileLayer } from "../../components/maps/SmartTransitMap";
+import { CampusMapMarker, MapFitBounds, SmartTileLayer } from "../../components/maps/SmartTransitMap";
 import { useCommunications } from "../../communications/CommunicationsContext";
-import { indusRoutes } from "../../services/indusRoutes";
+import { INDUS_CAMPUS, indusRoutes } from "../../services/indusRoutes";
 import { formatTime, minutesAgo, relativeTimeLabel } from "../../utils/dateLabels";
 const fleetIcon = (status) => L.divIcon({
     className: `admin-fleet-marker admin-fleet-marker--${status}`,
@@ -95,8 +95,9 @@ export function AdminOverviewPage() {
             </Link>
           </div>
           <MapContainer center={indusRoutes[3].mapCenter} zoom={11} scrollWheelZoom={false} className="admin-overview-map">
-            <MapFitBounds points={activeFleet.map((bus) => bus.coordinates)} enabled={activeFleet.length > 0} trigger={activeFleet.map((bus) => `${bus.id}-${bus.lastLocationAt ?? bus.gpsUpdatedAt ?? ""}`).join("|")}/>
+            <MapFitBounds points={[INDUS_CAMPUS.coordinates, ...activeFleet.map((bus) => bus.coordinates)]} trigger={activeFleet.map((bus) => `${bus.id}-${bus.lastLocationAt ?? bus.gpsUpdatedAt ?? ""}`).join("|")}/>
             <SmartTileLayer />
+            <CampusMapMarker position={INDUS_CAMPUS.coordinates} address={INDUS_CAMPUS.address}/>
             {activeFleet.map((bus) => (<Marker key={bus.id} position={bus.coordinates} icon={fleetIcon(bus.status)}>
                 <Popup>
                   {bus.number} · {bus.route}

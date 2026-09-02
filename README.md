@@ -95,7 +95,7 @@ The app stays in browser demo mode unless a backend is enabled. For the included
 Backend calls are centralized in `Frontend/src/services/apiClient.js`. Endpoint expectations and data shapes are documented in [BACKEND_INTEGRATION.md](./BACKEND_INTEGRATION.md).
 Deployment steps are documented in [DEPLOYMENT.md](./DEPLOYMENT.md).
 
-Map tiles use OpenStreetMap by default. To use a commercial tile provider later, set `VITE_MAP_TILE_URL` and `VITE_MAP_TILE_ATTRIBUTION` without changing dashboard code. Admin stop coordinates can be filled by choosing a saved stop, pasting a Google Maps link or `lat,lng`, using the current device location, or clicking the route map.
+Map tiles use OpenStreetMap by default, with SmartTransit stop labels and an Indus University campus marker added on top of the map. To use a Google-like commercial tile provider later, set `VITE_MAP_TILE_URL` and `VITE_MAP_TILE_ATTRIBUTION` without changing dashboard code. Admin stop coordinates can be filled by choosing a saved stop, pasting a Google Maps link or `lat,lng`, using the current device location, or clicking the route map.
 
 ## Production Database
 

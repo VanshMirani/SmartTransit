@@ -3,7 +3,7 @@ import { useState } from "react";
 import { CircleMarker, MapContainer, Marker, Polyline, Popup, } from "react-leaflet";
 import L from "leaflet";
 import { AssignmentPendingState, ErrorState, LoadingCards, PageHeading, } from "../../components/student/StudentUI";
-import { MapAutoCenter, SmartTileLayer } from "../../components/maps/SmartTransitMap";
+import { CampusMapMarker, MapAutoCenter, MapFitBounds, SmartTileLayer, StopNameTooltip } from "../../components/maps/SmartTransitMap";
 import { useStudentData } from "../../hooks/useStudentData";
 const busIcon = L.divIcon({
     className: "smart-map-marker",
@@ -24,6 +24,7 @@ function trackingStateForBus(bus) {
         return "stale";
     return "live";
 }
+const isCampusStop = (stop) => /indus university/i.test(String(stop?.name ?? ""));
 export function LiveTrackingPage() {
     const { data, loading, error, retry } = useStudentData({ pollIntervalMs: 15000 });
     const [previewState, setPreviewState] = useState("live");
@@ -111,17 +112,22 @@ export function LiveTrackingPage() {
             </button>
           </div>
           <MapContainer center={mapCenter} zoom={12} scrollWheelZoom={false} className="leaflet-map">
-            <MapAutoCenter position={busPosition} zoom={13} enabled={state === "live" || recenterToken > 0} trigger={`${recenterToken}-${data.bus.lastLocationAt ?? data.bus.gpsUpdatedAt ?? ""}`}/>
+            <MapFitBounds points={[...routePoints, busPosition]} enabled={recenterToken === 0} trigger={`${data.route.code}-${data.bus.lastLocationAt ?? data.bus.gpsUpdatedAt ?? ""}`}/>
+            <MapAutoCenter position={busPosition} zoom={14} enabled={recenterToken > 0} trigger={`${recenterToken}-${data.bus.lastLocationAt ?? data.bus.gpsUpdatedAt ?? ""}`}/>
             <SmartTileLayer />
             <Polyline positions={routePoints} pathOptions={{ color: "#0b948f", weight: 5, opacity: 0.86 }}/>
-            {data.route.stops.map((stop) => stop.id === selectedStop.id ? (<Marker key={stop.id} position={stop.coordinates} icon={selectedIcon}>
+            {data.route.stops.map((stop) => isCampusStop(stop) ? (<CampusMapMarker key={stop.id} position={stop.coordinates}/>) : stop.id === selectedStop.id ? (<Marker key={stop.id} position={stop.coordinates} icon={selectedIcon}>
+                  <StopNameTooltip active>{stop.name}</StopNameTooltip>
                   <Popup>Your stop: {stop.name}</Popup>
                 </Marker>) : (<CircleMarker key={stop.id} center={stop.coordinates} radius={6} pathOptions={{
                 color: "#0b948f",
-                fillColor: "#fff",
+                fillColor: stop.id === currentStop.id ? "#ffb547" : "#fff",
                 fillOpacity: 1,
                 weight: 3,
             }}>
+                  <StopNameTooltip active={stop.id === currentStop.id} permanent={stop.id === currentStop.id}>
+                    {stop.name}
+                  </StopNameTooltip>
                   <Popup>{stop.name}</Popup>
                 </CircleMarker>))}
             <Marker position={busPosition} icon={busIcon}>

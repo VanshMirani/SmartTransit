@@ -4,7 +4,7 @@ import { CircleMarker, MapContainer, Polyline, Popup, } from "react-leaflet";
 import { useMapEvents } from "react-leaflet";
 import { useAdminData } from "../../admin/AdminDataContext";
 import { AdminFeedback, AdminPageHeading, AdminStatusBadge, } from "../../components/admin/AdminUI";
-import { MapAutoCenter, SmartTileLayer } from "../../components/maps/SmartTransitMap";
+import { CampusMapMarker, MapAutoCenter, MapFitBounds, SmartTileLayer, StopNameTooltip } from "../../components/maps/SmartTransitMap";
 import { coordinatesFromStop, coordinatesFromText, currentBrowserLocation, defaultAhmedabadMapCenter, formatCoordinate, routeLocationResults, } from "../../services/locationSearch";
 const prepareRouteForEdit = (route) => ({
     ...structuredClone(route),
@@ -33,6 +33,7 @@ const emptyRoute = () => ({
     conductorId: "",
     stops: [],
 });
+const isCampusStop = (stop) => /indus university/i.test(String(stop?.name ?? ""));
 export function AdminRoutesPage() {
     const { routes, records, upsertRoute, toggleRoute } = useAdminData();
     const [selectedId, setSelectedId] = useState(routes[0]?.id ?? "");
@@ -153,14 +154,18 @@ export function AdminRoutesPage() {
                   </section>
                   <section className="route-preview-map">
                     <MapContainer key={selected.id} center={selected.stops[0]?.coordinates ?? [23.07, 72.54]} zoom={11} scrollWheelZoom={false} className="admin-route-map">
+                      <MapFitBounds points={selected.stops.map((stop) => stop.coordinates)} trigger={`${selected.id}-${selected.stops.length}`}/>
                       <SmartTileLayer />
                       <Polyline positions={selected.stops.map((stop) => stop.coordinates)} pathOptions={{ color: "#0b948f", weight: 5 }}/>
-                      {selected.stops.map((stop, index) => (<CircleMarker key={stop.id} center={stop.coordinates} radius={8} pathOptions={{
+                      {selected.stops.map((stop, index) => isCampusStop(stop) ? (<CampusMapMarker key={stop.id} position={stop.coordinates}/>) : (<CircleMarker key={stop.id} center={stop.coordinates} radius={8} pathOptions={{
                         color: "#0b948f",
                         fillColor: index === 0 ? "#ffb547" : "#fff",
                         fillOpacity: 1,
                         weight: 3,
                     }}>
+                          <StopNameTooltip active={index === 0} permanent={index === 0 || index === selected.stops.length - 2 || index % 5 === 0}>
+                            {stop.name}
+                          </StopNameTooltip>
                           <Popup>
                             {index + 1}. {stop.name} · {stop.scheduledTime}
                           </Popup>
@@ -458,16 +463,20 @@ function RouteEditor({ route, setRoute, errors, records, routes, save, cancel, }
                 </button>))}
             </div>)}
           <MapContainer key={`${route.id || "new-route"}-${mapCenter.join(",")}-${validStops.length}`} center={mapCenter} zoom={11} scrollWheelZoom={false} className="admin-route-map">
+              <MapFitBounds points={[...validStops.map((item) => item.coordinates), ...(draftCoordinates ? [draftCoordinates] : [])]} enabled={!mapFocus} trigger={`${route.id || "new"}-${validStops.length}-${Boolean(draftCoordinates)}`}/>
               <MapAutoCenter position={mapFocus ?? targetCoordinates ?? mapCenter}/>
               <MapCoordinatePicker onPick={applyMapCoordinate}/>
               <SmartTileLayer />
               {validStops.length > 1 && <Polyline positions={validStops.map((item) => item.coordinates)} pathOptions={{ color: "#0b948f", weight: 5 }}/>}
-              {validStops.map(({ stop, index, coordinates }) => (<CircleMarker key={stop.id} center={coordinates} radius={8} pathOptions={{
+              {validStops.map(({ stop, index, coordinates }) => isCampusStop(stop) ? (<CampusMapMarker key={stop.id} position={coordinates}/>) : (<CircleMarker key={stop.id} center={coordinates} radius={8} pathOptions={{
                     color: "#0b948f",
                     fillColor: coordinateTarget === stop.id ? "#ffb547" : index === 0 ? "#0b948f" : "#fff",
                     fillOpacity: 1,
                     weight: 3,
                 }}>
+                  <StopNameTooltip active={coordinateTarget === stop.id || index === 0} permanent={coordinateTarget === stop.id || index === 0 || index === route.stops.length - 2 || index % 5 === 0}>
+                    {stop.name}
+                  </StopNameTooltip>
                   <Popup>
                     {index + 1}. {stop.name}
                   </Popup>

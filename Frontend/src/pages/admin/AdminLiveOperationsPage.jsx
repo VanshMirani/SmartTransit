@@ -1,10 +1,10 @@
 import { AlertTriangle, BusFront, Clock3, Gauge, MapPin, Radio, Route, Search, Users, } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { MapContainer, Marker, Polyline, Popup, } from "react-leaflet";
+import { CircleMarker, MapContainer, Marker, Polyline, Popup, } from "react-leaflet";
 import L from "leaflet";
 import { useAdminData } from "../../admin/AdminDataContext";
 import { AdminModal, AdminPageHeading, AdminStatusBadge, } from "../../components/admin/AdminUI";
-import { MapAutoCenter, SmartTileLayer } from "../../components/maps/SmartTransitMap";
+import { CampusMapMarker, MapFitBounds, SmartTileLayer, StopNameTooltip } from "../../components/maps/SmartTransitMap";
 import { indusRoutes } from "../../services/indusRoutes";
 import { minutesAgo, relativeTimeLabel } from "../../utils/dateLabels";
 const liveIcon = (status, selected) => L.divIcon({
@@ -13,6 +13,7 @@ const liveIcon = (status, selected) => L.divIcon({
     iconSize: selected ? [46, 46] : [38, 38],
     iconAnchor: selected ? [23, 23] : [19, 19],
 });
+const isCampusStop = (stop) => /indus university/i.test(String(stop?.name ?? ""));
 export function AdminLiveOperationsPage() {
     const { fleet, routes, refreshData } = useAdminData();
     const [selectedId, setSelectedId] = useState("");
@@ -107,12 +108,28 @@ export function AdminLiveOperationsPage() {
         </aside>
         <section className="live-map-workspace">
           <MapContainer center={mapRoute.mapCenter} zoom={11} scrollWheelZoom={false} className="admin-live-map">
-            <MapAutoCenter position={selected.tripActive ? selected.coordinates : mapRoute.mapCenter} zoom={selected.tripActive ? 13 : 11} trigger={`${selected.id}-${selected.lastLocationAt ?? selected.gpsUpdatedAt ?? ""}`}/>
+            <MapFitBounds points={[...route.stops.map((stop) => stop.coordinates), ...(selected.tripActive ? [selected.coordinates] : [])]} trigger={`${selected.id}-${route.code}-${route.stops.length}-${selected.lastLocationAt ?? selected.gpsUpdatedAt ?? ""}`}/>
             <SmartTileLayer />
             <Polyline positions={route.stops.map((stop) => stop.coordinates)} pathOptions={{ color: "#0b948f", weight: 5 }}/>
+            {route.stops.map((stop, index) => isCampusStop(stop) ? (<CampusMapMarker key={stop.id} position={stop.coordinates}/>) : (<CircleMarker key={stop.id} center={stop.coordinates} radius={6} pathOptions={{
+                color: "#0b948f",
+                fillColor: index === 0 ? "#ffb547" : "#fff",
+                fillOpacity: 1,
+                weight: 3,
+            }}>
+                  <StopNameTooltip active={index === 0 || stop.id === selected.nextStopId} permanent={index === 0 || stop.id === selected.nextStopId}>
+                    {stop.name}
+                  </StopNameTooltip>
+                  <Popup>
+                    {index + 1}. {stop.name}
+                  </Popup>
+                </CircleMarker>))}
             {fleet
             .filter((bus) => bus.tripActive)
             .map((bus) => (<Marker key={bus.id} position={bus.coordinates} icon={liveIcon(bus.status, bus.id === selected.id)} eventHandlers={{ click: () => setSelectedId(bus.id) }}>
+                  <StopNameTooltip active={bus.id === selected.id} permanent={bus.id === selected.id}>
+                    {bus.number}
+                  </StopNameTooltip>
                   <Popup>
                     {bus.number} · {bus.route}
                   </Popup>
