@@ -1,11 +1,13 @@
 import { ArrowDown, ArrowLeft, ArrowUp, BusFront, MapPin, Pencil, Plus, Route, Save, Search, ToggleLeft, ToggleRight, Trash2, UserRound, Users, X, } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CircleMarker, MapContainer, Polyline, Popup, TileLayer, } from "react-leaflet";
-import { useMapEvents } from "react-leaflet";
+import { useMap, useMapEvents } from "react-leaflet";
 import { useAdminData } from "../../admin/AdminDataContext";
 import { AdminFeedback, AdminPageHeading, AdminStatusBadge, } from "../../components/admin/AdminUI";
 const defaultMapCenter = [23.07, 72.54];
+const ahmedabadSearchViewbox = "72.35,23.18,72.75,22.9";
 const formatCoordinate = (value) => Number.isFinite(Number(value)) ? String(Math.round(Number(value) * 1000000) / 1000000) : "";
+const normalizeSearchText = (value) => value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 const coordinatesFromStop = (stop) => {
     const lat = Number(stop.lat ?? stop.coordinates?.[0]);
     const lng = Number(stop.lng ?? stop.coordinates?.[1]);
@@ -42,6 +44,34 @@ const emptyRoute = () => ({
     conductorId: "",
     stops: [],
 });
+const uniqueLocationResults = (results) => {
+    const seen = new Set();
+    return results.filter((result) => {
+        const key = `${normalizeSearchText(result.name)}-${formatCoordinate(result.lat)}-${formatCoordinate(result.lng)}`;
+        if (seen.has(key))
+            return false;
+        seen.add(key);
+        return true;
+    });
+};
+const routeLocationResults = (query, routes) => {
+    const search = normalizeSearchText(query);
+    if (!search)
+        return [];
+    return uniqueLocationResults(routes.flatMap((route) => (route.stops ?? []).map((stop, index) => {
+        const coordinates = coordinatesFromStop(stop);
+        if (!coordinates)
+            return null;
+        return {
+            id: `${route.id}-${stop.id}`,
+            name: stop.name,
+            description: `${route.code} · stop ${index + 1}`,
+            lat: coordinates[0],
+            lng: coordinates[1],
+            source: "Saved stop",
+        };
+    }).filter(Boolean)).filter((result) => normalizeSearchText(`${result.name} ${result.description}`).includes(search))).slice(0, 6);
+};
 export function AdminRoutesPage() {
     const { routes, records, upsertRoute, toggleRoute } = useAdminData();
     const [selectedId, setSelectedId] = useState(routes[0]?.id ?? "");
@@ -89,7 +119,7 @@ export function AdminRoutesPage() {
         setFeedback(`${route.code} was saved with ${route.stops.length} ordered stops.`);
     };
     return (<div>
-      {editing ? (<RouteEditor route={editing} setRoute={setEditing} errors={errors} records={records} save={save} cancel={() => setEditing(null)}/>) : (<>
+      {editing ? (<RouteEditor route={editing} setRoute={setEditing} errors={errors} records={records} routes={routes} save={save} cancel={() => setEditing(null)}/>) : (<>
           <AdminPageHeading eyebrow="Network planning" title="Routes & stops builder" description="Create routes, order stops, schedule arrivals and assign operating teams." actions={<button className="button admin-primary-button" onClick={() => beginEdit(emptyRoute())}>
                 <Plus /> Add route
               </button>}/>
@@ -188,7 +218,7 @@ export function AdminRoutesPage() {
         </>)}
     </div>);
 }
-function RouteEditor({ route, setRoute, errors, records, save, cancel, }) {
+function RouteEditor({ route, setRoute, errors, records, routes, save, cancel, }) {
     const [newStop, setNewStop] = useState({
         name: "",
         scheduledTime: "",
@@ -197,6 +227,11 @@ function RouteEditor({ route, setRoute, errors, records, save, cancel, }) {
     });
     const [coordinateTarget, setCoordinateTarget] = useState("new");
     const [stopError, setStopError] = useState("");
+    const [locationQuery, setLocationQuery] = useState("");
+    const [locationResults, setLocationResults] = useState([]);
+    const [locationMessage, setLocationMessage] = useState("");
+    const [searchingLocation, setSearchingLocation] = useState(false);
+    const [mapFocus, setMapFocus] = useState(null);
     const validStops = route.stops
         .map((stop, index) => ({ stop, index, coordinates: coordinatesFromStop(stop) }))
         .filter((item) => item.coordinates);
@@ -204,23 +239,86 @@ function RouteEditor({ route, setRoute, errors, records, save, cancel, }) {
     const mapCenter = validStops[0]?.coordinates ?? draftCoordinates ?? defaultMapCenter;
     const targetStop = route.stops.find((stop) => stop.id === coordinateTarget);
     const coordinateTargetLabel = coordinateTarget === "new" ? "the new stop" : targetStop?.name || "the selected stop";
+    const targetStopName = coordinateTarget === "new" ? newStop.name : targetStop?.name ?? "";
+    const targetCoordinates = coordinateTarget === "new" ? draftCoordinates : targetStop ? coordinatesFromStop(targetStop) : null;
+    const searchText = locationQuery.trim() || targetStopName.trim();
+    useEffect(() => {
+        setLocationResults([]);
+        setLocationMessage("");
+        setLocationQuery(targetStopName);
+    }, [coordinateTarget, targetStopName]);
     const updateStop = (index, patch) => setRoute({
         ...route,
         stops: route.stops.map((stop, i) => i === index ? { ...stop, ...patch } : stop),
     });
-    const applyMapCoordinate = ({ lat, lng }) => {
+    const applyCoordinatesToTarget = ({ lat, lng }, name = "") => {
         const coordinatePatch = {
             lat: formatCoordinate(lat),
             lng: formatCoordinate(lng),
         };
+        setMapFocus([Number(lat), Number(lng)]);
         if (coordinateTarget === "new") {
-            setNewStop((current) => ({ ...current, ...coordinatePatch }));
+            setNewStop((current) => ({
+                ...current,
+                ...(!current.name.trim() && name ? { name } : {}),
+                ...coordinatePatch,
+            }));
             return;
         }
         setRoute({
             ...route,
             stops: route.stops.map((stop) => stop.id === coordinateTarget ? { ...stop, ...coordinatePatch } : stop),
         });
+    };
+    const applyMapCoordinate = ({ lat, lng }) => applyCoordinatesToTarget({ lat, lng });
+    const searchLocation = async () => {
+        const query = searchText;
+        if (!query) {
+            setLocationMessage("Enter a stop name or area to search.");
+            return;
+        }
+        const savedMatches = routeLocationResults(query, routes);
+        setLocationResults(savedMatches);
+        setLocationMessage(savedMatches.length ? "Choose a saved stop or wait for more map results." : "");
+        setSearchingLocation(true);
+        try {
+            const url = new URL("https://nominatim.openstreetmap.org/search");
+            url.searchParams.set("format", "jsonv2");
+            url.searchParams.set("q", /ahmedabad|gandhinagar|gujarat|india/i.test(query) ? query : `${query}, Ahmedabad, Gujarat, India`);
+            url.searchParams.set("limit", "6");
+            url.searchParams.set("countrycodes", "in");
+            url.searchParams.set("addressdetails", "1");
+            url.searchParams.set("dedupe", "1");
+            url.searchParams.set("bounded", "1");
+            url.searchParams.set("viewbox", ahmedabadSearchViewbox);
+            const response = await fetch(url.toString(), { headers: { Accept: "application/json" } });
+            if (!response.ok)
+                throw new Error("Map search failed.");
+            const found = await response.json();
+            const mapMatches = found
+                .map((item) => ({
+                id: `osm-${item.place_id}`,
+                name: item.name || item.display_name?.split(",")[0] || query,
+                description: item.display_name,
+                lat: Number(item.lat),
+                lng: Number(item.lon),
+                source: "Map result",
+            }))
+                .filter((item) => Number.isFinite(item.lat) && Number.isFinite(item.lng));
+            const results = uniqueLocationResults([...savedMatches, ...mapMatches]).slice(0, 8);
+            setLocationResults(results);
+            setLocationMessage(results.length ? "Select the correct location to fill coordinates." : "No matching location found. Try a nearby landmark.");
+        }
+        catch {
+            setLocationMessage(savedMatches.length ? "Map search is unavailable. Saved stop matches are shown." : "Map search is unavailable. Click the map as a fallback.");
+        }
+        finally {
+            setSearchingLocation(false);
+        }
+    };
+    const chooseLocation = (result) => {
+        applyCoordinatesToTarget({ lat: result.lat, lng: result.lng }, result.name);
+        setLocationMessage(`${result.name} selected.`);
     };
     const move = (index, direction) => {
         const target = index + direction;
@@ -380,11 +478,36 @@ function RouteEditor({ route, setRoute, errors, records, save, cancel, }) {
         <section className="admin-panel route-editor-map">
           <div className="admin-panel-title">
             <div>
-              <h2>Map preview</h2>
-              <p>Click the map to set coordinates for {coordinateTargetLabel}</p>
+              <h2>Stop location</h2>
+              <p>Search, select a result, or click the map for {coordinateTargetLabel}</p>
             </div>
           </div>
+          <div className="route-location-search">
+            <label className="admin-search">
+              <Search />
+              <input value={locationQuery} onChange={(event) => setLocationQuery(event.target.value)} onKeyDown={(event) => {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                void searchLocation();
+            }
+        }} placeholder="Search stop or landmark" aria-label="Search stop location"/>
+            </label>
+            <button type="button" className="button button--secondary" onClick={() => void searchLocation()} disabled={searchingLocation}>
+              <Search /> {searchingLocation ? "Finding..." : "Find"}
+            </button>
+          </div>
+          {locationMessage && <small className="route-location-message">{locationMessage}</small>}
+          {locationResults.length > 0 && (<div className="route-location-results">
+              {locationResults.map((result) => (<button type="button" key={result.id} onClick={() => chooseLocation(result)}>
+                  <span>
+                    <strong>{result.name}</strong>
+                    <small>{result.description}</small>
+                  </span>
+                  <em>{result.source}</em>
+                </button>))}
+            </div>)}
           <MapContainer key={`${route.id || "new-route"}-${mapCenter.join(",")}-${validStops.length}`} center={mapCenter} zoom={11} scrollWheelZoom={false} className="admin-route-map">
+              <MapAutoCenter position={mapFocus ?? targetCoordinates ?? mapCenter}/>
               <MapCoordinatePicker onPick={applyMapCoordinate}/>
               <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>
               {validStops.length > 1 && <Polyline positions={validStops.map((item) => item.coordinates)} pathOptions={{ color: "#0b948f", weight: 5 }}/>}
@@ -423,6 +546,16 @@ function MapCoordinatePicker({ onPick }) {
             onPick(event.latlng);
         },
     });
+    return null;
+}
+function MapAutoCenter({ position }) {
+    const map = useMap();
+    const latitude = position?.[0];
+    const longitude = position?.[1];
+    useEffect(() => {
+        if (Number.isFinite(latitude) && Number.isFinite(longitude))
+            map.flyTo([latitude, longitude], 14, { duration: 0.45 });
+    }, [latitude, longitude, map]);
     return null;
 }
 function RouteField({ label, value, setValue, error, }) {
