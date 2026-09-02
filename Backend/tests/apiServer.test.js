@@ -861,7 +861,7 @@ test("route stop changes stay aligned across student, staff, and admin dashboard
         const driverStop = driver.operationalStops.find((stop) => stop.id === "iu-r4-13");
         const conductorStop = conductor.operationalStops.find((stop) => stop.id === "iu-r4-13");
         const adminRouteStop = admin.routes.find((item) => item.code === "IU-R4").stops.find((stop) => stop.id === "iu-r4-13");
-        const adminStopRecord = admin.records.stops.find((stop) => stop.routeCode === "IU-R4" && stop.stopOrder === 13);
+        const adminStopRecord = admin.records.stops.find((stop) => stop.name === "Shilaj Circle Gate");
 
         assert.equal(studentStop.name, "Shilaj Circle Gate");
         assert.equal(studentStop.scheduledTime, "8:26 AM");
@@ -872,7 +872,7 @@ test("route stop changes stay aligned across student, staff, and admin dashboard
         assert.equal(adminRouteStop.name, "Shilaj Circle Gate");
         assert.equal(adminStopRecord.name, "Shilaj Circle Gate");
         assert.equal(adminStopRecord.contact, "8:26 AM");
-        assert.equal(adminStopRecord.assignment, "IU-R4 - Stop 13");
+        assert.match(adminStopRecord.assignment, /IU-R4 stop 13/);
     }
     finally {
         await app.close();
@@ -1363,6 +1363,11 @@ test("admin can load management bootstrap data", async () => {
         assert.equal(data.routes.length, 8);
         assert.equal(data.fleetVehicles.length, 8);
         assert.ok(data.records.buses.length >= 8);
+        const stopNames = data.records.stops.map((stop) => stop.name.toLowerCase());
+        assert.equal(new Set(stopNames).size, stopNames.length);
+        const zydusStop = data.records.stops.find((stop) => stop.name === "Zydus Hospital");
+        assert.match(zydusStop.assignment, /IU-R4/);
+        assert.match(zydusStop.assignment, /IU-R8/);
     }
     finally {
         await app.close();

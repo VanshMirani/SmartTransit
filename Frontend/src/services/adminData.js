@@ -98,6 +98,56 @@ export const buildRouteStopRecord = (route, index, stop) => ({
     status: "active",
 });
 
+const stopRecordSlug = (name) => String(name ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "") || "stop";
+
+const uniqueValues = (values) => [...new Set(values.filter(Boolean))];
+
+export function buildPhysicalStopRecords(routes) {
+    const groupedStops = new Map();
+    for (const route of routes) {
+        (route.stops ?? []).forEach((stop, index) => {
+            const key = stopRecordSlug(stop.name);
+            const existing = groupedStops.get(key) ?? {
+                id: `stop-${key}`,
+                name: stop.name,
+                code: `STP-${key.toUpperCase().slice(0, 18)}`,
+                coordinates: [],
+                schedules: [],
+                routeLinks: [],
+                statusValues: [],
+            };
+            const record = buildRouteStopRecord(route, index, stop);
+            existing.coordinates.push(record.detail);
+            existing.schedules.push(record.contact);
+            existing.routeLinks.push(`${route.code} stop ${index + 1}`);
+            existing.statusValues.push(record.status);
+            groupedStops.set(key, existing);
+        });
+    }
+    return [...groupedStops.values()]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((stop) => {
+        const coordinates = uniqueValues(stop.coordinates);
+        const schedules = uniqueValues(stop.schedules);
+        const routeLinks = uniqueValues(stop.routeLinks);
+        return {
+            id: stop.id,
+            name: stop.name,
+            code: stop.code,
+            detail: coordinates.length === 1 ? coordinates[0] : `${coordinates.length} mapped pickup points`,
+            contact: schedules.length <= 3 ? schedules.join(" / ") : `${schedules.length} scheduled times`,
+            assignment: routeLinks.join(", "),
+            routeCode: uniqueValues(routeLinks.map((link) => link.match(/\bIU-R\d+\b/)?.[0])).join(", "),
+            stopId: "",
+            stopOrder: "",
+            status: stop.statusValues.includes("active") ? "active" : stop.statusValues[0] ?? "active",
+        };
+    });
+}
+
 const studentRouteAssignment = (routeCode, stopName) => {
     const route = indusRoutes.find((item) => item.code === routeCode);
     const stop = route?.stops.find((item) => item.name === stopName);
@@ -163,7 +213,7 @@ export const initialAdminRecords = {
             status: "active",
         },
     ],
-    stops: indusRoutes.flatMap((route) => route.stops.map((stop, index) => buildRouteStopRecord(route, index, stop))),
+    stops: buildPhysicalStopRecords(indusRoutes),
 };
 
 export const initialRoutes = indusRoutes.map((route, index) => ({

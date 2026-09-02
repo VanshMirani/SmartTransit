@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { createHash, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import { getBusRegistration, INDUS_CAMPUS, indusRoutes, normalizeTripDirection, routeForTripDirection, tripDirectionLabel, withStopProgress } from "../Frontend/src/services/indusRoutes.js";
-import { buildRouteStopRecord, getRouteStaffAssignment } from "../Frontend/src/services/adminData.js";
+import { buildPhysicalStopRecords, getRouteStaffAssignment } from "../Frontend/src/services/adminData.js";
 import { isInstituteEmail, normalizeEmail, signupEmailHelpText, validatePassword } from "../Frontend/src/utils/registrationValidation.js";
 import { sendPasswordResetOtpEmail, sendSignupOtpEmail } from "./emailService.js";
 import { hashPassword, verifyPassword } from "./passwords.js";
@@ -1192,12 +1192,9 @@ function adminDataWithConsistentAssignments(data) {
     }
     const fleetVehicles = [...fleetById.values()];
     const stopStatusById = new Map((records.stops ?? []).map((stop) => [stop.id, stop.status]));
-    const stops = routes.flatMap((route) => route.stops.map((stop, index) => {
-        const record = buildRouteStopRecord(route, index, stop);
-        return {
-            ...record,
-            status: stopStatusById.get(record.id) ?? record.status,
-        };
+    const stops = buildPhysicalStopRecords(routes).map((stop) => ({
+        ...stop,
+        status: stopStatusById.get(stop.id) ?? stop.status,
     }));
     return {
         ...admin,
