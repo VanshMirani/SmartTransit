@@ -14,6 +14,7 @@ const defaultEtaSpeedKmh = 24;
 const minimumEtaSpeedKmh = 12;
 const maximumEtaSpeedKmh = 60;
 const roadDistanceFactor = 1.25;
+const stopPassedThresholdKm = 0.08;
 const allowedOrigin = process.env.SMARTTRANSIT_ALLOWED_ORIGIN || "*";
 const localAllowedOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(allowedOrigin);
 
@@ -711,6 +712,116 @@ function routeDistanceKm(stops, fromIndex, toIndex) {
     return distance;
 }
 
+function cumulativeRouteDistancesKm(stops) {
+    if (!Array.isArray(stops) || !stops.length)
+        return [];
+    const distances = [0];
+    for (let index = 1; index < stops.length; index += 1) {
+        const segmentDistance = directDistanceKmBetween(stops[index - 1]?.coordinates, stops[index]?.coordinates);
+        distances[index] = distances[index - 1] + (segmentDistance ?? 0);
+    }
+    return distances;
+}
+
+function localPointMeters(coordinates, origin) {
+    if (!hasCoordinates(coordinates) || !hasCoordinates(origin))
+        return null;
+    const lat = Number(coordinates[0]);
+    const lng = Number(coordinates[1]);
+    const originLat = Number(origin[0]);
+    const originLng = Number(origin[1]);
+    const metersPerDegreeLat = 111320;
+    const metersPerDegreeLng = metersPerDegreeLat * Math.cos(radians(originLat));
+    return {
+        x: (lng - originLng) * metersPerDegreeLng,
+        y: (lat - originLat) * metersPerDegreeLat,
+    };
+}
+
+function closestRouteProjection(stops, coordinates, cumulativeDistances) {
+    if (!Array.isArray(stops) || stops.length === 0 || !hasCoordinates(coordinates))
+        return null;
+    if (stops.length === 1) {
+        const distanceKm = directDistanceKmBetween(coordinates, stops[0]?.coordinates);
+        return {
+            routeKm: 0,
+            distanceMeters: distanceKm === null ? null : distanceKm * 1000,
+        };
+    }
+    const origin = stops[0]?.coordinates;
+    const point = localPointMeters(coordinates, origin);
+    if (!point)
+        return null;
+    let best = null;
+    for (let index = 0; index < stops.length - 1; index += 1) {
+        const start = localPointMeters(stops[index]?.coordinates, origin);
+        const end = localPointMeters(stops[index + 1]?.coordinates, origin);
+        if (!start || !end)
+            continue;
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const segmentLengthSquared = dx * dx + dy * dy;
+        if (segmentLengthSquared <= 0)
+            continue;
+        const rawT = ((point.x - start.x) * dx + (point.y - start.y) * dy) / segmentLengthSquared;
+        const t = Math.max(0, Math.min(1, rawT));
+        const projected = {
+            x: start.x + dx * t,
+            y: start.y + dy * t,
+        };
+        const distanceMeters = Math.hypot(point.x - projected.x, point.y - projected.y);
+        const segmentLengthKm = Math.sqrt(segmentLengthSquared) / 1000;
+        const routeKm = (cumulativeDistances[index] ?? 0) + segmentLengthKm * t;
+        if (!best || distanceMeters < best.distanceMeters) {
+            best = {
+                routeKm,
+                distanceMeters,
+                segmentIndex: index,
+            };
+        }
+    }
+    return best;
+}
+
+function stopProgressFromLocation(route, coordinates, previousNextStopId = "") {
+    const stops = route?.stops ?? [];
+    if (!stops.length)
+        return null;
+    if (!hasCoordinates(coordinates)) {
+        const fallbackIndex = Math.max(0, stops.findIndex((stop) => stop.id === previousNextStopId));
+        return {
+            nextStopId: stops[fallbackIndex]?.id ?? stops[0].id,
+            nextStopIndex: fallbackIndex,
+            distanceFromRouteMeters: null,
+            routeProgressKm: null,
+        };
+    }
+    const cumulativeDistances = cumulativeRouteDistancesKm(stops);
+    const projection = closestRouteProjection(stops, coordinates, cumulativeDistances);
+    if (!projection) {
+        const fallbackIndex = Math.max(0, stops.findIndex((stop) => stop.id === previousNextStopId));
+        return {
+            nextStopId: stops[fallbackIndex]?.id ?? stops[0].id,
+            nextStopIndex: fallbackIndex,
+            distanceFromRouteMeters: null,
+            routeProgressKm: null,
+        };
+    }
+    const passedLineKm = projection.routeKm - stopPassedThresholdKm;
+    let nextStopIndex = stops.findIndex((_stop, index) => (cumulativeDistances[index] ?? 0) >= passedLineKm);
+    if (nextStopIndex < 0)
+        nextStopIndex = stops.length - 1;
+    const previousNextStopIndex = stops.findIndex((stop) => stop.id === previousNextStopId);
+    if (previousNextStopIndex > nextStopIndex)
+        nextStopIndex = previousNextStopIndex;
+    return {
+        nextStopId: stops[nextStopIndex]?.id ?? stops.at(-1)?.id,
+        nextStopIndex,
+        distanceFromRouteMeters: projection.distanceMeters,
+        routeProgressKm: projection.routeKm,
+    };
+}
+
 function etaSpeedKmh(location) {
     const speed = Number(location?.speedKmh);
     if (Number.isFinite(speed) && speed > 0)
@@ -766,15 +877,19 @@ function buildLiveEtaContext(data, route, trip, locationOverride) {
             distanceToNextStopKm: null,
         };
     }
-    const nextStopId = route.stops?.some((stop) => stop.id === trip.nextStopId)
+    const tripNextStopId = route.stops?.some((stop) => stop.id === trip.nextStopId)
         ? trip.nextStopId
         : route.stops?.[Math.max(0, route.stops.length - 2)]?.id ?? route.stops?.[0]?.id ?? "";
-    const nextStopIndex = Math.max(0, route.stops?.findIndex((stop) => stop.id === nextStopId) ?? 0);
-    const nextStop = route.stops?.[nextStopIndex];
     const tripActive = tripIsSharingLocation(data, route.code);
     const location = locationOverride ?? (tripActive ? liveLocationForRoute(data, route.code) : null);
     const gpsStatus = tripActive ? liveLocationStatus(location) : "not-sharing";
     const hasPhoneLocation = tripActive && hasCoordinates(location?.coordinates);
+    const locationProgress = hasPhoneLocation
+        ? stopProgressFromLocation(route, location.coordinates, tripNextStopId)
+        : null;
+    const nextStopId = locationProgress?.nextStopId ?? tripNextStopId;
+    const nextStopIndex = Math.max(0, route.stops?.findIndex((stop) => stop.id === nextStopId) ?? 0);
+    const nextStop = route.stops?.[nextStopIndex];
     if (!tripActive) {
         return {
             nextStopId: nextStop?.id ?? nextStopId,
@@ -813,6 +928,8 @@ function buildLiveEtaContext(data, route, trip, locationOverride) {
         distanceToNextStopKm,
         gpsStatus,
         location,
+        routeProgressKm: locationProgress?.routeProgressKm,
+        distanceFromRouteMeters: locationProgress?.distanceFromRouteMeters,
         stopDistanceKm(targetStopId) {
             const targetStopIndex = route.stops?.findIndex((stop) => stop.id === targetStopId) ?? -1;
             if (targetStopIndex < 0)
@@ -858,6 +975,10 @@ function liveLocationStatus(location) {
 }
 
 function liveLocationForRoute(data, routeCode) {
+    const routeState = routeTripStateForRoute(data, routeCode);
+    const tripId = routeState?.activeStaffTrip?.id;
+    if (tripId)
+        return liveLocationMap(data)[tripId] ?? null;
     return Object.values(liveLocationMap(data)).find((location) => location.routeCode === routeCode) ?? null;
 }
 
@@ -1068,13 +1189,14 @@ function activeTripWithConsistentAssignments(data, trip) {
     const nextStopId = route.stops?.some((stop) => stop.id === trip.nextStopId)
         ? trip.nextStopId
         : route.stops?.[0]?.id;
-    const nextStop = route.stops?.find((stop) => stop.id === nextStopId);
     const etaContext = buildLiveEtaContext(data, route, {
         ...trip,
         routeCode: baseRoute.code,
         direction,
-        nextStopId: nextStop?.id ?? trip.nextStopId,
+        nextStopId,
     });
+    const etaNextStop = route.stops?.find((stop) => stop.id === etaContext.nextStopId) ??
+        route.stops?.find((stop) => stop.id === nextStopId);
     return {
         ...trip,
         direction,
@@ -1089,8 +1211,8 @@ function activeTripWithConsistentAssignments(data, trip) {
         scheduledStart: route.stops[0]?.scheduledTime ?? trip.scheduledStart,
         scheduledEnd: route.stops.at(-1)?.scheduledTime ?? route.campusArrival ?? trip.scheduledEnd,
         distance: baseRoute.distance ?? trip.distance,
-        nextStopId: nextStop?.id ?? trip.nextStopId,
-        nextStopName: nextStop?.name ?? trip.nextStopName,
+        nextStopId: etaNextStop?.id ?? trip.nextStopId,
+        nextStopName: etaNextStop?.name ?? trip.nextStopName,
         nextStopEta: etaContext.nextStopEta,
         remainingDistance: etaContext.remainingDistance,
         etaSource: etaContext.etaSource,
@@ -1367,6 +1489,10 @@ function storeDriverLocation(data, user, tripId, locationInput) {
     const route = routeForTrip(data, trip);
     const etaContext = buildLiveEtaContext(data, route, trip, location);
     tripState.gpsUpdatedAt = updatedAt;
+    if (route?.stops?.length && etaContext.nextStopId) {
+        tripState.operationalCurrentStopId = etaContext.nextStopId;
+        tripState.operationalStops = withStopProgress(route, etaContext.nextStopId);
+    }
     tripState.activeStaffTrip = {
         ...trip,
         nextStopId: etaContext.nextStopId || trip.nextStopId,
@@ -1562,11 +1688,7 @@ function resetTripForDirection(data, requestedDirection, user = null) {
         return { error: "Trip route does not have stops configured." };
     const direction = normalizeTripDirection(requestedDirection);
     const route = routeForTripDirection(baseRoute, direction);
-    const nextStop = direction === "return"
-        ? route.stops[0]
-        : route.stops.find((stop) => stop.id === currentTrip?.nextStopId) ??
-            route.stops.find((stop) => stop.id === routeState?.operationalCurrentStopId) ??
-            route.stops[0];
+    const nextStop = route.stops[0];
     const fleetBus = ensureFleetBusForRoute(data, baseRoute);
     const capacity = fleetBus?.capacity ?? currentTrip?.capacity ?? 50;
     const initialOccupiedSeats = 0;
@@ -1602,6 +1724,10 @@ function resetTripForDirection(data, requestedDirection, user = null) {
         gpsUpdatedAt: "Not sharing",
         activeSeatTripId: trip.id,
     };
+    const liveLocations = ensureLiveLocations(data);
+    if (currentTrip?.id)
+        delete liveLocations[currentTrip.id];
+    delete liveLocations[trip.id];
     saveRouteTripState(data, baseRoute.code, nextState);
     if (fleetBus) {
         fleetBus.tripActive = false;
@@ -1683,8 +1809,6 @@ function updateTripProgressFromSeatUpdate(data, tripId, body) {
     const stop = route.stops.find((item) => item.id === body.stopId) ??
         route.stops.find((item) => item.id === tripState?.operationalCurrentStopId) ??
         route.stops[0];
-    const stopIndex = route.stops.findIndex((item) => item.id === stop.id);
-    const nextStop = route.stops[Math.min(stopIndex + 1, route.stops.length - 1)] ?? stop;
     const update = {
         ...body,
         id: body.id ?? `SEAT-${Date.now().toString().slice(-5)}`,
@@ -1702,13 +1826,12 @@ function updateTripProgressFromSeatUpdate(data, tripId, body) {
         }).format(new Date()),
     };
     data.operations.seatUpdates.unshift(update);
+    const etaContext = buildLiveEtaContext(data, route, trip);
+    const nextStop = route.stops.find((item) => item.id === etaContext.nextStopId) ??
+        route.stops.find((item) => item.id === trip.nextStopId) ??
+        stop;
     tripState.operationalCurrentStopId = nextStop.id;
     tripState.operationalStops = withStopProgress(route, nextStop.id);
-    const etaContext = buildLiveEtaContext(data, route, {
-        ...trip,
-        nextStopId: nextStop.id,
-        nextStopName: nextStop.name,
-    });
     tripState.activeStaffTrip = {
         ...trip,
         nextStopId: nextStop.id,
@@ -1796,8 +1919,8 @@ function buildStudentTransitData(data, user) {
     const route = hasRouteTrip
         ? routeForTrip(data, activeTrip) ?? assignedRoute
         : assignedRoute;
-    const tripNextStopId = hasRouteTrip ? activeTrip.nextStopId : "";
-    const progressStopId = hasRouteTrip && route.stops.some((stop) => stop.id === tripNextStopId)
+    const tripNextStopId = tripActive ? activeTrip.nextStopId : "";
+    const progressStopId = tripActive && route.stops.some((stop) => stop.id === tripNextStopId)
         ? tripNextStopId
         : selectedStopId;
     const progressIndex = Math.max(0, route.stops.findIndex((stop) => stop.id === progressStopId));
@@ -2484,13 +2607,30 @@ export function createApiServer(store, options = {}) {
                     const tripState = routeTripStateForTripId(db, startTripMatch[1]);
                     if (!tripState?.activeStaffTrip || tripState.activeStaffTrip.id !== startTripMatch[1])
                         return { error: "Trip not found." };
+                    const route = routeForTrip(db, tripState.activeStaffTrip);
+                    const firstStop = route?.stops?.[0];
                     tripState.tripStatus = "active";
                     tripState.gpsUpdatedAt = "Waiting for driver phone";
+                    if (firstStop) {
+                        tripState.operationalCurrentStopId = firstStop.id;
+                        tripState.operationalStops = withStopProgress(route, firstStop.id);
+                    }
                     tripState.activeStaffTrip = {
                         ...tripState.activeStaffTrip,
+                        ...(firstStop
+                            ? {
+                                nextStopId: firstStop.id,
+                                nextStopName: firstStop.name,
+                                nextStopEta: "Waiting for GPS",
+                                remainingDistance: "Waiting for GPS",
+                                etaSource: "waiting-for-gps",
+                                distanceToNextStop: "Waiting for GPS",
+                            }
+                            : {}),
                         startedAt: new Date().toISOString(),
                         completedAt: undefined,
                     };
+                    delete ensureLiveLocations(db)[tripState.activeStaffTrip.id];
                     resetTripSeatState(db, tripState);
                     saveRouteTripState(db, tripState.activeStaffTrip.routeCode, tripState);
                     const fleetBus = ensureFleetBusForRoute(db, routeForTrip(db, tripState.activeStaffTrip));
@@ -2500,6 +2640,14 @@ export function createApiServer(store, options = {}) {
                         fleetBus.tripActive = true;
                         fleetBus.gpsUpdated = "Waiting for driver phone";
                         fleetBus.direction = normalizeTripDirection(tripState.activeStaffTrip.direction);
+                        fleetBus.coordinates = firstStop?.coordinates ?? fleetBus.coordinates;
+                        fleetBus.nextStopId = firstStop?.id ?? fleetBus.nextStopId;
+                        fleetBus.nextStopName = firstStop?.name ?? fleetBus.nextStopName;
+                        fleetBus.nextStopEta = "Waiting for GPS";
+                        fleetBus.eta = "Waiting for GPS";
+                        fleetBus.remainingDistance = "Waiting for GPS";
+                        fleetBus.etaSource = "waiting-for-gps";
+                        fleetBus.distanceToNextStop = "Waiting for GPS";
                         if (fleetBus.status === "stopped")
                             fleetBus.status = "stale-gps";
                     }
@@ -2558,6 +2706,7 @@ export function createApiServer(store, options = {}) {
                         ...tripState.activeStaffTrip,
                         completedAt: new Date().toISOString(),
                     };
+                    delete ensureLiveLocations(db)[endTripId];
                     saveRouteTripState(db, tripState.activeStaffTrip.routeCode, tripState);
                     const fleetBus = ensureFleetBusForRoute(db, routeForTrip(db, tripState.activeStaffTrip));
                     if (fleetBus) {

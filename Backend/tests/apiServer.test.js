@@ -139,6 +139,8 @@ test("student transit stays inactive until the assigned driver starts the route"
         assert.equal(afterStartData.bus.tripActive, true);
         assert.equal(afterStartData.bus.gpsStatus, "waiting");
         assert.equal(afterStartData.bus.gpsUpdatedAt, "Waiting for driver phone");
+        assert.equal(afterStartData.route.currentStopId, afterStartData.route.stops[0].id);
+        assert.equal(afterStartData.route.stops[0].status, "current");
     }
     finally {
         await app.close();
@@ -899,8 +901,6 @@ test("route stop changes stay aligned across student, staff, and admin dashboard
         assert.equal(studentStop.scheduledTime, "8:26 AM");
         assert.equal(driverStop.name, "Shilaj Circle Gate");
         assert.equal(conductorStop.name, "Shilaj Circle Gate");
-        assert.equal(driver.activeStaffTrip.nextStopName, "Shilaj Circle Gate");
-        assert.equal(conductor.activeStaffTrip.nextStopName, "Shilaj Circle Gate");
         assert.equal(adminRouteStop.name, "Shilaj Circle Gate");
         assert.equal(adminStopRecord.name, "Shilaj Circle Gate");
         assert.equal(adminStopRecord.contact, "8:26 AM");
@@ -911,7 +911,7 @@ test("route stop changes stay aligned across student, staff, and admin dashboard
     }
 });
 
-test("student pickup stop does not override the bus next stop", async () => {
+test("student pickup stop does not override the GPS-based bus next stop", async () => {
     const app = await startTestServer();
     try {
         const loginAs = async (email, password) => {
@@ -924,8 +924,9 @@ test("student pickup stop does not override the bus next stop", async () => {
             return (await json(login)).token;
         };
 
-        const [studentToken, adminToken] = await Promise.all([
+        const [studentToken, driverToken, adminToken] = await Promise.all([
             loginAs("student@iite.indusuni.ac.in", "Student@123"),
+            loginAs("driver@transport.indusuni.ac.in", "Driver@123"),
             loginAs("admin@transport.indusuni.ac.in", "Admin@123"),
         ]);
 
@@ -944,6 +945,29 @@ test("student pickup stop does not override the bus next stop", async () => {
             body: JSON.stringify({ ...student, routeCode: route.code, stopId: pickupStop.id }),
         });
         assert.equal(updatedResponse.status, 200);
+
+        const currentTrip = await fetch(`${app.baseUrl}/driver/trips/current`, {
+            headers: { Authorization: `Bearer ${driverToken}` },
+        });
+        const currentTripData = await json(currentTrip);
+        const started = await fetch(`${app.baseUrl}/driver/trips/${currentTripData.activeStaffTrip.id}/start`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${driverToken}` },
+        });
+        assert.equal(started.status, 200);
+
+        const locationUpdate = await fetch(`${app.baseUrl}/driver/trips/${currentTripData.activeStaffTrip.id}/location`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${driverToken}` },
+            body: JSON.stringify({
+                latitude: busNextStop.coordinates[0],
+                longitude: busNextStop.coordinates[1],
+                accuracy: 12,
+                speedMetersPerSecond: 8,
+                timestamp: new Date().toISOString(),
+            }),
+        });
+        assert.equal(locationUpdate.status, 201);
 
         const transit = await fetch(`${app.baseUrl}/student/transit`, {
             headers: { Authorization: `Bearer ${studentToken}` },
@@ -998,8 +1022,8 @@ test("driver phone GPS updates student and admin live tracking", async () => {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${driverToken}` },
             body: JSON.stringify({
-                latitude: 23.021111,
-                longitude: 72.511111,
+                latitude: 23.0526,
+                longitude: 72.4717,
                 accuracy: 14.4,
                 speedMetersPerSecond: 9.8,
                 heading: 82,
@@ -1009,7 +1033,7 @@ test("driver phone GPS updates student and admin live tracking", async () => {
         assert.equal(locationUpdate.status, 201);
         const locationPayload = await json(locationUpdate);
         assert.equal(locationPayload.location.source, "driver-phone");
-        assert.deepEqual(locationPayload.location.coordinates, [23.021111, 72.511111]);
+        assert.deepEqual(locationPayload.location.coordinates, [23.0526, 72.4717]);
         assert.equal(locationPayload.activeStaffTrip.etaSource, "driver-phone-speed");
         assert.equal(locationPayload.activeStaffTrip.nextStopName, "Shilaj Circle");
         assert.match(locationPayload.activeStaffTrip.nextStopEta, /^\d+ min$/);
@@ -1028,7 +1052,7 @@ test("driver phone GPS updates student and admin live tracking", async () => {
         const transitData = await json(transit);
         assert.equal(transitData.bus.gpsStatus, "live");
         assert.equal(transitData.bus.locationSource, "driver-phone");
-        assert.deepEqual(transitData.bus.coordinates, [23.021111, 72.511111]);
+        assert.deepEqual(transitData.bus.coordinates, [23.0526, 72.4717]);
         assert.equal(transitData.bus.speed, 35);
         assert.equal(transitData.bus.etaSource, "driver-phone-speed");
         assert.equal(transitData.bus.nextStopName, "Shilaj Circle");
@@ -1059,7 +1083,7 @@ test("driver phone GPS updates student and admin live tracking", async () => {
         const adminData = await json(bootstrap);
         const liveBus = adminData.fleetVehicles.find((bus) => bus.route === "IU-R4");
         assert.equal(liveBus.gpsStatus, "live");
-        assert.deepEqual(liveBus.coordinates, [23.021111, 72.511111]);
+        assert.deepEqual(liveBus.coordinates, [23.0526, 72.4717]);
         assert.equal(liveBus.etaSource, "driver-phone-speed");
         assert.equal(liveBus.nextStopName, "Shilaj Circle");
         assert.equal(liveBus.nextStopEta, transitData.bus.nextStopEta);
@@ -1082,7 +1106,7 @@ test("driver phone GPS updates student and admin live tracking", async () => {
     }
 });
 
-test("conductor seat update advances shared stop and occupancy", async () => {
+test("conductor seat update changes occupancy without advancing GPS-based route progress", async () => {
     const app = await startTestServer();
     try {
         const loginAs = async (email, password) => {
@@ -1107,7 +1131,6 @@ test("conductor seat update advances shared stop and occupancy", async () => {
         assert.equal(currentTripResponse.status, 200);
         const currentTrip = await json(currentTripResponse);
         const submittedStop = currentTrip.operationalStops.find((stop) => stop.id === currentTrip.operationalCurrentStopId);
-        const nextStop = currentTrip.operationalStops.at(-1);
 
         const seatUpdateResponse = await fetch(`${app.baseUrl}/conductor/trips/${currentTrip.activeStaffTrip.id}/seat-updates`, {
             method: "POST",
@@ -1123,16 +1146,16 @@ test("conductor seat update advances shared stop and occupancy", async () => {
         const seatUpdate = await json(seatUpdateResponse);
         assert.equal(seatUpdate.update.stopName, submittedStop.name);
         assert.equal(seatUpdate.update.occupiedSeats, 33);
-        assert.equal(seatUpdate.operationalCurrentStopId, nextStop.id);
-        assert.equal(seatUpdate.activeStaffTrip.nextStopName, nextStop.name);
+        assert.equal(seatUpdate.operationalCurrentStopId, submittedStop.id);
+        assert.equal(seatUpdate.activeStaffTrip.nextStopName, submittedStop.name);
 
         const studentTransitResponse = await fetch(`${app.baseUrl}/student/transit`, {
             headers: { Authorization: `Bearer ${studentToken}` },
         });
         assert.equal(studentTransitResponse.status, 200);
         const studentTransit = await json(studentTransitResponse);
-        assert.equal(studentTransit.route.currentStopId, nextStop.id);
-        assert.equal(studentTransit.route.stops.find((stop) => stop.status === "current").name, nextStop.name);
+        assert.equal(studentTransit.route.currentStopId, studentTransit.route.selectedStopId);
+        assert.equal(studentTransit.route.stops.find((stop) => stop.status === "current").id, studentTransit.route.selectedStopId);
         assert.equal(studentTransit.bus.occupiedSeats, 33);
 
         const adminBootstrapResponse = await fetch(`${app.baseUrl}/admin/bootstrap`, {
@@ -1142,7 +1165,7 @@ test("conductor seat update advances shared stop and occupancy", async () => {
         const admin = await json(adminBootstrapResponse);
         const liveBus = admin.fleetVehicles.find((bus) => bus.route === "IU-R4");
         assert.equal(liveBus.occupancy, 33);
-        assert.equal(liveBus.nextStopName, nextStop.name);
+        assert.equal(liveBus.nextStopName, submittedStop.name);
     }
     finally {
         await app.close();
@@ -1185,6 +1208,12 @@ test("return trip reverses stops and supports deboarding seat updates", async ()
         assert.equal(firstDropStop.name, "Shilaj Circle");
         assert.equal(returnTrip.operationalCurrentStopId, campusStop.id);
 
+        const startReturnTrip = await fetch(`${app.baseUrl}/driver/trips/${tripId}/start`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${driverToken}` },
+        });
+        assert.equal(startReturnTrip.status, 200);
+
         const firstUpdate = await fetch(`${app.baseUrl}/conductor/trips/${tripId}/seat-updates`, {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${conductorToken}` },
@@ -1199,7 +1228,22 @@ test("return trip reverses stops and supports deboarding seat updates", async ()
         const firstSeatData = await json(firstUpdate);
         assert.equal(firstSeatData.update.occupiedSeats, 35);
         assert.equal(firstSeatData.update.availableSeats, 15);
-        assert.equal(firstSeatData.operationalCurrentStopId, firstDropStop.id);
+        assert.equal(firstSeatData.operationalCurrentStopId, campusStop.id);
+
+        const locationUpdate = await fetch(`${app.baseUrl}/driver/trips/${tripId}/location`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${driverToken}` },
+            body: JSON.stringify({
+                latitude: firstDropStop.coordinates[0],
+                longitude: firstDropStop.coordinates[1],
+                accuracy: 12,
+                speedMetersPerSecond: 8.4,
+                timestamp: new Date().toISOString(),
+            }),
+        });
+        assert.equal(locationUpdate.status, 201);
+        const gpsProgress = await json(locationUpdate);
+        assert.equal(gpsProgress.activeStaffTrip.nextStopName, firstDropStop.name);
 
         const secondUpdate = await fetch(`${app.baseUrl}/conductor/trips/${tripId}/seat-updates`, {
             method: "POST",
@@ -1215,7 +1259,8 @@ test("return trip reverses stops and supports deboarding seat updates", async ()
         const secondSeatData = await json(secondUpdate);
         assert.equal(secondSeatData.update.occupiedSeats, 30);
         assert.equal(secondSeatData.update.availableSeats, 20);
-        assert.equal(secondSeatData.activeStaffTrip.nextStopName, "Zydus Hospital");
+        assert.equal(secondSeatData.operationalCurrentStopId, firstDropStop.id);
+        assert.equal(secondSeatData.activeStaffTrip.nextStopName, firstDropStop.name);
 
         const invalidUpdate = await fetch(`${app.baseUrl}/conductor/trips/${tripId}/seat-updates`, {
             method: "POST",
@@ -1249,7 +1294,7 @@ test("return trip reverses stops and supports deboarding seat updates", async ()
         const liveBus = adminData.fleetVehicles.find((bus) => bus.route === "IU-R4");
         assert.equal(liveBus.occupancy, 30);
         assert.equal(liveBus.direction, "return");
-        assert.equal(liveBus.nextStopName, "Zydus Hospital");
+        assert.equal(liveBus.nextStopName, firstDropStop.name);
     }
     finally {
         await app.close();

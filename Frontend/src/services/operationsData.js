@@ -1,16 +1,14 @@
 import { getRouteStaffAssignment } from "./adminData.js";
 import { defaultStaffRoute, getBusRegistration, normalizeTripDirection, routeForTripDirection, tripDirectionLabel, withStopProgress } from "./indusRoutes.js";
 
-export const operationalCurrentStopId = "iu-r4-13";
+export const operationalCurrentStopId = routeForTripDirection(defaultStaffRoute).stops[0]?.id ?? "";
 export const operationalStops = withStopProgress(routeForTripDirection(defaultStaffRoute), operationalCurrentStopId);
 const staffAssignment = getRouteStaffAssignment(defaultStaffRoute.code);
 
 export function buildStaffTripForDirection(sourceRoute = defaultStaffRoute, direction = "morning") {
     const normalizedDirection = normalizeTripDirection(direction);
     const route = routeForTripDirection(sourceRoute, normalizedDirection);
-    const nextStop = normalizedDirection === "return"
-        ? route.stops[0]
-        : route.stops.find((stop) => stop.id === operationalCurrentStopId) ?? route.stops[0];
+    const nextStop = route.stops[0];
     return {
         id: normalizedDirection === "return" ? `TRIP-2026-0821-${sourceRoute.code}-PM` : `TRIP-2026-0821-${sourceRoute.code}`,
         direction: normalizedDirection,
@@ -25,8 +23,8 @@ export function buildStaffTripForDirection(sourceRoute = defaultStaffRoute, dire
         distance: sourceRoute.distance,
         nextStopId: nextStop.id,
         nextStopName: nextStop.name,
-        nextStopEta: normalizedDirection === "return" ? "Ready to depart" : "8 min",
-        remainingDistance: normalizedDirection === "return" ? "At campus" : "5.8 km",
+        nextStopEta: normalizedDirection === "return" ? "Ready to depart" : "--",
+        remainingDistance: normalizedDirection === "return" ? "At campus" : "--",
         conductor: {
             id: staffAssignment.conductor.accountUserId,
             name: staffAssignment.conductor.name,
