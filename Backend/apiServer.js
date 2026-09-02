@@ -484,6 +484,12 @@ function validateActiveStudentAssignment(record) {
     return "";
 }
 
+function studentRecordWithConsistentAssignment(data, student) {
+    const { record } = normalizeStudentRecordAssignment(data, student);
+    const approvalError = validateActiveStudentAssignment(record);
+    return approvalError ? { ...record, status: "pending" } : record;
+}
+
 function buildStaffUserId(kind, recordId) {
     return `${kind === "drivers" ? "drv" : "con"}-${String(recordId ?? randomUUID()).replace(/^(driver|conductor)-/i, "")}`;
 }
@@ -1107,6 +1113,7 @@ function adminDataWithConsistentAssignments(data) {
             accountUserId: conductor.accountUserId || (conductor.id === "conductor-101" ? "con-101" : ""),
         };
     });
+    const students = (records.students ?? []).map((student) => studentRecordWithConsistentAssignment(data, student));
     const routes = (admin.routes ?? []).map((routeRecord) => {
         const route = routeFromData(data, routeRecord.code) ?? indusRoutes.find((item) => item.id === routeRecord.id);
         if (!route)
@@ -1165,6 +1172,7 @@ function adminDataWithConsistentAssignments(data) {
             buses,
             drivers,
             conductors,
+            students,
             stops,
         },
         routes,

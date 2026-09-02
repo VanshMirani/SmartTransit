@@ -1369,6 +1369,72 @@ test("admin can load management bootstrap data", async () => {
     }
 });
 
+test("admin bootstrap marks approved students without pickup stops as pending", async () => {
+    const app = await startTestServer();
+    try {
+        await app.store.update((data) => {
+            data.admin.records.students.push({
+                id: "student-legacy-stop",
+                name: "Legacy Stop",
+                code: "LEGACY.STOP.23.CSE",
+                detail: "Verified institute email",
+                contact: "legacy.stop@iite.indusuni.ac.in",
+                assignment: "IU-R4 - Shilaj Circle",
+                status: "active",
+            }, {
+                id: "student-needs-stop",
+                name: "Needs Stop",
+                code: "NEEDS.STOP.23.CSE",
+                detail: "Verified institute email",
+                contact: "needs.stop@iite.indusuni.ac.in",
+                assignment: "IU-R4 - Pending stop assignment",
+                status: "active",
+            }, {
+                id: "student-unassigned",
+                name: "Needs Assignment",
+                code: "NEEDS.ASSIGN.23.CSE",
+                detail: "Verified institute email",
+                contact: "needs.assign@iite.indusuni.ac.in",
+                assignment: "Unassigned",
+                status: "active",
+            });
+            return data;
+        });
+        const login = await fetch(`${app.baseUrl}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "admin@transport.indusuni.ac.in", password: "Admin@123" }),
+        });
+        const { token } = await json(login);
+        const response = await fetch(`${app.baseUrl}/admin/bootstrap`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        assert.equal(response.status, 200);
+        const data = await json(response);
+        const legacyStop = data.records.students.find((student) => student.id === "student-legacy-stop");
+        const needsStop = data.records.students.find((student) => student.id === "student-needs-stop");
+        const unassigned = data.records.students.find((student) => student.id === "student-unassigned");
+
+        assert.equal(legacyStop.status, "active");
+        assert.equal(legacyStop.routeCode, "IU-R4");
+        assert.ok(legacyStop.stopId);
+        assert.equal(legacyStop.assignment, "IU-R4 - Shilaj Circle");
+
+        assert.equal(needsStop.status, "pending");
+        assert.equal(needsStop.routeCode, "IU-R4");
+        assert.equal(needsStop.stopId, "");
+        assert.equal(needsStop.assignment, "IU-R4 - Pending stop assignment");
+
+        assert.equal(unassigned.status, "pending");
+        assert.equal(unassigned.routeCode, "");
+        assert.equal(unassigned.stopId, "");
+        assert.equal(unassigned.assignment, "Unassigned");
+    }
+    finally {
+        await app.close();
+    }
+});
+
 test("admin notifications count actual active student accounts", async () => {
     const app = await startTestServer();
     try {

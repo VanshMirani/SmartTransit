@@ -231,11 +231,17 @@ export function ManagementPage({ kind }) {
                 message: `${saved.name} was saved successfully.`,
             });
         }
-        catch {
+        catch (reason) {
+            const message = reason instanceof Error
+                ? reason.message
+                : "The change could not be saved to the backend. Please retry.";
+            if (kind === "students" && /route|pickup stop/i.test(message)) {
+                setErrors((current) => ({ ...current, assignment: message }));
+            }
             setFeedback({
                 type: "error",
                 title: "Could not save",
-                message: "The change could not be saved to the backend. Please retry.",
+                message,
             });
         }
         finally {
