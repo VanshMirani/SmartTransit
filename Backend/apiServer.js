@@ -15,6 +15,7 @@ const minimumEtaSpeedKmh = 12;
 const maximumEtaSpeedKmh = 60;
 const roadDistanceFactor = 1.25;
 const stopPassedThresholdKm = 0.08;
+const stopArrivalRadiusKm = 0.18;
 const allowedOrigin = process.env.SMARTTRANSIT_ALLOWED_ORIGIN || "*";
 const localAllowedOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(allowedOrigin);
 
@@ -783,15 +784,21 @@ function closestRouteProjection(stops, coordinates, cumulativeDistances) {
     return best;
 }
 
-function stopProgressFromLocation(route, coordinates, previousNextStopId = "") {
+function stopProgressFromLocation(route, coordinates, trip = {}) {
     const stops = route?.stops ?? [];
     if (!stops.length)
         return null;
+    const previousNextStopId = typeof trip === "string" ? trip : trip?.nextStopId;
+    const previousNextStopIndex = stops.findIndex((stop) => stop.id === previousNextStopId);
+    const currentIndex = previousNextStopIndex >= 0 ? previousNextStopIndex : 0;
+    const currentStop = stops[currentIndex];
+    const previousReachedStopId = typeof trip === "string" ? "" : trip?.lastReachedStopId;
+    const hasReachedAStop = stops.some((stop) => stop.id === previousReachedStopId);
     if (!hasCoordinates(coordinates)) {
-        const fallbackIndex = Math.max(0, stops.findIndex((stop) => stop.id === previousNextStopId));
         return {
-            nextStopId: stops[fallbackIndex]?.id ?? stops[0].id,
-            nextStopIndex: fallbackIndex,
+            nextStopId: currentStop?.id ?? stops[0].id,
+            nextStopIndex: currentIndex,
+            lastReachedStopId: hasReachedAStop ? previousReachedStopId : "",
             distanceFromRouteMeters: null,
             routeProgressKm: null,
         };
@@ -799,24 +806,35 @@ function stopProgressFromLocation(route, coordinates, previousNextStopId = "") {
     const cumulativeDistances = cumulativeRouteDistancesKm(stops);
     const projection = closestRouteProjection(stops, coordinates, cumulativeDistances);
     if (!projection) {
-        const fallbackIndex = Math.max(0, stops.findIndex((stop) => stop.id === previousNextStopId));
         return {
-            nextStopId: stops[fallbackIndex]?.id ?? stops[0].id,
-            nextStopIndex: fallbackIndex,
+            nextStopId: currentStop?.id ?? stops[0].id,
+            nextStopIndex: currentIndex,
+            lastReachedStopId: hasReachedAStop ? previousReachedStopId : "",
             distanceFromRouteMeters: null,
             routeProgressKm: null,
         };
     }
-    const passedLineKm = projection.routeKm - stopPassedThresholdKm;
-    let nextStopIndex = stops.findIndex((_stop, index) => (cumulativeDistances[index] ?? 0) >= passedLineKm);
-    if (nextStopIndex < 0)
-        nextStopIndex = stops.length - 1;
-    const previousNextStopIndex = stops.findIndex((stop) => stop.id === previousNextStopId);
-    if (previousNextStopIndex > nextStopIndex)
-        nextStopIndex = previousNextStopIndex;
+    const distanceToCurrentStopKm = directDistanceKmBetween(coordinates, currentStop?.coordinates);
+    let lastReachedStopId = hasReachedAStop ? previousReachedStopId : "";
+    if (distanceToCurrentStopKm !== null && distanceToCurrentStopKm <= stopArrivalRadiusKm)
+        lastReachedStopId = currentStop.id;
+    let nextStopIndex = currentIndex;
+    if (lastReachedStopId) {
+        const passedLineKm = projection.routeKm - stopPassedThresholdKm;
+        nextStopIndex = stops.findIndex((_stop, index) => (cumulativeDistances[index] ?? 0) >= passedLineKm);
+        if (nextStopIndex < 0)
+            nextStopIndex = stops.length - 1;
+        if (nextStopIndex < currentIndex)
+            nextStopIndex = currentIndex;
+        const nextStop = stops[nextStopIndex];
+        const distanceToNextStopKm = directDistanceKmBetween(coordinates, nextStop?.coordinates);
+        if (distanceToNextStopKm !== null && distanceToNextStopKm <= stopArrivalRadiusKm)
+            lastReachedStopId = nextStop.id;
+    }
     return {
         nextStopId: stops[nextStopIndex]?.id ?? stops.at(-1)?.id,
         nextStopIndex,
+        lastReachedStopId,
         distanceFromRouteMeters: projection.distanceMeters,
         routeProgressKm: projection.routeKm,
     };
@@ -885,7 +903,10 @@ function buildLiveEtaContext(data, route, trip, locationOverride) {
     const gpsStatus = tripActive ? liveLocationStatus(location) : "not-sharing";
     const hasPhoneLocation = tripActive && hasCoordinates(location?.coordinates);
     const locationProgress = hasPhoneLocation
-        ? stopProgressFromLocation(route, location.coordinates, tripNextStopId)
+        ? stopProgressFromLocation(route, location.coordinates, {
+            ...trip,
+            nextStopId: tripNextStopId,
+        })
         : null;
     const nextStopId = locationProgress?.nextStopId ?? tripNextStopId;
     const nextStopIndex = Math.max(0, route.stops?.findIndex((stop) => stop.id === nextStopId) ?? 0);
@@ -930,6 +951,7 @@ function buildLiveEtaContext(data, route, trip, locationOverride) {
         location,
         routeProgressKm: locationProgress?.routeProgressKm,
         distanceFromRouteMeters: locationProgress?.distanceFromRouteMeters,
+        lastReachedStopId: locationProgress?.lastReachedStopId ?? trip.lastReachedStopId,
         stopDistanceKm(targetStopId) {
             const targetStopIndex = route.stops?.findIndex((stop) => stop.id === targetStopId) ?? -1;
             if (targetStopIndex < 0)
@@ -1217,6 +1239,7 @@ function activeTripWithConsistentAssignments(data, trip) {
         remainingDistance: etaContext.remainingDistance,
         etaSource: etaContext.etaSource,
         etaSpeedKmh: etaContext.etaSpeedKmh,
+        lastReachedStopId: etaContext.lastReachedStopId ?? trip.lastReachedStopId ?? "",
         distanceToNextStop: etaContext.distanceToNextStopKm === null
             ? etaContext.remainingDistance
             : distanceLabel(etaContext.distanceToNextStopKm),
@@ -1501,6 +1524,7 @@ function storeDriverLocation(data, user, tripId, locationInput) {
         remainingDistance: etaContext.remainingDistance,
         etaSource: etaContext.etaSource,
         etaSpeedKmh: etaContext.etaSpeedKmh,
+        lastReachedStopId: etaContext.lastReachedStopId ?? trip.lastReachedStopId ?? "",
         distanceToNextStop: etaContext.distanceToNextStopKm === null
             ? etaContext.remainingDistance
             : distanceLabel(etaContext.distanceToNextStopKm),
@@ -1606,6 +1630,7 @@ function buildStaffTripForRoute(data, route, direction = "morning", overrides = 
         nextStopName: nextStop.name,
         nextStopEta: overrides.nextStopEta ?? (normalizedDirection === "return" ? "Ready to depart" : "--"),
         remainingDistance: overrides.remainingDistance ?? (normalizedDirection === "return" ? "At campus" : "--"),
+        lastReachedStopId: overrides.lastReachedStopId ?? "",
         currentCoordinates: undefined,
         currentSpeed: undefined,
         startedAt: undefined,
@@ -1711,6 +1736,7 @@ function resetTripForDirection(data, requestedDirection, user = null) {
         nextStopName: nextStop.name,
         nextStopEta: direction === "return" ? "Ready to depart" : currentTrip?.nextStopEta ?? "--",
         remainingDistance: direction === "return" ? "At campus" : currentTrip?.remainingDistance ?? "--",
+        lastReachedStopId: "",
         currentCoordinates: undefined,
         currentSpeed: undefined,
         startedAt: undefined,
@@ -2625,6 +2651,7 @@ export function createApiServer(store, options = {}) {
                                 remainingDistance: "Waiting for GPS",
                                 etaSource: "waiting-for-gps",
                                 distanceToNextStop: "Waiting for GPS",
+                                lastReachedStopId: "",
                             }
                             : {}),
                         startedAt: new Date().toISOString(),

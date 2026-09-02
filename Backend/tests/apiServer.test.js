@@ -368,8 +368,8 @@ test("custom admin route assignments appear correctly for new driver and conduct
         const route = {
             id: "route-iu-r9",
             code: "IU-R9",
-            name: "Gota - Indus University",
-            startPoint: "Gota Cross Road",
+            name: "Ghuma Gaam - Indus University",
+            startPoint: "Ghuma Gaam",
             destination: "Indus University",
             campusArrival: "8:45 AM",
             distance: "21.4 km",
@@ -380,8 +380,8 @@ test("custom admin route assignments appear correctly for new driver and conduct
             driverId: driver.id,
             conductorId: conductor.id,
             stops: [
-                { id: "iu-r9-01", name: "Gota Cross Road", scheduledTime: "7:40 AM", coordinates: [23.1019, 72.5494] },
-                { id: "iu-r9-02", name: "Sola Bridge", scheduledTime: "7:55 AM", coordinates: [23.0755, 72.5265] },
+                { id: "iu-r9-01", name: "Ghuma Gaam", scheduledTime: "7:40 AM", coordinates: [23.0286, 72.4208] },
+                { id: "iu-r9-02", name: "Electrotherm", scheduledTime: "7:55 AM", coordinates: [23.0662, 72.4159] },
                 { id: "iu-r9-03", name: "Indus University", scheduledTime: "8:45 AM", coordinates: [23.06805, 72.4402] },
             ],
         };
@@ -440,7 +440,7 @@ test("custom admin route assignments appear correctly for new driver and conduct
 
         for (const dashboard of [driverData, conductorData]) {
             assert.equal(dashboard.activeStaffTrip.routeCode, "IU-R9");
-            assert.equal(dashboard.activeStaffTrip.routeName, "Gota - Indus University");
+            assert.equal(dashboard.activeStaffTrip.routeName, "Ghuma Gaam - Indus University");
             assert.equal(dashboard.activeStaffTrip.busNumber, "7711");
             assert.equal(dashboard.activeStaffTrip.registration, "GJ-01-FT-7711");
             assert.equal(dashboard.activeStaffTrip.capacity, 46);
@@ -466,6 +466,64 @@ test("custom admin route assignments appear correctly for new driver and conduct
         assert.equal(adminFleetBus.number, "7711");
         assert.equal(adminFleetBus.driver, "Mahipal Solanki");
         assert.equal(adminFleetBus.capacity, 46);
+
+        const tripId = driverData.activeStaffTrip.id;
+        const startTrip = await fetch(`${app.baseUrl}/driver/trips/${tripId}/start`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${driverToken}` },
+        });
+        assert.equal(startTrip.status, 200);
+        const startedTrip = await json(startTrip);
+        assert.equal(startedTrip.operationalCurrentStopId, "iu-r9-01");
+        assert.equal(startedTrip.activeStaffTrip.nextStopName, "Ghuma Gaam");
+
+        const prematureGps = await fetch(`${app.baseUrl}/driver/trips/${tripId}/location`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${driverToken}` },
+            body: JSON.stringify({
+                latitude: route.stops[1].coordinates[0],
+                longitude: route.stops[1].coordinates[1],
+                accuracy: 12,
+                speedMetersPerSecond: 8,
+                timestamp: new Date().toISOString(),
+            }),
+        });
+        assert.equal(prematureGps.status, 201);
+        const prematureGpsData = await json(prematureGps);
+        assert.equal(prematureGpsData.activeStaffTrip.nextStopName, "Ghuma Gaam");
+        assert.equal(prematureGpsData.activeStaffTrip.lastReachedStopId, "");
+
+        const firstStopGps = await fetch(`${app.baseUrl}/driver/trips/${tripId}/location`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${driverToken}` },
+            body: JSON.stringify({
+                latitude: route.stops[0].coordinates[0],
+                longitude: route.stops[0].coordinates[1],
+                accuracy: 12,
+                speedMetersPerSecond: 8,
+                timestamp: new Date().toISOString(),
+            }),
+        });
+        assert.equal(firstStopGps.status, 201);
+        const firstStopGpsData = await json(firstStopGps);
+        assert.equal(firstStopGpsData.activeStaffTrip.nextStopName, "Ghuma Gaam");
+        assert.equal(firstStopGpsData.activeStaffTrip.lastReachedStopId, "iu-r9-01");
+
+        const secondStopGps = await fetch(`${app.baseUrl}/driver/trips/${tripId}/location`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${driverToken}` },
+            body: JSON.stringify({
+                latitude: route.stops[1].coordinates[0],
+                longitude: route.stops[1].coordinates[1],
+                accuracy: 12,
+                speedMetersPerSecond: 8,
+                timestamp: new Date().toISOString(),
+            }),
+        });
+        assert.equal(secondStopGps.status, 201);
+        const secondStopGpsData = await json(secondStopGps);
+        assert.equal(secondStopGpsData.activeStaffTrip.nextStopName, "Electrotherm");
+        assert.equal(secondStopGpsData.activeStaffTrip.lastReachedStopId, "iu-r9-02");
     }
     finally {
         await app.close();
@@ -955,6 +1013,21 @@ test("student pickup stop does not override the GPS-based bus next stop", async 
             headers: { Authorization: `Bearer ${driverToken}` },
         });
         assert.equal(started.status, 200);
+        const startedData = await json(started);
+        const firstRouteStop = startedData.operationalStops[0];
+
+        const firstStopLocation = await fetch(`${app.baseUrl}/driver/trips/${currentTripData.activeStaffTrip.id}/location`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${driverToken}` },
+            body: JSON.stringify({
+                latitude: firstRouteStop.coordinates[0],
+                longitude: firstRouteStop.coordinates[1],
+                accuracy: 12,
+                speedMetersPerSecond: 8,
+                timestamp: new Date().toISOString(),
+            }),
+        });
+        assert.equal(firstStopLocation.status, 201);
 
         const locationUpdate = await fetch(`${app.baseUrl}/driver/trips/${currentTripData.activeStaffTrip.id}/location`, {
             method: "POST",
@@ -1010,6 +1083,8 @@ test("driver phone GPS updates student and admin live tracking", async () => {
             headers: { Authorization: `Bearer ${driverToken}` },
         });
         assert.equal(startTrip.status, 200);
+        const startedTrip = await json(startTrip);
+        const firstRouteStop = startedTrip.operationalStops[0];
 
         const invalidLocation = await fetch(`${app.baseUrl}/driver/trips/TRIP-2026-0821-IU-R4/location`, {
             method: "POST",
@@ -1017,6 +1092,20 @@ test("driver phone GPS updates student and admin live tracking", async () => {
             body: JSON.stringify({ latitude: 230, longitude: 72.511111 }),
         });
         assert.equal(invalidLocation.status, 400);
+
+        const firstStopLocation = await fetch(`${app.baseUrl}/driver/trips/TRIP-2026-0821-IU-R4/location`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${driverToken}` },
+            body: JSON.stringify({
+                latitude: firstRouteStop.coordinates[0],
+                longitude: firstRouteStop.coordinates[1],
+                accuracy: 14.4,
+                speedMetersPerSecond: 9.8,
+                heading: 82,
+                timestamp: new Date().toISOString(),
+            }),
+        });
+        assert.equal(firstStopLocation.status, 201);
 
         const locationUpdate = await fetch(`${app.baseUrl}/driver/trips/TRIP-2026-0821-IU-R4/location`, {
             method: "POST",
@@ -1213,6 +1302,19 @@ test("return trip reverses stops and supports deboarding seat updates", async ()
             headers: { Authorization: `Bearer ${driverToken}` },
         });
         assert.equal(startReturnTrip.status, 200);
+
+        const campusLocation = await fetch(`${app.baseUrl}/driver/trips/${tripId}/location`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${driverToken}` },
+            body: JSON.stringify({
+                latitude: campusStop.coordinates[0],
+                longitude: campusStop.coordinates[1],
+                accuracy: 12,
+                speedMetersPerSecond: 8.4,
+                timestamp: new Date().toISOString(),
+            }),
+        });
+        assert.equal(campusLocation.status, 201);
 
         const firstUpdate = await fetch(`${app.baseUrl}/conductor/trips/${tripId}/seat-updates`, {
             method: "POST",
