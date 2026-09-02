@@ -1,9 +1,10 @@
 import { AlertTriangle, BusFront, Clock3, Gauge, MapPin, Radio, Route, Search, Users, } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { MapContainer, Marker, Polyline, Popup, TileLayer, } from "react-leaflet";
+import { MapContainer, Marker, Polyline, Popup, } from "react-leaflet";
 import L from "leaflet";
 import { useAdminData } from "../../admin/AdminDataContext";
 import { AdminModal, AdminPageHeading, AdminStatusBadge, } from "../../components/admin/AdminUI";
+import { MapAutoCenter, SmartTileLayer } from "../../components/maps/SmartTransitMap";
 import { indusRoutes } from "../../services/indusRoutes";
 import { minutesAgo, relativeTimeLabel } from "../../utils/dateLabels";
 const liveIcon = (status, selected) => L.divIcon({
@@ -29,10 +30,10 @@ export function AdminLiveOperationsPage() {
     const route = routes.find((item) => item.code === selected?.route) ??
         fallbackRoute;
     const mapRoute = indusRoutes.find((item) => item.code === route.code) ?? indusRoutes[0];
-    const emergencyBus = fleet.find((bus) => bus.status === "stale-gps") ?? fleet[0];
+    const emergencyBus = fleet.find((bus) => bus.tripActive && bus.status === "stale-gps");
     const emergencyRoute = routes.find((item) => item.code === emergencyBus?.route) ?? fallbackRoute;
     const emergencyLocation = emergencyRoute?.stops?.at(-2)?.name ?? emergencyRoute?.startPoint ?? "the assigned route";
-    const emergencyAge = relativeTimeLabel(minutesAgo(2));
+    const emergencyAge = emergencyBus?.gpsUpdated ?? emergencyBus?.gpsUpdatedAt ?? relativeTimeLabel(minutesAgo(2));
     useEffect(() => {
         refreshData?.();
         const timer = window.setInterval(() => refreshData?.(), 15000);
@@ -52,17 +53,17 @@ export function AdminLiveOperationsPage() {
     }
     return (<div>
       <AdminPageHeading eyebrow="Real-time monitoring" title="Live operations" description="Monitor active buses, service health and emergencies from one view." actions={<span className="admin-last-updated">
-            <Radio /> GPS feed live
+            <Radio /> {fleet.some((bus) => bus.tripActive) ? "GPS feed live" : "Waiting for active trips"}
           </span>}/>
       {emergencyBus && <div className="admin-emergency-banner">
         <AlertTriangle />
         <div>
-          <strong>Emergency alert: Medical assistance requested</strong>
+          <strong>GPS attention required</strong>
           <span>
-            Bus {emergencyBus.number} · Route {emergencyBus.route} · Near {emergencyLocation} · Submitted {emergencyAge}
+            Bus {emergencyBus.number} · Route {emergencyBus.route} · Near {emergencyLocation} · Last update {emergencyAge}
           </span>
         </div>
-        <button onClick={() => setShowEmergency(true)}>View alert</button>
+        <button onClick={() => setShowEmergency(true)}>View status</button>
       </div>}
       <div className="live-operations-layout">
         <aside className="live-fleet-list">
@@ -106,7 +107,8 @@ export function AdminLiveOperationsPage() {
         </aside>
         <section className="live-map-workspace">
           <MapContainer center={mapRoute.mapCenter} zoom={11} scrollWheelZoom={false} className="admin-live-map">
-            <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>
+            <MapAutoCenter position={selected.tripActive ? selected.coordinates : mapRoute.mapCenter} zoom={selected.tripActive ? 13 : 11} trigger={`${selected.id}-${selected.lastLocationAt ?? selected.gpsUpdatedAt ?? ""}`}/>
+            <SmartTileLayer />
             <Polyline positions={route.stops.map((stop) => stop.coordinates)} pathOptions={{ color: "#0b948f", weight: 5 }}/>
             {fleet
             .filter((bus) => bus.tripActive)
@@ -193,8 +195,8 @@ export function AdminLiveOperationsPage() {
           </div>
         </aside>
       </div>
-      {showEmergency && emergencyBus && (<AdminModal title="Medical assistance requested" description={`Emergency EMG-2026-118 · Submitted ${emergencyAge}`} close={() => setShowEmergency(false)} footer={<button className="button admin-primary-button" onClick={() => setShowEmergency(false)}>
-              Acknowledge alert
+      {showEmergency && emergencyBus && (<AdminModal title="GPS attention required" description={`Bus ${emergencyBus.number} · Last update ${emergencyAge}`} close={() => setShowEmergency(false)} footer={<button className="button admin-primary-button" onClick={() => setShowEmergency(false)}>
+              Acknowledge status
             </button>}>
           <dl className="admin-detail-list">
             <div>
@@ -203,17 +205,17 @@ export function AdminLiveOperationsPage() {
             </div>
             <div>
               <dt>Submitted by</dt>
-              <dd>Driver {emergencyBus.driver}</dd>
+              <dd>{emergencyBus.driver}</dd>
             </div>
             <div>
-              <dt>Current location</dt>
+              <dt>Last known location</dt>
               <dd>Near {emergencyLocation}, Ahmedabad</dd>
             </div>
             <div>
               <dt>Details</dt>
               <dd>
-                A student requires medical assistance. The bus is stopped
-                safely.
+                Driver phone GPS has not sent a fresh update. The last known
+                location remains visible until the next sync.
               </dd>
             </div>
           </dl>

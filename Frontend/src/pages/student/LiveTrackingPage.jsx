@@ -1,9 +1,9 @@
 import { AlertTriangle, BusFront, Clock3, MapPin, Navigation, RefreshCw, Signal, SignalZero, WifiOff, } from "lucide-react";
-import { useEffect, useState } from "react";
-import { CircleMarker, MapContainer, Marker, Polyline, Popup, TileLayer, useMap, } from "react-leaflet";
+import { useState } from "react";
+import { CircleMarker, MapContainer, Marker, Polyline, Popup, } from "react-leaflet";
 import L from "leaflet";
-import "leaflet/dist/leaflet.css";
 import { AssignmentPendingState, ErrorState, LoadingCards, PageHeading, } from "../../components/student/StudentUI";
+import { MapAutoCenter, SmartTileLayer } from "../../components/maps/SmartTransitMap";
 import { useStudentData } from "../../hooks/useStudentData";
 const busIcon = L.divIcon({
     className: "smart-map-marker",
@@ -111,8 +111,8 @@ export function LiveTrackingPage() {
             </button>
           </div>
           <MapContainer center={mapCenter} zoom={12} scrollWheelZoom={false} className="leaflet-map">
-            <RecenterMap position={busPosition} trigger={recenterToken}/>
-            <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>
+            <MapAutoCenter position={busPosition} zoom={13} enabled={state === "live" || recenterToken > 0} trigger={`${recenterToken}-${data.bus.lastLocationAt ?? data.bus.gpsUpdatedAt ?? ""}`}/>
+            <SmartTileLayer />
             <Polyline positions={routePoints} pathOptions={{ color: "#0b948f", weight: 5, opacity: 0.86 }}/>
             {data.route.stops.map((stop) => stop.id === selectedStop.id ? (<Marker key={stop.id} position={stop.coordinates} icon={selectedIcon}>
                   <Popup>Your stop: {stop.name}</Popup>
@@ -183,15 +183,6 @@ export function LiveTrackingPage() {
         </aside>
       </div>
     </div>);
-}
-function RecenterMap({ position, trigger, }) {
-    const map = useMap();
-    const [latitude, longitude] = position;
-    useEffect(() => {
-        if (trigger > 0)
-            map.flyTo([latitude, longitude], 13, { duration: 0.5 });
-    }, [latitude, longitude, map, trigger]);
-    return null;
 }
 function StateDemo({ state, setState, }) {
     return (<label className="demo-state-select">

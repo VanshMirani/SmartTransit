@@ -1,9 +1,10 @@
 import { AlertTriangle, ArrowRight, BusFront, Clock3, FileWarning, MapPin, Radio, Users, } from "lucide-react";
-import { MapContainer, Marker, Popup, TileLayer } from "react-leaflet";
+import { MapContainer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 import { Link } from "react-router-dom";
 import { useAdminData } from "../../admin/AdminDataContext";
 import { AdminPageHeading, AdminStatusBadge, } from "../../components/admin/AdminUI";
+import { MapFitBounds, SmartTileLayer } from "../../components/maps/SmartTransitMap";
 import { useCommunications } from "../../communications/CommunicationsContext";
 import { indusRoutes } from "../../services/indusRoutes";
 import { formatTime, minutesAgo, relativeTimeLabel } from "../../utils/dateLabels";
@@ -94,7 +95,8 @@ export function AdminOverviewPage() {
             </Link>
           </div>
           <MapContainer center={indusRoutes[3].mapCenter} zoom={11} scrollWheelZoom={false} className="admin-overview-map">
-            <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>
+            <MapFitBounds points={activeFleet.map((bus) => bus.coordinates)} enabled={activeFleet.length > 0} trigger={activeFleet.map((bus) => `${bus.id}-${bus.lastLocationAt ?? bus.gpsUpdatedAt ?? ""}`).join("|")}/>
+            <SmartTileLayer />
             {activeFleet.map((bus) => (<Marker key={bus.id} position={bus.coordinates} icon={fleetIcon(bus.status)}>
                 <Popup>
                   {bus.number} · {bus.route}

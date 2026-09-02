@@ -3,9 +3,14 @@ import { apiRequest, backendConfig } from "../services/apiClient";
 import { activeStaffTrip as fallbackActiveTrip, buildStaffTripForDirection, operationalCurrentStopId as fallbackCurrentStopId, operationalStops as fallbackStops, preTripItems } from "../services/operationsData";
 import { defaultStaffRoute, routeForTripDirection, withStopProgress } from "../services/indusRoutes";
 import { formatTime } from "../utils/dateLabels";
+import { distanceMetersBetween } from "../utils/geoMath";
 import { calculateSeatUpdate } from "../utils/seatCalculation";
 const DriverContext = createContext(null);
 const driverGpsSendIntervalMs = 10000;
+const driverGpsForceRefreshMs = 30000;
+const driverGpsMovementThresholdMeters = 20;
+const driverGpsWeakAccuracyMeters = 80;
+const driverGpsMaxAccuracyMeters = 250;
 function syncBackend(path, options) {
     if (!backendConfig.enabled)
         return;
@@ -35,8 +40,42 @@ function locationSnapshot(position) {
         coordinates: [position.coords.latitude, position.coords.longitude],
         accuracy: position.coords.accuracy,
         speedKmh: Number.isFinite(position.coords.speed) ? position.coords.speed * 3.6 : undefined,
-        updatedAt: new Date().toISOString(),
+        heading: Number.isFinite(position.coords.heading) ? position.coords.heading : undefined,
+        updatedAt: new Date(position.timestamp).toISOString(),
     };
+}
+function headingChanged(left, right) {
+    if (!Number.isFinite(left) || !Number.isFinite(right))
+        return false;
+    const delta = Math.abs(left - right);
+    return Math.min(delta, 360 - delta) >= 20;
+}
+function speedChanged(left, right) {
+    if (!Number.isFinite(left) || !Number.isFinite(right))
+        return false;
+    return Math.abs(left - right) >= 6;
+}
+function shouldSendGpsSnapshot(snapshot, lastSent) {
+    if (!lastSent)
+        return true;
+    const elapsed = Date.now() - lastSent.sentAt;
+    if (elapsed < driverGpsSendIntervalMs)
+        return false;
+    if (elapsed >= driverGpsForceRefreshMs)
+        return true;
+    const movedMeters = distanceMetersBetween(lastSent.coordinates, snapshot.coordinates);
+    return (Number.isFinite(movedMeters) && movedMeters >= driverGpsMovementThresholdMeters) ||
+        speedChanged(lastSent.speedKmh, snapshot.speedKmh) ||
+        headingChanged(lastSent.heading, snapshot.heading);
+}
+function gpsAccuracyWarning(accuracy) {
+    if (!Number.isFinite(accuracy))
+        return "";
+    if (accuracy > driverGpsMaxAccuracyMeters)
+        return "GPS accuracy is very weak. Keeping the last reliable server location until the phone gets a better signal.";
+    if (accuracy > driverGpsWeakAccuracyMeters)
+        return "GPS accuracy is weak, so the map marker may move slightly.";
+    return "";
 }
 export function DriverOperationsProvider({ children, }) {
     const [activeTrip, setActiveTrip] = useState(fallbackActiveTrip);
@@ -49,7 +88,8 @@ export function DriverOperationsProvider({ children, }) {
     const [tripLoadError, setTripLoadError] = useState("");
     const [lastGpsLocation, setLastGpsLocation] = useState(null);
     const [emergency, setEmergency] = useState(null);
-    const lastGpsSentAt = useRef(0);
+    const lastGpsSent = useRef(null);
+    const gpsSyncInFlight = useRef(false);
     useEffect(() => {
         if (!backendConfig.enabled)
             return;
@@ -81,6 +121,8 @@ export function DriverOperationsProvider({ children, }) {
             setGpsSharingStatus("idle");
             setGpsError("");
             setLastGpsLocation(null);
+            lastGpsSent.current = null;
+            gpsSyncInFlight.current = false;
             return undefined;
         }
         if (!backendConfig.enabled) {
@@ -95,14 +137,26 @@ export function DriverOperationsProvider({ children, }) {
         let cancelled = false;
         setGpsSharingStatus("requesting");
         setGpsError("");
+        lastGpsSent.current = null;
         const watchId = navigator.geolocation.watchPosition((position) => {
             if (cancelled)
                 return;
-            setLastGpsLocation(locationSnapshot(position));
-            const now = Date.now();
-            if (lastGpsSentAt.current && now - lastGpsSentAt.current < driverGpsSendIntervalMs)
+            const snapshot = locationSnapshot(position);
+            const warning = gpsAccuracyWarning(snapshot.accuracy);
+            setLastGpsLocation(snapshot);
+            if (warning)
+                setGpsError(warning);
+            else
+                setGpsError("");
+            const hasReliablePreviousLocation = Boolean(lastGpsSent.current);
+            if (warning && Number(snapshot.accuracy) > driverGpsMaxAccuracyMeters && hasReliablePreviousLocation) {
+                setGpsSharingStatus("sharing");
                 return;
-            lastGpsSentAt.current = now;
+            }
+            if (!shouldSendGpsSnapshot(snapshot, lastGpsSent.current) || gpsSyncInFlight.current)
+                return;
+            gpsSyncInFlight.current = true;
+            lastGpsSent.current = { ...snapshot, sentAt: Date.now() };
             apiRequest(`/driver/trips/${activeTrip.id}/location`, {
                 method: "POST",
                 body: locationPayload(position),
@@ -111,7 +165,7 @@ export function DriverOperationsProvider({ children, }) {
                 if (cancelled)
                     return;
                 setGpsSharingStatus("sharing");
-                setGpsError("");
+                setGpsError(warning);
                 setGpsUpdatedAt(payload.gpsUpdatedAt ?? formatTime());
                 if (payload.activeStaffTrip)
                     setActiveTrip(payload.activeStaffTrip);
@@ -121,6 +175,9 @@ export function DriverOperationsProvider({ children, }) {
                     return;
                 setGpsSharingStatus("error");
                 setGpsError("Phone GPS was detected, but SmartTransit could not sync it to the server.");
+            })
+                .finally(() => {
+                gpsSyncInFlight.current = false;
             });
         }, (error) => {
             if (cancelled)
@@ -129,8 +186,8 @@ export function DriverOperationsProvider({ children, }) {
             setGpsError(geolocationErrorMessage(error));
         }, {
             enableHighAccuracy: true,
-            maximumAge: 10000,
-            timeout: 15000,
+            maximumAge: 5000,
+            timeout: 12000,
         });
         return () => {
             cancelled = true;
@@ -158,12 +215,16 @@ export function DriverOperationsProvider({ children, }) {
                 setTripStatus(data.tripStatus ?? "active");
                 setChecklist(preTripItems.map((item) => item.id));
                 setGpsUpdatedAt(data.gpsUpdatedAt ?? "Waiting for driver phone");
+                lastGpsSent.current = null;
+                gpsSyncInFlight.current = false;
                 setTripLoadError("");
                 return;
             }
             setTripStatus("active");
             setChecklist(preTripItems.map((item) => item.id));
             setGpsUpdatedAt(formatTime());
+            lastGpsSent.current = null;
+            gpsSyncInFlight.current = false;
         },
         setTripDirection: async (direction) => {
             if (tripStatus === "active")
@@ -178,6 +239,8 @@ export function DriverOperationsProvider({ children, }) {
                 setTripStatus(data.tripStatus ?? "not-started");
                 setGpsUpdatedAt(data.gpsUpdatedAt ?? "Not sharing");
                 setLastGpsLocation(data.liveLocation ?? null);
+                lastGpsSent.current = null;
+                gpsSyncInFlight.current = false;
                 setChecklist([]);
                 setTripLoadError("");
                 return data.activeStaffTrip;
@@ -190,6 +253,8 @@ export function DriverOperationsProvider({ children, }) {
             setChecklist([]);
             setGpsUpdatedAt("Not sharing");
             setLastGpsLocation(null);
+            lastGpsSent.current = null;
+            gpsSyncInFlight.current = false;
             return nextTrip;
         },
         endTrip: async () => {
@@ -204,6 +269,8 @@ export function DriverOperationsProvider({ children, }) {
             }
             setGpsSharingStatus("idle");
             setLastGpsLocation(null);
+            lastGpsSent.current = null;
+            gpsSyncInFlight.current = false;
             setChecklist([]);
         },
         submitEmergency: (type, note) => {

@@ -1,8 +1,9 @@
 import { AlertTriangle, ArrowLeft, BusFront, CheckCircle2, Clock3, Flag, Gauge, MapPin, Navigation, Radio, Square } from 'lucide-react';
 import { useState } from 'react';
-import { CircleMarker, MapContainer, Marker, Polyline, Popup, TileLayer } from 'react-leaflet';
+import { CircleMarker, MapContainer, Marker, Polyline, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import { Link, useNavigate } from 'react-router-dom';
+import { MapAutoCenter, SmartTileLayer } from '../../components/maps/SmartTransitMap';
 import { StaffPageHeading } from '../../components/staff/StaffUI';
 import { useDriverOperations } from '../../operations/OperationsContext';
 import { tripDirectionLabel } from '../../services/indusRoutes';
@@ -17,7 +18,7 @@ function gpsStatusText(status) {
         return "GPS Inactive";
     if (status === "error")
         return "GPS Inactive";
-    return "GPS Active";
+    return "GPS Inactive";
 }
 export function DriverTripPage() {
     const { tripStatus, activeTrip, stops, gpsUpdatedAt, gpsSharingStatus, gpsError, endTrip } = useDriverOperations();
@@ -33,12 +34,13 @@ export function DriverTripPage() {
         stops.find((stop) => stop.status === 'current') ??
         stops[0];
     const busPosition = activeTrip.currentCoordinates ?? nextStop.coordinates;
-    const currentSpeed = Number.isFinite(activeTrip.currentSpeed) ? Math.round(activeTrip.currentSpeed) : 32;
+    const hasGpsSpeed = Number.isFinite(activeTrip.currentSpeed);
+    const currentSpeed = hasGpsSpeed ? Math.round(activeTrip.currentSpeed) : 0;
     const tripTime = elapsedMinutesLabel(activeTrip.startedAt);
     return <div className="driver-active-page"><StaffPageHeading eyebrow={`${activeTrip.routeCode} · ${tripDirectionLabel(activeTrip.direction)} active trip`} title="Stay focused. Drive safely." description="Only essential trip information is shown while you’re moving." status={<span className="staff-status staff-status--active"><i /> {gpsStatusText(gpsSharingStatus)}</span>}/>
     <section className="active-trip-hero"><div><span><Navigation /></span><div><small>Next stop</small><h2>{nextStop.name}</h2><p>{activeTrip.remainingDistance} remaining · ETA {activeTrip.nextStopEta}</p></div></div><div className="active-trip-countdown"><small>Estimated arrival</small><strong>{nextStop.scheduledTime}</strong><span>scheduled stop time</span></div></section>
-    <div className="driver-trip-grid"><section className="driver-route-map"><MapContainer center={busPosition} zoom={11} scrollWheelZoom={false} className="staff-leaflet-map"><TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/><Polyline positions={routePoints} pathOptions={{ color: '#0b948f', weight: 5 }}/>{stops.map((stop) => <CircleMarker key={stop.id} center={stop.coordinates} radius={6} pathOptions={{ color: '#0b948f', fillColor: '#fff', fillOpacity: 1, weight: 3 }}><Popup>{stop.name}</Popup></CircleMarker>)}<Marker position={busPosition} icon={driverBusIcon}><Popup>Bus {activeTrip.busNumber}</Popup></Marker></MapContainer><div className="driver-map-caption"><span><Radio /> Last Updated: {gpsUpdatedAt}</span><span>{gpsError || 'Location visible during active trip'}</span></div></section>
-      <aside className="driver-trip-side"><section className="driver-metrics"><div><Gauge /><span><small>Speed</small><strong>{currentSpeed} km/h</strong></span></div><div><Clock3 /><span><small>Trip time</small><strong>{tripTime}</strong></span></div><div><MapPin /><span><small>Remaining</small><strong>{activeTrip.remainingDistance}</strong></span></div></section><section className="driver-route-progress"><h3>Route guidance</h3>{stops.slice(1, 5).map((stop) => <div key={stop.id} className={`driver-stop driver-stop--${stop.status}`}><i>{stop.status === 'completed' ? '✓' : ''}</i><span><strong>{stop.name}</strong><small>{stop.status === 'current' ? 'Next stop' : stop.scheduledTime}</small></span></div>)}</section><Link className="driver-emergency-button" to="/driver/emergency"><AlertTriangle /> Emergency / breakdown</Link><button className="driver-end-button" onClick={() => setConfirmingEnd(true)}><Square /> End trip</button></aside>
+    <div className="driver-trip-grid"><section className="driver-route-map"><MapContainer center={busPosition} zoom={11} scrollWheelZoom={false} className="staff-leaflet-map"><MapAutoCenter position={busPosition} zoom={13} trigger={activeTrip.gpsUpdatedAt ?? gpsUpdatedAt}/><SmartTileLayer /><Polyline positions={routePoints} pathOptions={{ color: '#0b948f', weight: 5 }}/>{stops.map((stop) => <CircleMarker key={stop.id} center={stop.coordinates} radius={6} pathOptions={{ color: '#0b948f', fillColor: '#fff', fillOpacity: 1, weight: 3 }}><Popup>{stop.name}</Popup></CircleMarker>)}<Marker position={busPosition} icon={driverBusIcon}><Popup>Bus {activeTrip.busNumber}</Popup></Marker></MapContainer><div className="driver-map-caption"><span><Radio /> Last Updated: {gpsUpdatedAt}</span><span>{gpsError || 'Location visible during active trip'}</span></div></section>
+      <aside className="driver-trip-side"><section className="driver-metrics"><div><Gauge /><span><small>Speed</small><strong>{hasGpsSpeed ? `${currentSpeed} km/h` : 'Waiting'}</strong></span></div><div><Clock3 /><span><small>Trip time</small><strong>{tripTime}</strong></span></div><div><MapPin /><span><small>Remaining</small><strong>{activeTrip.remainingDistance}</strong></span></div></section><section className="driver-route-progress"><h3>Route guidance</h3>{stops.slice(1, 5).map((stop) => <div key={stop.id} className={`driver-stop driver-stop--${stop.status}`}><i>{stop.status === 'completed' ? '✓' : ''}</i><span><strong>{stop.name}</strong><small>{stop.status === 'current' ? 'Next stop' : stop.scheduledTime}</small></span></div>)}</section><Link className="driver-emergency-button" to="/driver/emergency"><AlertTriangle /> Emergency / breakdown</Link><button className="driver-end-button" onClick={() => setConfirmingEnd(true)}><Square /> End trip</button></aside>
     </div>
     {confirmingEnd && <div className="staff-modal-backdrop"><section className="staff-modal" role="dialog" aria-modal="true" aria-labelledby="end-trip-title"><span className="staff-modal__icon staff-modal__icon--end"><Flag /></span><h2 id="end-trip-title">End this trip?</h2><p>Only end the trip after reaching the destination and parking safely. GPS sharing will stop immediately.</p><div className="staff-modal__actions"><button className="button button--secondary" onClick={() => setConfirmingEnd(false)} disabled={ending}>Continue trip</button><button className="button staff-danger-button" disabled={ending} onClick={async () => { setEnding(true); await endTrip(); navigate('/driver'); }}><Square /> {ending ? 'Ending trip...' : 'Confirm end trip'}</button></div></section></div>}
   </div>;

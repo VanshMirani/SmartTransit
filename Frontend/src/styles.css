@@ -8333,7 +8333,7 @@ svg {
 .route-location-search {
   margin-bottom: 8px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 7px;
 }
 .route-location-search .admin-search {

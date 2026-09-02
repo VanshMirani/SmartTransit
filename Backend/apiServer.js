@@ -638,7 +638,7 @@ function radians(value) {
     return Number(value) * Math.PI / 180;
 }
 
-function distanceKmBetween(start, end) {
+function directDistanceKmBetween(start, end) {
     if (!hasCoordinates(start) || !hasCoordinates(end))
         return null;
     const earthRadiusKm = 6371;
@@ -650,7 +650,31 @@ function distanceKmBetween(start, end) {
     const lngDelta = radians(endLng - startLng);
     const a = Math.sin(latDelta / 2) ** 2 +
         Math.cos(radians(startLat)) * Math.cos(radians(endLat)) * Math.sin(lngDelta / 2) ** 2;
-    return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) * roadDistanceFactor;
+    return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function distanceKmBetween(start, end) {
+    const distanceKm = directDistanceKmBetween(start, end);
+    return distanceKm === null ? null : distanceKm * roadDistanceFactor;
+}
+
+function gpsSpeedFromPreviousLocation(previousLocation, currentLocation) {
+    if (!hasCoordinates(previousLocation?.coordinates) || !hasCoordinates(currentLocation?.coordinates))
+        return null;
+    const previousAt = Date.parse(previousLocation.updatedAt ?? previousLocation.reportedAt ?? "");
+    const currentAt = Date.parse(currentLocation.reportedAt ?? currentLocation.updatedAt ?? "");
+    if (!Number.isFinite(previousAt) || !Number.isFinite(currentAt) || currentAt <= previousAt)
+        return null;
+    const elapsedSeconds = (currentAt - previousAt) / 1000;
+    if (elapsedSeconds < 3 || elapsedSeconds > 180)
+        return null;
+    const distanceKm = directDistanceKmBetween(previousLocation.coordinates, currentLocation.coordinates);
+    if (distanceKm === null)
+        return null;
+    const speedKmh = distanceKm / (elapsedSeconds / 3600);
+    if (!Number.isFinite(speedKmh) || speedKmh <= 0)
+        return null;
+    return Math.max(minimumEtaSpeedKmh, Math.min(maximumEtaSpeedKmh, speedKmh));
 }
 
 function routeDistanceKm(stops, fromIndex, toIndex) {
@@ -759,9 +783,11 @@ function buildLiveEtaContext(data, route, trip, locationOverride) {
         nextStopName: nextStop?.name ?? trip.nextStopName,
         nextStopEta: etaLabel(distanceToNextStopKm, speedKmh),
         remainingDistance: distanceLabel(distanceToNextStopKm),
-        etaSource: Number.isFinite(location?.speedKmh) && location.speedKmh > 0
+        etaSource: location?.speedSource === "device" && Number(location?.speedKmh) > 0
             ? "driver-phone-speed"
-            : "driver-phone-average",
+            : location?.speedSource === "calculated" && Number(location?.speedKmh) > 0
+                ? "gps-calculated-speed"
+                : "driver-phone-average",
         etaSpeedKmh: speedKmh,
         distanceToNextStopKm,
         gpsStatus,
@@ -1258,6 +1284,7 @@ function validateLocationPayload(body) {
             coordinates: [roundCoordinate(latitude), roundCoordinate(longitude)],
             accuracy: accuracy === null ? undefined : roundMetric(accuracy),
             speedKmh: speedKmh === null ? undefined : roundMetric(speedKmh),
+            speedSource: speedKmh === null ? undefined : "device",
             heading: heading === null ? undefined : roundMetric(heading, 0),
             reportedAt: Number.isFinite(phoneTimestamp) && phoneTimestamp <= now + 60 * 1000
                 ? new Date(phoneTimestamp).toISOString()
@@ -1300,6 +1327,8 @@ function storeDriverLocation(data, user, tripId, locationInput) {
     const tripState = routeTripStateForTripId(data, tripId);
     const trip = tripState.activeStaffTrip;
     const updatedAt = new Date().toISOString();
+    const liveLocations = ensureLiveLocations(data);
+    const previousLocation = liveLocations[tripId];
     const location = {
         tripId,
         routeCode: trip.routeCode,
@@ -1310,7 +1339,12 @@ function storeDriverLocation(data, user, tripId, locationInput) {
         updatedAt,
         ...locationInput,
     };
-    ensureLiveLocations(data)[tripId] = location;
+    const calculatedSpeedKmh = gpsSpeedFromPreviousLocation(previousLocation, location);
+    if (!Number.isFinite(location.speedKmh) && Number.isFinite(calculatedSpeedKmh)) {
+        location.speedKmh = roundMetric(calculatedSpeedKmh);
+        location.speedSource = "calculated";
+    }
+    liveLocations[tripId] = location;
     const route = routeForTrip(data, trip);
     const etaContext = buildLiveEtaContext(data, route, trip, location);
     tripState.gpsUpdatedAt = updatedAt;
@@ -1738,13 +1772,13 @@ function buildStudentTransitData(data, user) {
         : assignedRoute.stops[Math.max(0, assignedRoute.stops.length - 2)]?.id ?? assignedRoute.stops[0]?.id;
     const routeState = routeTripStateForRoute(data, assignedRoute.code);
     const activeTrip = activeTripWithConsistentAssignments(data, routeState?.activeStaffTrip);
-    const hasRouteTrip = activeTrip?.routeCode === assignedRoute.code;
+    const hasRouteTrip = activeTrip?.routeCode === assignedRoute.code && routeState?.tripStatus !== "completed";
     const tripActive = routeState?.tripStatus === "active" && hasRouteTrip;
     const route = hasRouteTrip
         ? routeForTrip(data, activeTrip) ?? assignedRoute
         : assignedRoute;
     const tripNextStopId = hasRouteTrip ? activeTrip.nextStopId : "";
-    const progressStopId = route.stops.some((stop) => stop.id === tripNextStopId)
+    const progressStopId = hasRouteTrip && route.stops.some((stop) => stop.id === tripNextStopId)
         ? tripNextStopId
         : selectedStopId;
     const progressIndex = Math.max(0, route.stops.findIndex((stop) => stop.id === progressStopId));

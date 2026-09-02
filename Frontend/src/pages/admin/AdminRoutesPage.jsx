@@ -1,22 +1,11 @@
 import { ArrowDown, ArrowLeft, ArrowUp, BusFront, MapPin, Pencil, Plus, Route, Save, Search, ToggleLeft, ToggleRight, Trash2, UserRound, Users, X, } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { CircleMarker, MapContainer, Polyline, Popup, TileLayer, } from "react-leaflet";
-import { useMap, useMapEvents } from "react-leaflet";
+import { CircleMarker, MapContainer, Polyline, Popup, } from "react-leaflet";
+import { useMapEvents } from "react-leaflet";
 import { useAdminData } from "../../admin/AdminDataContext";
 import { AdminFeedback, AdminPageHeading, AdminStatusBadge, } from "../../components/admin/AdminUI";
-const defaultMapCenter = [23.07, 72.54];
-const ahmedabadSearchViewbox = "72.35,23.18,72.75,22.9";
-const formatCoordinate = (value) => Number.isFinite(Number(value)) ? String(Math.round(Number(value) * 1000000) / 1000000) : "";
-const normalizeSearchText = (value) => value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-const coordinatesFromStop = (stop) => {
-    const lat = Number(stop.lat ?? stop.coordinates?.[0]);
-    const lng = Number(stop.lng ?? stop.coordinates?.[1]);
-    if (!Number.isFinite(lat) || lat < -90 || lat > 90)
-        return null;
-    if (!Number.isFinite(lng) || lng < -180 || lng > 180)
-        return null;
-    return [lat, lng];
-};
+import { MapAutoCenter, SmartTileLayer } from "../../components/maps/SmartTransitMap";
+import { coordinatesFromStop, coordinatesFromText, currentBrowserLocation, defaultAhmedabadMapCenter, formatCoordinate, routeLocationResults, } from "../../services/locationSearch";
 const prepareRouteForEdit = (route) => ({
     ...structuredClone(route),
     stops: (route.stops ?? []).map((stop) => ({
@@ -44,34 +33,6 @@ const emptyRoute = () => ({
     conductorId: "",
     stops: [],
 });
-const uniqueLocationResults = (results) => {
-    const seen = new Set();
-    return results.filter((result) => {
-        const key = `${normalizeSearchText(result.name)}-${formatCoordinate(result.lat)}-${formatCoordinate(result.lng)}`;
-        if (seen.has(key))
-            return false;
-        seen.add(key);
-        return true;
-    });
-};
-const routeLocationResults = (query, routes) => {
-    const search = normalizeSearchText(query);
-    if (!search)
-        return [];
-    return uniqueLocationResults(routes.flatMap((route) => (route.stops ?? []).map((stop, index) => {
-        const coordinates = coordinatesFromStop(stop);
-        if (!coordinates)
-            return null;
-        return {
-            id: `${route.id}-${stop.id}`,
-            name: stop.name,
-            description: `${route.code} · stop ${index + 1}`,
-            lat: coordinates[0],
-            lng: coordinates[1],
-            source: "Saved stop",
-        };
-    }).filter(Boolean)).filter((result) => normalizeSearchText(`${result.name} ${result.description}`).includes(search))).slice(0, 6);
-};
 export function AdminRoutesPage() {
     const { routes, records, upsertRoute, toggleRoute } = useAdminData();
     const [selectedId, setSelectedId] = useState(routes[0]?.id ?? "");
@@ -192,7 +153,7 @@ export function AdminRoutesPage() {
                   </section>
                   <section className="route-preview-map">
                     <MapContainer key={selected.id} center={selected.stops[0]?.coordinates ?? [23.07, 72.54]} zoom={11} scrollWheelZoom={false} className="admin-route-map">
-                      <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>
+                      <SmartTileLayer />
                       <Polyline positions={selected.stops.map((stop) => stop.coordinates)} pathOptions={{ color: "#0b948f", weight: 5 }}/>
                       {selected.stops.map((stop, index) => (<CircleMarker key={stop.id} center={stop.coordinates} radius={8} pathOptions={{
                         color: "#0b948f",
@@ -236,7 +197,7 @@ function RouteEditor({ route, setRoute, errors, records, routes, save, cancel, }
         .map((stop, index) => ({ stop, index, coordinates: coordinatesFromStop(stop) }))
         .filter((item) => item.coordinates);
     const draftCoordinates = coordinatesFromStop(newStop);
-    const mapCenter = validStops[0]?.coordinates ?? draftCoordinates ?? defaultMapCenter;
+    const mapCenter = validStops[0]?.coordinates ?? draftCoordinates ?? defaultAhmedabadMapCenter;
     const targetStop = route.stops.find((stop) => stop.id === coordinateTarget);
     const coordinateTargetLabel = coordinateTarget === "new" ? "the new stop" : targetStop?.name || "the selected stop";
     const targetStopName = coordinateTarget === "new" ? newStop.name : targetStop?.name ?? "";
@@ -271,46 +232,33 @@ function RouteEditor({ route, setRoute, errors, records, routes, save, cancel, }
         });
     };
     const applyMapCoordinate = ({ lat, lng }) => applyCoordinatesToTarget({ lat, lng });
-    const searchLocation = async () => {
+    const searchLocation = () => {
         const query = searchText;
         if (!query) {
-            setLocationMessage("Enter a stop name or area to search.");
+            setLocationMessage("Enter a saved stop name, paste a map link, or paste lat,lng.");
+            return;
+        }
+        const pastedCoordinates = coordinatesFromText(query);
+        if (pastedCoordinates) {
+            applyCoordinatesToTarget({ lat: pastedCoordinates[0], lng: pastedCoordinates[1] });
+            setLocationResults([]);
+            setLocationMessage("Coordinates filled from the pasted map link or lat,lng text.");
             return;
         }
         const savedMatches = routeLocationResults(query, routes);
         setLocationResults(savedMatches);
-        setLocationMessage(savedMatches.length ? "Choose a saved stop or wait for more map results." : "");
+        setLocationMessage(savedMatches.length ? "Choose the matching saved stop to fill coordinates." : "No saved stop found. Paste a Google Maps link, paste lat,lng, use current location, or click the map.");
+    };
+    const applyCurrentBrowserLocation = async () => {
         setSearchingLocation(true);
         try {
-            const url = new URL("https://nominatim.openstreetmap.org/search");
-            url.searchParams.set("format", "jsonv2");
-            url.searchParams.set("q", /ahmedabad|gandhinagar|gujarat|india/i.test(query) ? query : `${query}, Ahmedabad, Gujarat, India`);
-            url.searchParams.set("limit", "6");
-            url.searchParams.set("countrycodes", "in");
-            url.searchParams.set("addressdetails", "1");
-            url.searchParams.set("dedupe", "1");
-            url.searchParams.set("bounded", "1");
-            url.searchParams.set("viewbox", ahmedabadSearchViewbox);
-            const response = await fetch(url.toString(), { headers: { Accept: "application/json" } });
-            if (!response.ok)
-                throw new Error("Map search failed.");
-            const found = await response.json();
-            const mapMatches = found
-                .map((item) => ({
-                id: `osm-${item.place_id}`,
-                name: item.name || item.display_name?.split(",")[0] || query,
-                description: item.display_name,
-                lat: Number(item.lat),
-                lng: Number(item.lon),
-                source: "Map result",
-            }))
-                .filter((item) => Number.isFinite(item.lat) && Number.isFinite(item.lng));
-            const results = uniqueLocationResults([...savedMatches, ...mapMatches]).slice(0, 8);
-            setLocationResults(results);
-            setLocationMessage(results.length ? "Select the correct location to fill coordinates." : "No matching location found. Try a nearby landmark.");
+            const current = await currentBrowserLocation();
+            applyCoordinatesToTarget({ lat: current.lat, lng: current.lng });
+            setLocationResults([]);
+            setLocationMessage(`Current location selected${Number.isFinite(current.accuracy) ? `, about ${Math.round(current.accuracy)} m accuracy` : ""}.`);
         }
-        catch {
-            setLocationMessage(savedMatches.length ? "Map search is unavailable. Saved stop matches are shown." : "Map search is unavailable. Click the map as a fallback.");
+        catch (error) {
+            setLocationMessage(error instanceof Error ? error.message : "Current location is unavailable.");
         }
         finally {
             setSearchingLocation(false);
@@ -488,12 +436,15 @@ function RouteEditor({ route, setRoute, errors, records, routes, save, cancel, }
               <input value={locationQuery} onChange={(event) => setLocationQuery(event.target.value)} onKeyDown={(event) => {
             if (event.key === "Enter") {
                 event.preventDefault();
-                void searchLocation();
+                searchLocation();
             }
-        }} placeholder="Search stop or landmark" aria-label="Search stop location"/>
+        }} placeholder="Search saved stop or paste Google Maps link" aria-label="Search stop location"/>
             </label>
-            <button type="button" className="button button--secondary" onClick={() => void searchLocation()} disabled={searchingLocation}>
-              <Search /> {searchingLocation ? "Finding..." : "Find"}
+            <button type="button" className="button button--secondary" onClick={searchLocation}>
+              <Search /> Find
+            </button>
+            <button type="button" className="button button--secondary" onClick={() => void applyCurrentBrowserLocation()} disabled={searchingLocation}>
+              <MapPin /> {searchingLocation ? "Locating..." : "Use my location"}
             </button>
           </div>
           {locationMessage && <small className="route-location-message">{locationMessage}</small>}
@@ -509,7 +460,7 @@ function RouteEditor({ route, setRoute, errors, records, routes, save, cancel, }
           <MapContainer key={`${route.id || "new-route"}-${mapCenter.join(",")}-${validStops.length}`} center={mapCenter} zoom={11} scrollWheelZoom={false} className="admin-route-map">
               <MapAutoCenter position={mapFocus ?? targetCoordinates ?? mapCenter}/>
               <MapCoordinatePicker onPick={applyMapCoordinate}/>
-              <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>
+              <SmartTileLayer />
               {validStops.length > 1 && <Polyline positions={validStops.map((item) => item.coordinates)} pathOptions={{ color: "#0b948f", weight: 5 }}/>}
               {validStops.map(({ stop, index, coordinates }) => (<CircleMarker key={stop.id} center={coordinates} radius={8} pathOptions={{
                     color: "#0b948f",
@@ -546,16 +497,6 @@ function MapCoordinatePicker({ onPick }) {
             onPick(event.latlng);
         },
     });
-    return null;
-}
-function MapAutoCenter({ position }) {
-    const map = useMap();
-    const latitude = position?.[0];
-    const longitude = position?.[1];
-    useEffect(() => {
-        if (Number.isFinite(latitude) && Number.isFinite(longitude))
-            map.flyTo([latitude, longitude], 14, { duration: 0.45 });
-    }, [latitude, longitude, map]);
     return null;
 }
 function RouteField({ label, value, setValue, error, }) {
