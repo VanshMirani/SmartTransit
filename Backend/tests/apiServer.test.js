@@ -477,6 +477,38 @@ test("custom admin route assignments appear correctly for new driver and conduct
         assert.equal(startedTrip.operationalCurrentStopId, "iu-r9-01");
         assert.equal(startedTrip.activeStaffTrip.nextStopName, "Ghuma Gaam");
 
+        await app.store.update((data) => {
+            const staleState = data.operations.routeTrips?.[route.code] ?? data.operations;
+            staleState.operationalCurrentStopId = route.stops[1].id;
+            staleState.activeStaffTrip = {
+                ...staleState.activeStaffTrip,
+                nextStopId: route.stops[1].id,
+                nextStopName: route.stops[1].name,
+                lastReachedStopId: "",
+            };
+            data.operations.liveLocations = {
+                ...(data.operations.liveLocations ?? {}),
+                [tripId]: {
+                    tripId,
+                    routeCode: route.code,
+                    busNumber: bus.name,
+                    source: "driver-phone",
+                    updatedAt: new Date().toISOString(),
+                    coordinates: route.stops[1].coordinates,
+                    speedKmh: 28,
+                },
+            };
+            return data;
+        });
+
+        const recoveredTrip = await fetch(`${app.baseUrl}/driver/trips/current`, {
+            headers: { Authorization: `Bearer ${driverToken}` },
+        });
+        assert.equal(recoveredTrip.status, 200);
+        const recoveredTripData = await json(recoveredTrip);
+        assert.equal(recoveredTripData.operationalCurrentStopId, "iu-r9-01");
+        assert.equal(recoveredTripData.activeStaffTrip.nextStopName, "Ghuma Gaam");
+
         const prematureGps = await fetch(`${app.baseUrl}/driver/trips/${tripId}/location`, {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${driverToken}` },

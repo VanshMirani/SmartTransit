@@ -895,10 +895,13 @@ function buildLiveEtaContext(data, route, trip, locationOverride) {
             distanceToNextStopKm: null,
         };
     }
-    const tripNextStopId = route.stops?.some((stop) => stop.id === trip.nextStopId)
-        ? trip.nextStopId
-        : route.stops?.[Math.max(0, route.stops.length - 2)]?.id ?? route.stops?.[0]?.id ?? "";
     const tripActive = tripIsSharingLocation(data, route.code);
+    const verifiedReachedStop = route.stops?.some((stop) => stop.id === trip.lastReachedStopId);
+    const firstStopId = route.stops?.[0]?.id ?? "";
+    const savedNextStopId = route.stops?.some((stop) => stop.id === trip.nextStopId)
+        ? trip.nextStopId
+        : route.stops?.[Math.max(0, route.stops.length - 2)]?.id ?? firstStopId;
+    const tripNextStopId = tripActive && !verifiedReachedStop ? firstStopId : savedNextStopId;
     const location = locationOverride ?? (tripActive ? liveLocationForRoute(data, route.code) : null);
     const gpsStatus = tripActive ? liveLocationStatus(location) : "not-sharing";
     const hasPhoneLocation = tripActive && hasCoordinates(location?.coordinates);
