@@ -111,16 +111,16 @@ When MongoDB is enabled, accounts, OTP records, sessions, complaints, notificati
 
 Faculty demonstration credentials are stored in [docs/LOGIN_CREDENTIALS.txt](./docs/LOGIN_CREDENTIALS.txt). They are for presentation testing only and should not be used in production.
 
-## Seeded staff accounts
+## Current Demo Accounts
 
 | Role             | Email                      | Password        | Landing route |
 | ---------------- | -------------------------- | --------------- | ------------- |
 | Student          | `student@iite.indusuni.ac.in`        | `Student@123`   | `/student`    |
-| Driver           | `driver@transport.indusuni.ac.in`    | `Driver@123`    | `/driver`     |
-| Conductor        | `conductor@transport.indusuni.ac.in` | `Conductor@123` | `/conductor`  |
+| Driver           | `mahipal@transport.indusuni.ac.in`   | `Mahipal@123`   | `/driver`     |
+| Conductor        | `vraj@transport.indusuni.ac.in`      | `Vraj@123`      | `/conductor`  |
 | Admin / Operator | `admin@transport.indusuni.ac.in`     | `Admin@123`     | `/admin`      |
 
-These accounts are seeded for presentation and testing. Students can create an account at `/signup` using any email ending with `indusuni.ac.in`, such as `name@iite.indusuni.ac.in` or `zoom1@indusuni.ac.in`, plus OTP verification. Forgot password also uses email OTP verification before changing the password. Real OTP delivery uses the configured backend email provider. Local Gmail SMTP needs a Gmail App Password; Render Free should use Brevo. New student registrations are stored in JSON during local development and in MongoDB when production storage is enabled. The active authentication session is stored in `sessionStorage`. Driver, conductor and operator accounts remain transport-office provisioned.
+These accounts are configured for presentation and testing. Students can create an account at `/signup` using any email ending with `indusuni.ac.in`, such as `name@iite.indusuni.ac.in` or `zoom1@indusuni.ac.in`, plus OTP verification. Forgot password also uses email OTP verification before changing the password. Real OTP delivery uses the configured backend email provider. Local Gmail SMTP needs a Gmail App Password; Render Free should use Brevo. New student registrations are stored in JSON during local development and in MongoDB when production storage is enabled. The active authentication session is stored in `sessionStorage`. Driver, conductor and operator accounts remain transport-office provisioned.
 
 ## Real OTP email setup
 
