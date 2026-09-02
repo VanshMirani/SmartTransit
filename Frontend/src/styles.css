@@ -4501,6 +4501,13 @@ svg {
 .staff-primary-button:hover {
   background: #066d69;
 }
+.button--disabled,
+.button--disabled:hover {
+  opacity: 0.58;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
 .staff-action-card .button {
   width: 100%;
 }

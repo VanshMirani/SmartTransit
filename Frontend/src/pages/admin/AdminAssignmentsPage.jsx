@@ -1,5 +1,5 @@
 import { BusFront, CheckCircle2, ClipboardList, Save, UserRound, Users, } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAdminData } from "../../admin/AdminDataContext";
 import { AdminFeedback, AdminPageHeading, AdminStatusBadge, } from "../../components/admin/AdminUI";
 export function AdminAssignmentsPage() {
@@ -13,23 +13,55 @@ export function AdminAssignmentsPage() {
         },
     ])));
     const [feedback, setFeedback] = useState(null);
-    const save = (routeId) => {
+    const [savingId, setSavingId] = useState("");
+    useEffect(() => {
+        setDrafts(Object.fromEntries(routes.map((route) => [
+            route.id,
+            {
+                busId: route.busId,
+                driverId: route.driverId,
+                conductorId: route.conductorId,
+            },
+        ])));
+    }, [routes]);
+    const save = async (routeId) => {
         const route = routes.find((item) => item.id === routeId);
         const draft = drafts[routeId];
-        if (!draft.busId || !draft.driverId || !draft.conductorId) {
+        if (!route || !draft?.busId || !draft?.driverId || !draft?.conductorId) {
             setFeedback({
                 type: "error",
                 title: "Assignment incomplete",
-                message: `Select a bus, driver and conductor before saving ${route.code}.`,
+                message: `Select a bus, driver and conductor before saving ${route?.code ?? "this route"}.`,
             });
             return;
         }
-        upsertRoute({ ...route, ...draft });
-        setFeedback({
-            type: "success",
-            title: "Assignments saved",
-            message: `${route.code} assignments were updated successfully.`,
-        });
+        setSavingId(routeId);
+        try {
+            const saved = await upsertRoute({ ...route, ...draft });
+            setDrafts((current) => ({
+                ...current,
+                [saved.id]: {
+                    busId: saved.busId,
+                    driverId: saved.driverId,
+                    conductorId: saved.conductorId,
+                },
+            }));
+            setFeedback({
+                type: "success",
+                title: "Assignments saved",
+                message: `${saved.code} is now synced across admin, driver, conductor and student dashboards.`,
+            });
+        }
+        catch (error) {
+            setFeedback({
+                type: "error",
+                title: "Could not save",
+                message: error instanceof Error ? error.message : "The assignment could not be saved to the backend.",
+            });
+        }
+        finally {
+            setSavingId("");
+        }
     };
     return (<div>
       <AdminPageHeading eyebrow="Operations setup" title="Assignment management" description="Assign a bus, driver and conductor to every active route."/>
@@ -97,8 +129,8 @@ export function AdminAssignmentsPage() {
                       </option>))}
                 </select>
               </label>
-              <button className="button admin-primary-button" onClick={() => save(route.id)}>
-                <Save /> Save assignments
+              <button className="button admin-primary-button" onClick={() => void save(route.id)} disabled={savingId === route.id}>
+                <Save /> {savingId === route.id ? "Saving..." : "Save assignments"}
               </button>
               {draft.busId && draft.driverId && draft.conductorId && (<p className="assignment-complete">
                   <CheckCircle2 /> Assignment complete

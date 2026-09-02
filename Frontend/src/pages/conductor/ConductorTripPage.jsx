@@ -1,11 +1,11 @@
-import { AlertCircle, Check, CheckCircle2, ChevronDown, Clock3, LoaderCircle, MapPin, Minus, Plus, Send, Users } from 'lucide-react';
+import { AlertCircle, BusFront, Check, CheckCircle2, ChevronDown, Clock3, LoaderCircle, MapPin, Minus, Plus, Send, Users } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { StaffPageHeading } from '../../components/staff/StaffUI';
 import { useConductorOperations } from '../../operations/OperationsContext';
 import { tripDirectionLabel } from '../../services/indusRoutes';
 export function ConductorTripPage() {
-    const { activeTrip, stops, currentStopId, setCurrentStop, occupiedSeats, submitSeatUpdate } = useConductorOperations();
+    const { activeTrip, stops, tripStatus, currentStopId, setCurrentStop, occupiedSeats, submitSeatUpdate } = useConductorOperations();
     const [boarded, setBoarded] = useState(0);
     const [deboarded, setDeboarded] = useState(0);
     const [submitting, setSubmitting] = useState(false);
@@ -16,6 +16,8 @@ export function ConductorTripPage() {
     const invalid = calculatedOccupied < 0 || calculatedOccupied > activeTrip.capacity;
     const currentStop = stops.find((stop) => stop.id === currentStopId) ?? stops[0];
     const canSubmit = boarded + deboarded > 0 && !invalid && !submitting;
+    if (tripStatus !== 'active')
+        return <section className="staff-state-card"><span><BusFront /></span><h1>No active trip</h1><p>Passenger counts can be submitted after the driver starts this route.</p><Link className="button staff-primary-button" to="/conductor">Return home</Link></section>;
     const submit = async () => {
         if (!canSubmit)
             return;

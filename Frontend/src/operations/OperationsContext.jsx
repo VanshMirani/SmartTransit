@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState, } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, } from "react";
 import { apiRequest, backendConfig } from "../services/apiClient";
 import { activeStaffTrip as fallbackActiveTrip, buildStaffTripForDirection, operationalCurrentStopId as fallbackCurrentStopId, operationalStops as fallbackStops, preTripItems } from "../services/operationsData";
 import { defaultStaffRoute, routeForTripDirection, withStopProgress } from "../services/indusRoutes";
@@ -11,6 +11,7 @@ const driverGpsForceRefreshMs = 30000;
 const driverGpsMovementThresholdMeters = 20;
 const driverGpsWeakAccuracyMeters = 80;
 const driverGpsMaxAccuracyMeters = 250;
+const staffTripRefreshIntervalMs = 15000;
 function syncBackend(path, options) {
     if (!backendConfig.enabled)
         return;
@@ -90,32 +91,54 @@ export function DriverOperationsProvider({ children, }) {
     const [emergency, setEmergency] = useState(null);
     const lastGpsSent = useRef(null);
     const gpsSyncInFlight = useRef(false);
+    const applyDriverTripData = useCallback((data, { preserveChecklist = false } = {}) => {
+        setActiveTrip(data.activeStaffTrip ?? fallbackActiveTrip);
+        setStops(data.operationalStops ?? fallbackStops);
+        setTripStatus(data.tripStatus ?? "not-started");
+        if (data.tripStatus === "active")
+            setChecklist(preTripItems.map((item) => item.id));
+        else if (!preserveChecklist || data.tripStatus === "completed")
+            setChecklist([]);
+        setGpsUpdatedAt(data.gpsUpdatedAt ?? "Not sharing");
+        setLastGpsLocation(data.liveLocation ?? null);
+        setEmergency(data.emergencies?.[0] ?? null);
+        setTripLoadError("");
+    }, []);
+    const refreshDriverTrip = useCallback(async ({ silent = false } = {}) => {
+        if (!backendConfig.enabled)
+            return null;
+        try {
+            const data = await apiRequest("/driver/trips/current");
+            applyDriverTripData(data, { preserveChecklist: silent });
+            return data;
+        }
+        catch (reason) {
+            if (!silent)
+                setTripLoadError(reason instanceof Error ? reason.message : "Unable to load your assigned trip.");
+            return null;
+        }
+    }, [applyDriverTripData]);
     useEffect(() => {
         if (!backendConfig.enabled)
-            return;
+            return undefined;
         let cancelled = false;
-        apiRequest("/driver/trips/current")
-            .then((data) => {
-            if (cancelled)
+        const load = async (silent = false) => {
+            const data = await apiRequest("/driver/trips/current").catch((reason) => {
+                if (!silent && !cancelled)
+                    setTripLoadError(reason instanceof Error ? reason.message : "Unable to load your assigned trip.");
+                return null;
+            });
+            if (cancelled || !data)
                 return;
-            setActiveTrip(data.activeStaffTrip ?? fallbackActiveTrip);
-            setStops(data.operationalStops ?? fallbackStops);
-            setTripStatus(data.tripStatus ?? "not-started");
-            setChecklist(data.tripStatus === "active" ? preTripItems.map((item) => item.id) : []);
-            setGpsUpdatedAt(data.gpsUpdatedAt ?? "Not sharing");
-            setLastGpsLocation(data.liveLocation ?? null);
-            setEmergency(data.emergencies?.[0] ?? null);
-            setTripLoadError("");
-        })
-            .catch((reason) => {
-            if (cancelled)
-                return;
-            setTripLoadError(reason instanceof Error ? reason.message : "Unable to load your assigned trip.");
-        });
+            applyDriverTripData(data, { preserveChecklist: silent });
+        };
+        void load(false);
+        const timer = window.setInterval(() => void load(true), staffTripRefreshIntervalMs);
         return () => {
             cancelled = true;
+            window.clearInterval(timer);
         };
-    }, []);
+    }, [applyDriverTripData]);
     useEffect(() => {
         if (tripStatus !== "active") {
             setGpsSharingStatus("idle");
@@ -169,6 +192,10 @@ export function DriverOperationsProvider({ children, }) {
                 setGpsUpdatedAt(payload.gpsUpdatedAt ?? formatTime());
                 if (payload.activeStaffTrip)
                     setActiveTrip(payload.activeStaffTrip);
+                if (payload.operationalStops)
+                    setStops(payload.operationalStops);
+                if (payload.tripStatus)
+                    setTripStatus(payload.tripStatus);
             })
                 .catch(() => {
                 if (cancelled)
@@ -205,6 +232,7 @@ export function DriverOperationsProvider({ children, }) {
         gpsError,
         lastGpsLocation,
         emergency,
+        refreshTrip: refreshDriverTrip,
         toggleCheck: (id) => setChecklist((items) => items.includes(id)
             ? items.filter((item) => item !== id)
             : [...items, id]),
@@ -212,6 +240,7 @@ export function DriverOperationsProvider({ children, }) {
             if (backendConfig.enabled) {
                 const data = await apiRequest(`/driver/trips/${activeTrip.id}/start`, { method: "POST" });
                 setActiveTrip(data.activeStaffTrip ?? activeTrip);
+                setStops(data.operationalStops ?? stops);
                 setTripStatus(data.tripStatus ?? "active");
                 setChecklist(preTripItems.map((item) => item.id));
                 setGpsUpdatedAt(data.gpsUpdatedAt ?? "Waiting for driver phone");
@@ -260,6 +289,10 @@ export function DriverOperationsProvider({ children, }) {
         endTrip: async () => {
             if (backendConfig.enabled) {
                 const data = await apiRequest(`/driver/trips/${activeTrip.id}/end`, { method: "POST" });
+                if (data.activeStaffTrip)
+                    setActiveTrip(data.activeStaffTrip);
+                if (data.operationalStops)
+                    setStops(data.operationalStops);
                 setTripStatus(data.tripStatus ?? "completed");
                 setGpsUpdatedAt(data.gpsUpdatedAt ?? "Sharing stopped");
             }
@@ -287,7 +320,7 @@ export function DriverOperationsProvider({ children, }) {
             syncBackend("/staff/emergencies", { method: "POST", body: report });
             return report;
         },
-    }), [activeTrip, stops, tripStatus, checklist, tripLoadError, gpsUpdatedAt, gpsSharingStatus, gpsError, lastGpsLocation, emergency]);
+    }), [activeTrip, stops, tripStatus, checklist, tripLoadError, gpsUpdatedAt, gpsSharingStatus, gpsError, lastGpsLocation, emergency, refreshDriverTrip]);
     return (<DriverContext.Provider value={value}>{children}</DriverContext.Provider>);
 }
 // eslint-disable-next-line react-refresh/only-export-components
@@ -301,42 +334,55 @@ const ConductorContext = createContext(null);
 export function ConductorOperationsProvider({ children, }) {
     const [activeTrip, setActiveTrip] = useState(fallbackActiveTrip);
     const [stops, setStops] = useState(fallbackStops);
-    const [tripStatus, setTripStatus] = useState("active");
+    const [tripStatus, setTripStatus] = useState(backendConfig.enabled ? "not-started" : "active");
     const [currentStopId, setCurrentStopId] = useState(fallbackCurrentStopId);
     const [occupiedSeats, setOccupiedSeats] = useState(0);
     const [updates, setUpdates] = useState([]);
     const [emergency, setEmergency] = useState(null);
+    const applyConductorTripData = useCallback((data) => {
+        const trip = data.activeStaffTrip ?? fallbackActiveTrip;
+        const seatUpdates = (data.seatUpdates ?? []).filter((update) => update.tripId ? update.tripId === trip.id : trip.direction !== "return");
+        const tripOccupiedSeats = Number(trip.occupiedSeats);
+        const initialOccupiedSeats = Number.isFinite(tripOccupiedSeats) ? tripOccupiedSeats : 0;
+        setActiveTrip(trip);
+        setStops(data.operationalStops ?? fallbackStops);
+        setTripStatus(data.tripStatus ?? "not-started");
+        setCurrentStopId(data.operationalCurrentStopId ?? fallbackCurrentStopId);
+        if (seatUpdates.length) {
+            setUpdates(seatUpdates);
+            setOccupiedSeats(seatUpdates[0].occupiedSeats ?? initialOccupiedSeats);
+        }
+        else {
+            setUpdates([]);
+            setOccupiedSeats(initialOccupiedSeats);
+        }
+        setEmergency(data.emergencies?.[0] ?? null);
+    }, []);
+    const refreshConductorTrip = useCallback(async () => {
+        if (!backendConfig.enabled)
+            return null;
+        const data = await apiRequest("/conductor/trips/current");
+        applyConductorTripData(data);
+        return data;
+    }, [applyConductorTripData]);
     useEffect(() => {
         if (!backendConfig.enabled)
-            return;
+            return undefined;
         let cancelled = false;
-        apiRequest("/conductor/trips/current")
+        const load = () => apiRequest("/conductor/trips/current")
             .then((data) => {
             if (cancelled)
                 return;
-            const trip = data.activeStaffTrip ?? fallbackActiveTrip;
-            const seatUpdates = (data.seatUpdates ?? []).filter((update) => update.tripId ? update.tripId === trip.id : trip.direction !== "return");
-            const tripOccupiedSeats = Number(trip.occupiedSeats);
-            const initialOccupiedSeats = Number.isFinite(tripOccupiedSeats) ? tripOccupiedSeats : 0;
-            setActiveTrip(trip);
-            setStops(data.operationalStops ?? fallbackStops);
-            setTripStatus(data.tripStatus ?? "active");
-            setCurrentStopId(data.operationalCurrentStopId ?? fallbackCurrentStopId);
-            if (seatUpdates.length) {
-                setUpdates(seatUpdates);
-                setOccupiedSeats(seatUpdates[0].occupiedSeats ?? initialOccupiedSeats);
-            }
-            else {
-                setUpdates([]);
-                setOccupiedSeats(initialOccupiedSeats);
-            }
-            setEmergency(data.emergencies?.[0] ?? null);
+            applyConductorTripData(data);
         })
             .catch(() => undefined);
+        void load();
+        const timer = window.setInterval(() => void load(), staffTripRefreshIntervalMs);
         return () => {
             cancelled = true;
+            window.clearInterval(timer);
         };
-    }, []);
+    }, [applyConductorTripData]);
     const value = useMemo(() => ({
         tripStatus,
         activeTrip,
@@ -345,9 +391,12 @@ export function ConductorOperationsProvider({ children, }) {
         occupiedSeats,
         updates,
         emergency,
+        refreshTrip: refreshConductorTrip,
         startTrip: () => setTripStatus("active"),
             setCurrentStop: setCurrentStopId,
         submitSeatUpdate: async (boarded, deboarded) => {
+            if (tripStatus !== "active")
+                throw new Error("Passenger counts can be submitted only after the driver starts the trip.");
             await new Promise((resolve) => window.setTimeout(resolve, 550));
             const calculation = calculateSeatUpdate(occupiedSeats, boarded, deboarded, activeTrip.capacity);
             const stop = stops.find((item) => item.id === currentStopId) ?? stops[0];
@@ -387,7 +436,7 @@ export function ConductorOperationsProvider({ children, }) {
             syncBackend("/staff/emergencies", { method: "POST", body: report });
             return report;
         },
-    }), [activeTrip, stops, tripStatus, currentStopId, occupiedSeats, updates, emergency]);
+    }), [activeTrip, stops, tripStatus, currentStopId, occupiedSeats, updates, emergency, refreshConductorTrip]);
     return (<ConductorContext.Provider value={value}>
       {children}
     </ConductorContext.Provider>);

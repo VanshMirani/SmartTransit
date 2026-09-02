@@ -1482,6 +1482,8 @@ function validateConductorTripUpdate(data, user, tripId) {
     const trip = tripState?.activeStaffTrip;
     if (!trip || trip.id !== tripId)
         return "Trip not found.";
+    if (tripState.tripStatus !== "active")
+        return "Start the trip before submitting passenger counts.";
     const assignedRoute = assignedRouteForStaff(data, user);
     if (assignedRoute && assignedRoute.code !== trip.routeCode)
         return "This trip is not assigned to your account.";
@@ -1558,6 +1560,9 @@ function storeDriverLocation(data, user, tripId, locationInput) {
         ok: true,
         location,
         gpsUpdatedAt: locationAgeLabel(updatedAt),
+        tripStatus: tripState.tripStatus,
+        operationalCurrentStopId: tripState.operationalCurrentStopId,
+        operationalStops: tripState.operationalStops,
         activeStaffTrip: tripState.activeStaffTrip,
     };
 }

@@ -406,6 +406,23 @@ test("custom admin route assignments appear correctly for new driver and conduct
         });
         assert.equal(routeResponse.status, 200);
 
+        const studentAssignment = await fetch(`${app.baseUrl}/admin/students/student-001`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+            body: JSON.stringify({
+                id: "student-001",
+                name: "Aarav Shah",
+                code: "IU23CSE2023",
+                detail: "Computer Science - Semester 7",
+                contact: "student@iite.indusuni.ac.in",
+                routeCode: route.code,
+                stopId: route.stops[0].id,
+                assignment: `${route.code} - ${route.stops[0].name}`,
+                status: "active",
+            }),
+        });
+        assert.equal(studentAssignment.status, 200);
+
         const loginAs = async (email, password) => {
             const login = await fetch(`${app.baseUrl}/auth/login`, {
                 method: "POST",
@@ -415,17 +432,21 @@ test("custom admin route assignments appear correctly for new driver and conduct
             assert.equal(login.status, 200);
             return (await json(login)).token;
         };
-        const [driverToken, conductorToken] = await Promise.all([
+        const [driverToken, conductorToken, studentToken] = await Promise.all([
             loginAs(driver.accountEmail, driver.temporaryPassword),
             loginAs(conductor.accountEmail, conductor.temporaryPassword),
+            loginAs("student@iite.indusuni.ac.in", "Student@123"),
         ]);
 
-        const [driverTrip, conductorTrip, adminBootstrap] = await Promise.all([
+        const [driverTrip, conductorTrip, studentTransit, adminBootstrap] = await Promise.all([
             fetch(`${app.baseUrl}/driver/trips/current`, {
                 headers: { Authorization: `Bearer ${driverToken}` },
             }),
             fetch(`${app.baseUrl}/conductor/trips/current`, {
                 headers: { Authorization: `Bearer ${conductorToken}` },
+            }),
+            fetch(`${app.baseUrl}/student/transit`, {
+                headers: { Authorization: `Bearer ${studentToken}` },
             }),
             fetch(`${app.baseUrl}/admin/bootstrap`, {
                 headers: { Authorization: `Bearer ${adminToken}` },
@@ -433,9 +454,11 @@ test("custom admin route assignments appear correctly for new driver and conduct
         ]);
         assert.equal(driverTrip.status, 200);
         assert.equal(conductorTrip.status, 200);
+        assert.equal(studentTransit.status, 200);
         assert.equal(adminBootstrap.status, 200);
         const driverData = await json(driverTrip);
         const conductorData = await json(conductorTrip);
+        const studentData = await json(studentTransit);
         const admin = await json(adminBootstrap);
 
         for (const dashboard of [driverData, conductorData]) {
@@ -452,6 +475,14 @@ test("custom admin route assignments appear correctly for new driver and conduct
             assert.equal(dashboard.activeStaffTrip.conductor.name, "Vraj Patel");
             assert.equal(dashboard.activeStaffTrip.conductor.phone, "+91 90000 08080");
         }
+
+        assert.equal(studentData.route.code, "IU-R9");
+        assert.equal(studentData.route.selectedStopId, "iu-r9-01");
+        assert.equal(studentData.route.currentStopId, "iu-r9-01");
+        assert.equal(studentData.bus.number, "7711");
+        assert.equal(studentData.bus.registration, "GJ-01-FT-7711");
+        assert.equal(studentData.bus.capacity, 46);
+        assert.equal(studentData.bus.tripActive, false);
 
         const adminRoute = admin.routes.find((item) => item.code === "IU-R9");
         const adminBus = admin.records.buses.find((item) => item.id === bus.id);
@@ -476,6 +507,38 @@ test("custom admin route assignments appear correctly for new driver and conduct
         const startedTrip = await json(startTrip);
         assert.equal(startedTrip.operationalCurrentStopId, "iu-r9-01");
         assert.equal(startedTrip.activeStaffTrip.nextStopName, "Ghuma Gaam");
+
+        const [driverAfterStart, conductorAfterStart, studentAfterStart, adminAfterStart] = await Promise.all([
+            fetch(`${app.baseUrl}/driver/trips/current`, {
+                headers: { Authorization: `Bearer ${driverToken}` },
+            }),
+            fetch(`${app.baseUrl}/conductor/trips/current`, {
+                headers: { Authorization: `Bearer ${conductorToken}` },
+            }),
+            fetch(`${app.baseUrl}/student/transit`, {
+                headers: { Authorization: `Bearer ${studentToken}` },
+            }),
+            fetch(`${app.baseUrl}/admin/bootstrap`, {
+                headers: { Authorization: `Bearer ${adminToken}` },
+            }),
+        ]);
+        assert.equal(driverAfterStart.status, 200);
+        assert.equal(conductorAfterStart.status, 200);
+        assert.equal(studentAfterStart.status, 200);
+        assert.equal(adminAfterStart.status, 200);
+        const syncedDriver = await json(driverAfterStart);
+        const syncedConductor = await json(conductorAfterStart);
+        const syncedStudent = await json(studentAfterStart);
+        const syncedAdmin = await json(adminAfterStart);
+        const syncedAdminBus = syncedAdmin.fleetVehicles.find((item) => item.route === "IU-R9");
+        assert.equal(syncedDriver.tripStatus, "active");
+        assert.equal(syncedConductor.tripStatus, "active");
+        assert.equal(syncedDriver.operationalCurrentStopId, "iu-r9-01");
+        assert.equal(syncedConductor.operationalCurrentStopId, "iu-r9-01");
+        assert.equal(syncedStudent.route.currentStopId, "iu-r9-01");
+        assert.equal(syncedStudent.bus.tripActive, true);
+        assert.equal(syncedAdminBus.tripActive, true);
+        assert.equal(syncedAdminBus.nextStopName, "Ghuma Gaam");
 
         await app.store.update((data) => {
             const staleState = data.operations.routeTrips?.[route.code] ?? data.operations;
@@ -1210,6 +1273,23 @@ test("driver phone GPS updates student and admin live tracking", async () => {
         assert.equal(liveBus.nextStopEta, transitData.bus.nextStopEta);
         assert.equal(liveBus.remainingDistance, transitData.bus.remainingDistance);
 
+        const conductorLogin = await fetch(`${app.baseUrl}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "conductor@transport.indusuni.ac.in", password: "Conductor@123" }),
+        });
+        const { token: conductorToken } = await json(conductorLogin);
+        const conductorTrip = await fetch(`${app.baseUrl}/conductor/trips/current`, {
+            headers: { Authorization: `Bearer ${conductorToken}` },
+        });
+        assert.equal(conductorTrip.status, 200);
+        const conductorData = await json(conductorTrip);
+        assert.equal(conductorData.tripStatus, "active");
+        assert.equal(conductorData.activeStaffTrip.routeCode, "IU-R4");
+        assert.equal(conductorData.activeStaffTrip.busNumber, "9468");
+        assert.equal(conductorData.activeStaffTrip.nextStopName, "Shilaj Circle");
+        assert.equal(conductorData.operationalCurrentStopId, transitData.route.currentStopId);
+
         const endTrip = await fetch(`${app.baseUrl}/driver/trips/TRIP-2026-0821-IU-R4/end`, {
             method: "POST",
             headers: { Authorization: `Bearer ${driverToken}` },
@@ -1240,11 +1320,38 @@ test("conductor seat update changes occupancy without advancing GPS-based route 
             return (await json(login)).token;
         };
 
-        const [conductorToken, studentToken, adminToken] = await Promise.all([
+        const [driverToken, conductorToken, studentToken, adminToken] = await Promise.all([
+            loginAs("driver@transport.indusuni.ac.in", "Driver@123"),
             loginAs("conductor@transport.indusuni.ac.in", "Conductor@123"),
             loginAs("student@iite.indusuni.ac.in", "Student@123"),
             loginAs("admin@transport.indusuni.ac.in", "Admin@123"),
         ]);
+
+        const currentTripBeforeStart = await fetch(`${app.baseUrl}/conductor/trips/current`, {
+            headers: { Authorization: `Bearer ${conductorToken}` },
+        });
+        assert.equal(currentTripBeforeStart.status, 200);
+        const inactiveTrip = await json(currentTripBeforeStart);
+        const inactiveSubmittedStop = inactiveTrip.operationalStops.find((stop) => stop.id === inactiveTrip.operationalCurrentStopId);
+
+        const blockedUpdate = await fetch(`${app.baseUrl}/conductor/trips/${inactiveTrip.activeStaffTrip.id}/seat-updates`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${conductorToken}` },
+            body: JSON.stringify({
+                stopId: inactiveSubmittedStop.id,
+                stopName: inactiveSubmittedStop.name,
+                boarded: 4,
+                deboarded: 1,
+            }),
+        });
+        assert.equal(blockedUpdate.status, 400);
+        assert.match((await json(blockedUpdate)).message, /Start the trip/);
+
+        const startTrip = await fetch(`${app.baseUrl}/driver/trips/${inactiveTrip.activeStaffTrip.id}/start`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${driverToken}` },
+        });
+        assert.equal(startTrip.status, 200);
 
         const currentTripResponse = await fetch(`${app.baseUrl}/conductor/trips/current`, {
             headers: { Authorization: `Bearer ${conductorToken}` },
@@ -1266,7 +1373,7 @@ test("conductor seat update changes occupancy without advancing GPS-based route 
         assert.equal(seatUpdateResponse.status, 201);
         const seatUpdate = await json(seatUpdateResponse);
         assert.equal(seatUpdate.update.stopName, submittedStop.name);
-        assert.equal(seatUpdate.update.occupiedSeats, 33);
+        assert.equal(seatUpdate.update.occupiedSeats, 3);
         assert.equal(seatUpdate.operationalCurrentStopId, submittedStop.id);
         assert.equal(seatUpdate.activeStaffTrip.nextStopName, submittedStop.name);
 
@@ -1275,9 +1382,9 @@ test("conductor seat update changes occupancy without advancing GPS-based route 
         });
         assert.equal(studentTransitResponse.status, 200);
         const studentTransit = await json(studentTransitResponse);
-        assert.equal(studentTransit.route.currentStopId, studentTransit.route.selectedStopId);
-        assert.equal(studentTransit.route.stops.find((stop) => stop.status === "current").id, studentTransit.route.selectedStopId);
-        assert.equal(studentTransit.bus.occupiedSeats, 33);
+        assert.equal(studentTransit.route.currentStopId, submittedStop.id);
+        assert.equal(studentTransit.route.stops.find((stop) => stop.status === "current").id, submittedStop.id);
+        assert.equal(studentTransit.bus.occupiedSeats, 3);
 
         const adminBootstrapResponse = await fetch(`${app.baseUrl}/admin/bootstrap`, {
             headers: { Authorization: `Bearer ${adminToken}` },
@@ -1285,7 +1392,7 @@ test("conductor seat update changes occupancy without advancing GPS-based route 
         assert.equal(adminBootstrapResponse.status, 200);
         const admin = await json(adminBootstrapResponse);
         const liveBus = admin.fleetVehicles.find((bus) => bus.route === "IU-R4");
-        assert.equal(liveBus.occupancy, 33);
+        assert.equal(liveBus.occupancy, 3);
         assert.equal(liveBus.nextStopName, submittedStop.name);
     }
     finally {

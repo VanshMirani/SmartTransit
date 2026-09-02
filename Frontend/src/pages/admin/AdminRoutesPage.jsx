@@ -41,6 +41,7 @@ export function AdminRoutesPage() {
     const [editing, setEditing] = useState(null);
     const [errors, setErrors] = useState({});
     const [feedback, setFeedback] = useState(null);
+    const [saving, setSaving] = useState(false);
     const filtered = useMemo(() => routes.filter((route) => `${route.code} ${route.name} ${route.startPoint} ${route.destination}`
         .toLowerCase()
         .includes(query.toLowerCase())), [routes, query]);
@@ -49,7 +50,7 @@ export function AdminRoutesPage() {
         setEditing(prepareRouteForEdit(route));
         setErrors({});
     };
-    const save = (event) => {
+    const save = async (event) => {
         event.preventDefault();
         if (!editing)
             return;
@@ -75,17 +76,34 @@ export function AdminRoutesPage() {
         if (Object.keys(next).length)
             return;
         const route = cleanRouteForSave({ ...editing, id: editing.id || `route-${Date.now()}` });
-        upsertRoute(route);
-        setSelectedId(route.id);
-        setEditing(null);
-        setFeedback(`${route.code} was saved with ${route.stops.length} ordered stops.`);
+        setSaving(true);
+        try {
+            const saved = await upsertRoute(route);
+            setSelectedId(saved.id);
+            setEditing(null);
+            setFeedback({
+                type: "success",
+                title: "Route saved",
+                message: `${saved.code} was saved and synced with the staff and student dashboards.`,
+            });
+        }
+        catch (error) {
+            setFeedback({
+                type: "error",
+                title: "Could not save route",
+                message: error instanceof Error ? error.message : "The route could not be saved to the backend.",
+            });
+        }
+        finally {
+            setSaving(false);
+        }
     };
     return (<div>
-      {editing ? (<RouteEditor route={editing} setRoute={setEditing} errors={errors} records={records} routes={routes} save={save} cancel={() => setEditing(null)}/>) : (<>
+      {editing ? (<RouteEditor route={editing} setRoute={setEditing} errors={errors} records={records} routes={routes} save={save} saving={saving} cancel={() => setEditing(null)}/>) : (<>
           <AdminPageHeading eyebrow="Network planning" title="Routes & stops builder" description="Create routes, order stops, schedule arrivals and assign operating teams." actions={<button className="button admin-primary-button" onClick={() => beginEdit(emptyRoute())}>
                 <Plus /> Add route
               </button>}/>
-          {feedback && (<AdminFeedback type="success" title="Route saved" message={feedback} dismiss={() => setFeedback(null)}/>)}
+          {feedback && (<AdminFeedback {...feedback} dismiss={() => setFeedback(null)}/>)}
           <div className="route-builder-layout">
             <aside className="admin-route-list">
               <label className="admin-search">
@@ -119,7 +137,7 @@ export function AdminRoutesPage() {
                     </p>
                   </div>
                   <div>
-                    <button className="button button--secondary" onClick={() => toggleRoute(selected.id)}>
+                    <button className="button button--secondary" onClick={() => void toggleRoute(selected.id)}>
                       {selected.status === "active" ? (<ToggleRight />) : (<ToggleLeft />)}
                       {selected.status === "active" ? "Deactivate" : "Activate"}
                     </button>
@@ -184,7 +202,7 @@ export function AdminRoutesPage() {
         </>)}
     </div>);
 }
-function RouteEditor({ route, setRoute, errors, records, routes, save, cancel, }) {
+function RouteEditor({ route, setRoute, errors, records, routes, save, saving, cancel, }) {
     const [newStop, setNewStop] = useState({
         name: "",
         scheduledTime: "",
@@ -519,8 +537,8 @@ function RouteEditor({ route, setRoute, errors, records, routes, save, cancel, }
         <button type="button" className="button button--secondary" onClick={cancel}>
           <ArrowLeft /> Discard changes
         </button>
-        <button className="button admin-primary-button">
-          <Save /> Save route
+        <button className="button admin-primary-button" disabled={saving}>
+          <Save /> {saving ? "Saving..." : "Save route"}
         </button>
       </div>
     </form>);
