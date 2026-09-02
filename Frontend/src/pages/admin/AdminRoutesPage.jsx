@@ -5,7 +5,7 @@ import { useMapEvents } from "react-leaflet";
 import { useAdminData } from "../../admin/AdminDataContext";
 import { AdminFeedback, AdminPageHeading, AdminStatusBadge, } from "../../components/admin/AdminUI";
 import { CampusMapMarker, MapAutoCenter, MapFitBounds, SmartTileLayer, StopNameTooltip } from "../../components/maps/SmartTransitMap";
-import { coordinatesFromStop, coordinatesFromText, currentBrowserLocation, defaultAhmedabadMapCenter, formatCoordinate, routeLocationResults, } from "../../services/locationSearch";
+import { coordinatesFromStop, coordinatesFromText, currentBrowserLocation, defaultAhmedabadMapCenter, formatCoordinate, onlineLocationResults, routeLocationResults, uniqueLocationResults, } from "../../services/locationSearch";
 const prepareRouteForEdit = (route) => ({
     ...structuredClone(route),
     stops: (route.stops ?? []).map((stop) => ({
@@ -196,6 +196,7 @@ function RouteEditor({ route, setRoute, errors, records, routes, save, cancel, }
     const [locationQuery, setLocationQuery] = useState("");
     const [locationResults, setLocationResults] = useState([]);
     const [locationMessage, setLocationMessage] = useState("");
+    const [searchingOnline, setSearchingOnline] = useState(false);
     const [searchingLocation, setSearchingLocation] = useState(false);
     const [mapFocus, setMapFocus] = useState(null);
     const validStops = route.stops
@@ -237,10 +238,10 @@ function RouteEditor({ route, setRoute, errors, records, routes, save, cancel, }
         });
     };
     const applyMapCoordinate = ({ lat, lng }) => applyCoordinatesToTarget({ lat, lng });
-    const searchLocation = () => {
+    const searchLocation = async () => {
         const query = searchText;
         if (!query) {
-            setLocationMessage("Enter a saved stop name, paste a map link, or paste lat,lng.");
+            setLocationMessage("Enter a stop, area, landmark, map link, or lat,lng.");
             return;
         }
         const pastedCoordinates = coordinatesFromText(query);
@@ -251,8 +252,32 @@ function RouteEditor({ route, setRoute, errors, records, routes, save, cancel, }
             return;
         }
         const savedMatches = routeLocationResults(query, routes);
-        setLocationResults(savedMatches);
-        setLocationMessage(savedMatches.length ? "Choose the matching saved stop to fill coordinates." : "No saved stop found. Paste a Google Maps link, paste lat,lng, use current location, or click the map.");
+        setSearchingOnline(true);
+        setLocationMessage(savedMatches.length ? "Checking saved stops and online map..." : "Searching the online map...");
+        try {
+            const onlineMatches = await onlineLocationResults(query);
+            const matches = uniqueLocationResults([...savedMatches, ...onlineMatches]).slice(0, 10);
+            setLocationResults(matches);
+            if (matches.length) {
+                setLocationMessage(onlineMatches.length
+                    ? "Choose a saved or online result, then fine-tune by clicking the exact pickup point on the map."
+                    : "Choose the matching saved stop, then fine-tune by clicking the exact pickup point on the map.");
+            }
+            else {
+                setLocationMessage("No map match found. Paste a Google Maps link, paste lat,lng, use current location, or click the map.");
+            }
+        }
+        catch (error) {
+            setLocationResults(savedMatches);
+            setLocationMessage(savedMatches.length
+                ? "Saved stop matches found. Online map search is unavailable right now."
+                : error instanceof Error
+                    ? error.message
+                    : "Online map search is unavailable right now. Paste a map link, lat,lng, or click the map.");
+        }
+        finally {
+            setSearchingOnline(false);
+        }
     };
     const applyCurrentBrowserLocation = async () => {
         setSearchingLocation(true);
@@ -441,12 +466,12 @@ function RouteEditor({ route, setRoute, errors, records, routes, save, cancel, }
               <input value={locationQuery} onChange={(event) => setLocationQuery(event.target.value)} onKeyDown={(event) => {
             if (event.key === "Enter") {
                 event.preventDefault();
-                searchLocation();
+                void searchLocation();
             }
-        }} placeholder="Search saved stop or paste Google Maps link" aria-label="Search stop location"/>
+        }} placeholder="Search stop, area, landmark, or paste map link" aria-label="Search stop location"/>
             </label>
-            <button type="button" className="button button--secondary" onClick={searchLocation}>
-              <Search /> Find
+            <button type="button" className="button button--secondary" onClick={() => void searchLocation()} disabled={searchingOnline}>
+              <Search /> {searchingOnline ? "Searching..." : "Find online"}
             </button>
             <button type="button" className="button button--secondary" onClick={() => void applyCurrentBrowserLocation()} disabled={searchingLocation}>
               <MapPin /> {searchingLocation ? "Locating..." : "Use my location"}

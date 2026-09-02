@@ -145,6 +145,38 @@ test("student transit stays inactive until the assigned driver starts the route"
     }
 });
 
+test("built-in routes serve corrected official stop coordinates over stale saved coordinates", async () => {
+    const app = await startTestServer();
+    try {
+        await app.store.update((data) => {
+            const route = data.admin.routes.find((item) => item.code === "IU-R4");
+            const solaRoad = route.stops.find((stop) => stop.id === "iu-r4-04");
+            assert.ok(solaRoad);
+            solaRoad.coordinates = [23.0697, 72.5324];
+            return data;
+        });
+
+        const login = await fetch(`${app.baseUrl}/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: "student@iite.indusuni.ac.in", password: "Student@123" }),
+        });
+        assert.equal(login.status, 200);
+        const { token } = await json(login);
+
+        const transit = await fetch(`${app.baseUrl}/student/transit`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        assert.equal(transit.status, 200);
+        const data = await json(transit);
+        const solaRoad = data.route.stops.find((stop) => stop.id === "iu-r4-04");
+        assert.deepEqual(solaRoad.coordinates, [23.067932, 72.526487]);
+    }
+    finally {
+        await app.close();
+    }
+});
+
 test("route, bus, driver, and conductor assignments match across dashboards", async () => {
     const app = await startTestServer();
     try {

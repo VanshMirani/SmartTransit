@@ -145,10 +145,24 @@ function routeValue(value, fallback) {
     return value === undefined || value === null || value === "" ? fallback : value;
 }
 
-function normalizedRouteStops(stops = []) {
-    return stops.map((stop) => /indus university/i.test(String(stop?.name ?? ""))
-        ? { ...stop, coordinates: INDUS_CAMPUS.coordinates }
-        : stop);
+function normalizedStopName(name) {
+    return String(name ?? "").trim().toLowerCase();
+}
+
+function templateStopForRouteStop(stop, templateStops = []) {
+    return templateStops.find((item) => item.id === stop?.id) ??
+        templateStops.find((item) => normalizedStopName(item.name) === normalizedStopName(stop?.name));
+}
+
+function normalizedRouteStops(stops = [], templateStops = []) {
+    return stops.map((stop) => {
+        const templateStop = templateStopForRouteStop(stop, templateStops);
+        if (/indus university/i.test(String(stop?.name ?? templateStop?.name ?? "")))
+            return { ...stop, coordinates: INDUS_CAMPUS.coordinates };
+        if (templateStop?.coordinates?.length)
+            return { ...stop, coordinates: templateStop.coordinates };
+        return stop;
+    });
 }
 
 function routeFromData(data, routeCode) {
@@ -175,7 +189,7 @@ function routeFromData(data, routeCode) {
             mapCenter: managedRoute.mapCenter?.length ? managedRoute.mapCenter : routeTemplate.mapCenter,
             notes: routeValue(managedRoute.notes, routeTemplate.notes),
             studentCount: routeValue(managedRoute.studentCount, routeTemplate.studentCount),
-            stops: normalizedRouteStops(managedRoute.stops?.length ? managedRoute.stops : routeTemplate.stops),
+            stops: normalizedRouteStops(managedRoute.stops?.length ? managedRoute.stops : routeTemplate.stops, routeTemplate.stops),
         };
     }
     if (managedRoute) {
@@ -187,7 +201,7 @@ function routeFromData(data, routeCode) {
             stops: normalizedRouteStops(managedRoute.stops ?? []),
         };
     }
-    return routeTemplate ? { ...routeTemplate, stops: normalizedRouteStops(routeTemplate.stops) } : null;
+    return routeTemplate ? { ...routeTemplate, stops: normalizedRouteStops(routeTemplate.stops, routeTemplate.stops) } : null;
 }
 
 function routeForTrip(data, trip) {

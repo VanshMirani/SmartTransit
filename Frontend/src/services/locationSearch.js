@@ -1,4 +1,12 @@
 export const defaultAhmedabadMapCenter = [23.07, 72.54];
+const defaultOnlineSearchUrl = "https://nominatim.openstreetmap.org/search";
+const ahmedabadGandhinagarBounds = {
+    south: 22.9,
+    west: 72.38,
+    north: 23.24,
+    east: 72.7,
+};
+const ahmedabadGandhinagarViewbox = `${ahmedabadGandhinagarBounds.west},${ahmedabadGandhinagarBounds.north},${ahmedabadGandhinagarBounds.east},${ahmedabadGandhinagarBounds.south}`;
 
 export const formatCoordinate = (value) => Number.isFinite(Number(value))
     ? String(Math.round(Number(value) * 1000000) / 1000000)
@@ -48,6 +56,125 @@ export const routeLocationResults = (query, routes) => {
         };
     }).filter(Boolean)).filter((result) => normalizeSearchText(`${result.name} ${result.description}`).includes(search))).slice(0, 8);
 };
+
+const onlineSearchUrl = () => import.meta.env?.VITE_LOCATION_SEARCH_URL?.trim() || defaultOnlineSearchUrl;
+
+function isInsideAhmedabadGandhinagar(lat, lng) {
+    return lat >= ahmedabadGandhinagarBounds.south &&
+        lat <= ahmedabadGandhinagarBounds.north &&
+        lng >= ahmedabadGandhinagarBounds.west &&
+        lng <= ahmedabadGandhinagarBounds.east;
+}
+
+function regionalizeQuery(query) {
+    return /ahmedabad|gandhinagar|gujarat|india/i.test(query)
+        ? query
+        : `${query}, Ahmedabad, Gujarat, India`;
+}
+
+function onlineQueryVariants(query) {
+    const trimmed = String(query ?? "").trim();
+    const placeVariants = [
+        trimmed,
+        trimmed.replace(/\bcrossroad\b/gi, "Cross Road"),
+        trimmed.replace(/\bcircle\b/gi, ""),
+        trimmed.replace(/\bchar rasta\b/gi, "Cross Road"),
+    ];
+    const regionalVariants = placeVariants.flatMap((variant) => {
+        const place = variant.trim();
+        if (!place)
+            return [];
+        if (/ahmedabad|gandhinagar|gujarat|india/i.test(place))
+            return [place];
+        return [
+            regionalizeQuery(place),
+            `${place}, Gandhinagar, Gujarat, India`,
+            `${place}, Gujarat, India`,
+        ];
+    });
+    return [...new Set(regionalVariants)].slice(0, 6);
+}
+
+function onlineResultLabel(item) {
+    return String(item.name || item.display_name?.split(",")[0] || "Online map result").trim();
+}
+
+function onlineResultDescription(item) {
+    const parts = String(item.display_name ?? "")
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean);
+    return parts.slice(1, 5).join(", ") || "Ahmedabad / Gandhinagar";
+}
+
+async function fetchOnlineLocations(query, limit, signal) {
+    const params = new URLSearchParams({
+        format: "jsonv2",
+        q: query,
+        limit: String(limit),
+        addressdetails: "1",
+        countrycodes: "in",
+        viewbox: ahmedabadGandhinagarViewbox,
+        bounded: "1",
+    });
+    const response = await fetch(`${onlineSearchUrl()}?${params}`, {
+        headers: {
+            Accept: "application/json",
+            "Accept-Language": "en",
+            "User-Agent": "SmartTransit-Indus-map-search/1.0",
+        },
+        signal,
+    });
+    if (!response.ok)
+        throw new Error("Online map search is unavailable right now.");
+    return response.json();
+}
+
+export async function onlineLocationResults(query, { limit = 6, signal } = {}) {
+    const search = String(query ?? "").trim();
+    if (!search)
+        return [];
+    const controller = signal ? null : new AbortController();
+    const timeoutId = controller
+        ? globalThis.setTimeout(() => controller.abort(), 9000)
+        : null;
+    const allResults = [];
+    let lastError = null;
+    try {
+        for (const variant of onlineQueryVariants(search)) {
+            try {
+                const items = await fetchOnlineLocations(variant, limit, signal ?? controller?.signal);
+                allResults.push(...items);
+                if (allResults.length >= limit)
+                    break;
+            }
+            catch (error) {
+                lastError = error;
+            }
+        }
+    }
+    finally {
+        if (timeoutId)
+            globalThis.clearTimeout(timeoutId);
+    }
+    const results = uniqueLocationResults(allResults.map((item) => {
+        const lat = Number(item.lat);
+        const lng = Number(item.lon);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng) || !isInsideAhmedabadGandhinagar(lat, lng))
+            return null;
+        return {
+            id: `online-${item.place_id}`,
+            name: onlineResultLabel(item),
+            description: onlineResultDescription(item),
+            lat,
+            lng,
+            source: "Online map",
+        };
+    }).filter(Boolean)).slice(0, limit);
+    if (!results.length && lastError)
+        throw lastError;
+    return results;
+}
 
 function coordinatePairFromMatch(match) {
     if (!match)
