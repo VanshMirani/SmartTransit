@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { createHash, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
-import { getBusRegistration, indusRoutes, normalizeTripDirection, routeForTripDirection, tripDirectionLabel, withStopProgress } from "../Frontend/src/services/indusRoutes.js";
+import { getBusRegistration, INDUS_CAMPUS, indusRoutes, normalizeTripDirection, routeForTripDirection, tripDirectionLabel, withStopProgress } from "../Frontend/src/services/indusRoutes.js";
 import { buildRouteStopRecord, getRouteStaffAssignment } from "../Frontend/src/services/adminData.js";
 import { isInstituteEmail, normalizeEmail, signupEmailHelpText, validatePassword } from "../Frontend/src/utils/registrationValidation.js";
 import { sendPasswordResetOtpEmail, sendSignupOtpEmail } from "./emailService.js";
@@ -145,6 +145,12 @@ function routeValue(value, fallback) {
     return value === undefined || value === null || value === "" ? fallback : value;
 }
 
+function normalizedRouteStops(stops = []) {
+    return stops.map((stop) => /indus university/i.test(String(stop?.name ?? ""))
+        ? { ...stop, coordinates: INDUS_CAMPUS.coordinates }
+        : stop);
+}
+
 function routeFromData(data, routeCode) {
     const normalizedRouteCode = String(routeCode ?? "").trim().toUpperCase();
     const managedRoute = data.admin?.routes?.find((route) => String(route.code ?? "").toUpperCase() === normalizedRouteCode);
@@ -169,7 +175,7 @@ function routeFromData(data, routeCode) {
             mapCenter: managedRoute.mapCenter?.length ? managedRoute.mapCenter : routeTemplate.mapCenter,
             notes: routeValue(managedRoute.notes, routeTemplate.notes),
             studentCount: routeValue(managedRoute.studentCount, routeTemplate.studentCount),
-            stops: managedRoute.stops?.length ? managedRoute.stops : routeTemplate.stops,
+            stops: normalizedRouteStops(managedRoute.stops?.length ? managedRoute.stops : routeTemplate.stops),
         };
     }
     if (managedRoute) {
@@ -178,9 +184,10 @@ function routeFromData(data, routeCode) {
             code: normalizedRouteCode,
             busNumbers: managedRoute.busNumbers?.length ? managedRoute.busNumbers : assignedBusNumber ? [assignedBusNumber] : [],
             primaryBusNumber: routeValue(managedRoute.primaryBusNumber, assignedBusNumber),
+            stops: normalizedRouteStops(managedRoute.stops ?? []),
         };
     }
-    return routeTemplate ?? null;
+    return routeTemplate ? { ...routeTemplate, stops: normalizedRouteStops(routeTemplate.stops) } : null;
 }
 
 function routeForTrip(data, trip) {
@@ -1152,6 +1159,7 @@ function adminDataWithConsistentAssignments(data) {
             driverId: routeRecord.driverId || staff.driver.id,
             conductorId: routeRecord.conductorId || staff.conductor.id,
             primaryBusNumber: busNumberForRoute(data, route),
+            stops: route.stops,
         };
     });
     const fleetById = new Map();

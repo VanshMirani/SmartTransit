@@ -2,7 +2,7 @@ export const INDUS_CAMPUS = {
     id: "indus-campus",
     name: "Indus University",
     address: "Rancharda, Via Shilaj, Ahmedabad - 382115",
-    coordinates: [23.0652, 72.4402],
+    coordinates: [23.06805, 72.4402],
 };
 
 export const indusRoutes = [

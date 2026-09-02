@@ -348,7 +348,7 @@ test("custom admin route assignments appear correctly for new driver and conduct
             stops: [
                 { id: "iu-r9-01", name: "Gota Cross Road", scheduledTime: "7:40 AM", coordinates: [23.1019, 72.5494] },
                 { id: "iu-r9-02", name: "Sola Bridge", scheduledTime: "7:55 AM", coordinates: [23.0755, 72.5265] },
-                { id: "iu-r9-03", name: "Indus University", scheduledTime: "8:45 AM", coordinates: [23.0652, 72.4402] },
+                { id: "iu-r9-03", name: "Indus University", scheduledTime: "8:45 AM", coordinates: [23.06805, 72.4402] },
             ],
         };
 
