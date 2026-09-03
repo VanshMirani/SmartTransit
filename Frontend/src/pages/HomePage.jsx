@@ -36,20 +36,22 @@ export function HomePage() {
           <div className="container hero__inner">
             <div className="hero__copy">
               <BrandLogo className="hero__official-logo"/>
-              <div className="campus-pill"><ShieldCheck /> Indus University transport platform</div>
-              <h1>Your College Bus, <span>Live.</span></h1>
-              <p className="hero__lead">A professional campus transport system for students, drivers, conductors and transport operators, with live tracking, verified signup and route operations in one place.</p>
-              <div className="hero__actions">
-                <Link className="button button--primary" to="/track"><MapPin /> Track my bus <ArrowRight /></Link>
-                <Link className="button button--secondary" to="/signup"><MailCheck /> Create account</Link>
-              </div>
-              <div className="trust-row">
-                <span><span className="trust-dot"/> Live route updates</span>
-                <span><ShieldCheck /> Student-first privacy</span>
-                <span><UserRoundCheck /> Role-based access</span>
-              </div>
-              <div className="hero__metrics" aria-label="SmartTransit platform highlights">
-                {heroMetrics.map((item) => (<div className="hero__metric" key={item.label}><strong>{item.value}</strong><span>{item.label}</span></div>))}
+              <div className="hero__message">
+                <div className="campus-pill"><ShieldCheck /> Indus University transport platform</div>
+                <h1>Your College Bus, <span>Live.</span></h1>
+                <p className="hero__lead">A professional campus transport system for students, drivers, conductors and transport operators, with live tracking, verified signup and route operations in one place.</p>
+                <div className="hero__actions">
+                  <Link className="button button--primary" to="/track"><MapPin /> Track my bus <ArrowRight /></Link>
+                  <Link className="button button--secondary" to="/signup"><MailCheck /> Create account</Link>
+                </div>
+                <div className="trust-row">
+                  <span><span className="trust-dot"/> Live route updates</span>
+                  <span><ShieldCheck /> Student-first privacy</span>
+                  <span><UserRoundCheck /> Role-based access</span>
+                </div>
+                <div className="hero__metrics" aria-label="SmartTransit platform highlights">
+                  {heroMetrics.map((item) => (<div className="hero__metric" key={item.label}><strong>{item.value}</strong><span>{item.label}</span></div>))}
+                </div>
               </div>
             </div>
             <PhonePreview />

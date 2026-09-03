@@ -244,15 +244,18 @@ svg {
   min-height: 690px;
   padding: 104px 0 52px;
   display: grid;
-  width: min(1400px, calc(100% - 48px));
-  grid-template-columns: minmax(0, 1.14fr) minmax(300px, 0.86fr);
+  width: min(1320px, calc(100% - 64px));
+  grid-template-columns: minmax(0, 1.05fr) minmax(300px, 0.95fr);
   align-items: center;
   gap: clamp(36px, 5vw, 72px);
   position: relative;
   z-index: 1;
 }
 .hero__copy {
-  max-width: 760px;
+  max-width: 650px;
+}
+.hero__message {
+  min-width: 0;
 }
 .campus-pill {
   display: inline-flex;
@@ -370,26 +373,26 @@ svg {
   z-index: 2;
   transform: rotate(2deg);
 }
-@media (min-width: 1060px) {
+@media (min-width: 1180px) {
+  .hero__inner {
+    grid-template-columns: minmax(780px, 1.35fr) minmax(300px, 0.65fr);
+    gap: clamp(32px, 4vw, 56px);
+  }
   .hero__copy {
     display: grid;
-    grid-template-columns: clamp(220px, 17vw, 285px) minmax(0, 1fr);
+    grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
     align-items: start;
-    column-gap: 28px;
+    column-gap: 32px;
+    max-width: none;
   }
   .hero__actions {
-    gap: 10px;
+    gap: 12px;
   }
   .hero__actions .button {
-    padding-inline: 18px;
-  }
-  .hero__copy > :not(.hero__official-logo) {
-    grid-column: 2;
+    padding-inline: 20px;
   }
   .hero__official-logo {
-    grid-column: 1;
-    grid-row: 1 / span 6;
-    width: 100%;
+    width: min(300px, 100%);
     margin: 4px 0 0;
   }
 }
