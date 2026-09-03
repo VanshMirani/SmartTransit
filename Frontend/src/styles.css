@@ -254,6 +254,28 @@ svg {
 .hero__copy {
   max-width: 650px;
 }
+.hero__identity {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+.hero__identity-meta {
+  display: grid;
+  gap: 4px;
+  padding-left: 14px;
+  border-left: 3px solid var(--teal-500);
+}
+.hero__identity-meta strong {
+  color: white;
+  font: 800 1rem/1.2 var(--font-heading);
+}
+.hero__identity-meta span {
+  color: #a9c6d2;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 .hero__message {
   min-width: 0;
 }
@@ -380,9 +402,9 @@ svg {
   }
   .hero__copy {
     display: grid;
-    grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+    grid-template-columns: minmax(250px, 310px) minmax(0, 1fr);
     align-items: start;
-    column-gap: 32px;
+    column-gap: 36px;
     max-width: none;
   }
   .hero__actions {
@@ -392,7 +414,7 @@ svg {
     padding-inline: 20px;
   }
   .hero__official-logo {
-    width: min(300px, 100%);
+    width: min(310px, 100%);
     margin: 4px 0 0;
   }
 }
@@ -1242,6 +1264,14 @@ svg {
     position: relative;
     z-index: 4;
     margin-inline: auto;
+  }
+  .hero__identity {
+    justify-items: center;
+  }
+  .hero__identity-meta {
+    padding-left: 0;
+    border-left: 0;
+    text-align: center;
   }
   .hero__official-logo {
     width: min(196px, 68vw);

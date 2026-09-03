@@ -35,7 +35,13 @@ export function HomePage() {
           <div className="hero__glow"/>
           <div className="container hero__inner">
             <div className="hero__copy">
-              <BrandLogo className="hero__official-logo"/>
+              <div className="hero__identity">
+                <BrandLogo className="hero__official-logo"/>
+                <div className="hero__identity-meta">
+                  <strong>Indus University</strong>
+                  <span>Track &bull; Connect &bull; Arrive</span>
+                </div>
+              </div>
               <div className="hero__message">
                 <div className="campus-pill"><ShieldCheck /> Indus University transport platform</div>
                 <h1>Your College Bus, <span>Live.</span></h1>
