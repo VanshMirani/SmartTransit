@@ -2,26 +2,27 @@ import { BusFront, CheckCircle2, ClipboardList, Save, UserRound, Users, } from "
 import { useEffect, useState } from "react";
 import { useAdminData } from "../../admin/AdminDataContext";
 import { AdminFeedback, AdminPageHeading, AdminStatusBadge, } from "../../components/admin/AdminUI";
+
+function draftFromRoute(route) {
+    return {
+        busId: route.busId ?? "",
+        driverId: route.driverId ?? "",
+        conductorId: route.conductorId ?? "",
+    };
+}
+
 export function AdminAssignmentsPage() {
     const { records, routes, upsertRoute } = useAdminData();
     const [drafts, setDrafts] = useState(Object.fromEntries(routes.map((route) => [
         route.id,
-        {
-            busId: route.busId,
-            driverId: route.driverId,
-            conductorId: route.conductorId,
-        },
+        draftFromRoute(route),
     ])));
     const [feedback, setFeedback] = useState(null);
     const [savingId, setSavingId] = useState("");
     useEffect(() => {
         setDrafts(Object.fromEntries(routes.map((route) => [
             route.id,
-            {
-                busId: route.busId,
-                driverId: route.driverId,
-                conductorId: route.conductorId,
-            },
+            draftFromRoute(route),
         ])));
     }, [routes]);
     const save = async (routeId) => {
@@ -68,7 +69,7 @@ export function AdminAssignmentsPage() {
       {feedback && (<AdminFeedback {...feedback} dismiss={() => setFeedback(null)}/>)}
       <section className="assignment-grid">
         {routes.map((route) => {
-            const draft = drafts[route.id];
+            const draft = drafts[route.id] ?? draftFromRoute(route);
             return (<article key={route.id}>
               <header>
                 <span className="admin-kpi-icon">

@@ -345,23 +345,23 @@ test("custom admin route assignments appear correctly for new driver and conduct
         };
         const driver = {
             id: "driver-mahipal",
-            name: "Mahipal Solanki",
-            code: "DRV-909",
-            detail: "Licence GJ01-2026-9090",
-            contact: "+91 90000 09090",
+            name: "  Mahipal Solanki  ",
+            code: "  DRV-909  ",
+            detail: "  Licence GJ01-2026-9090  ",
+            contact: "  +91 90000 09090  ",
             assignment: "Unassigned",
-            accountEmail: "mahipal@transport.indusuni.ac.in",
+            accountEmail: "  mahipal@transport.indusuni.ac.in  ",
             temporaryPassword: "Mahipal@123",
             status: "active",
         };
         const conductor = {
             id: "conductor-vraj",
-            name: "Vraj Patel",
-            code: "CON-909",
-            detail: "Morning and evening shift",
-            contact: "+91 90000 08080",
+            name: "  Vraj Patel  ",
+            code: "  CON-909  ",
+            detail: "  Morning and evening shift  ",
+            contact: "  +91 90000 08080  ",
             assignment: "Unassigned",
-            accountEmail: "vraj@transport.indusuni.ac.in",
+            accountEmail: "  vraj@transport.indusuni.ac.in  ",
             temporaryPassword: "Vraj@123",
             status: "active",
         };
@@ -492,7 +492,17 @@ test("custom admin route assignments appear correctly for new driver and conduct
 
         assert.equal(adminRoute.primaryBusNumber, "7711");
         assert.equal(adminBus.assignment, "IU-R9 - Mahipal Solanki");
+        assert.equal(adminDriver.name, "Mahipal Solanki");
+        assert.equal(adminDriver.code, "DRV-909");
+        assert.equal(adminDriver.detail, "Licence GJ01-2026-9090");
+        assert.equal(adminDriver.contact, "+91 90000 09090");
+        assert.equal(adminDriver.accountEmail, "mahipal@transport.indusuni.ac.in");
         assert.equal(adminDriver.assignment, "7711 - IU-R9");
+        assert.equal(adminConductor.name, "Vraj Patel");
+        assert.equal(adminConductor.code, "CON-909");
+        assert.equal(adminConductor.detail, "Morning and evening shift");
+        assert.equal(adminConductor.contact, "+91 90000 08080");
+        assert.equal(adminConductor.accountEmail, "vraj@transport.indusuni.ac.in");
         assert.equal(adminConductor.assignment, "7711 - IU-R9");
         assert.equal(adminFleetBus.number, "7711");
         assert.equal(adminFleetBus.driver, "Mahipal Solanki");
@@ -1604,6 +1614,14 @@ test("completed driver trips can be prepared again for morning or return", async
 test("session endpoint validates saved backend tokens", async () => {
     const app = await startTestServer();
     try {
+        await app.store.update((data) => {
+            const admin = data.users.find((user) => user.email === "admin@transport.indusuni.ac.in");
+            assert.ok(admin);
+            admin.name = "  Admin Operator  ";
+            admin.email = "  ADMIN@transport.indusuni.ac.in  ";
+            return data;
+        });
+
         const missing = await fetch(`${app.baseUrl}/auth/session`);
         assert.equal(missing.status, 401);
 
@@ -1613,12 +1631,17 @@ test("session endpoint validates saved backend tokens", async () => {
             body: JSON.stringify({ email: "admin@transport.indusuni.ac.in", password: "Admin@123" }),
         });
         const session = await json(login);
+        assert.equal(session.user.name, "Admin Operator");
+        assert.equal(session.user.email, "admin@transport.indusuni.ac.in");
 
         const valid = await fetch(`${app.baseUrl}/auth/session`, {
             headers: { Authorization: `Bearer ${session.token}` },
         });
         assert.equal(valid.status, 200);
-        assert.equal((await json(valid)).user.role, "admin");
+        const sessionData = await json(valid);
+        assert.equal(sessionData.user.role, "admin");
+        assert.equal(sessionData.user.name, "Admin Operator");
+        assert.equal(sessionData.user.email, "admin@transport.indusuni.ac.in");
 
         const invalid = await fetch(`${app.baseUrl}/auth/session`, {
             headers: { Authorization: "Bearer not-a-real-token" },

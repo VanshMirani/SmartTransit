@@ -131,13 +131,37 @@ function prepareEditableRecord(record, kind, routes) {
 }
 
 function normalizeStudentRecord(record, routes) {
+    const routeCode = String(record.routeCode ?? "").trim();
+    const stopId = String(record.stopId ?? "").trim();
     return {
         ...record,
-        routeCode: record.routeCode ?? "",
-        stopId: record.stopId ?? "",
-        assignment: assignmentForStudentRoute(record.routeCode, record.stopId, routes),
+        id: String(record.id ?? "").trim(),
+        name: String(record.name ?? "").trim(),
+        code: String(record.code ?? "").trim(),
+        detail: String(record.detail ?? "").trim(),
+        contact: String(record.contact ?? "").trim(),
+        routeCode,
+        stopId,
+        assignment: assignmentForStudentRoute(routeCode, stopId, routes),
         status: record.status ?? "pending",
     };
+}
+
+function normalizeRecord(record) {
+    const normalized = {
+        ...record,
+        id: String(record.id ?? "").trim(),
+        name: String(record.name ?? "").trim(),
+        code: String(record.code ?? "").trim(),
+        detail: String(record.detail ?? "").trim(),
+        contact: String(record.contact ?? "").trim(),
+        assignment: String(record.assignment ?? "Unassigned").trim() || "Unassigned",
+    };
+    if (record.accountEmail !== undefined)
+        normalized.accountEmail = normalizeEmail(record.accountEmail);
+    if (record.temporaryPassword !== undefined)
+        normalized.temporaryPassword = String(record.temporaryPassword ?? "");
+    return normalized;
 }
 
 export function ManagementPage({ kind }) {
@@ -176,7 +200,7 @@ export function ManagementPage({ kind }) {
         event.preventDefault();
         if (!editing || savingRecord)
             return;
-        const recordToSave = kind === "students" ? normalizeStudentRecord(editing, routes) : editing;
+        const recordToSave = kind === "students" ? normalizeStudentRecord(editing, routes) : normalizeRecord(editing);
         const isNew = !recordToSave.id;
         const next = {};
         if (!recordToSave.name.trim())

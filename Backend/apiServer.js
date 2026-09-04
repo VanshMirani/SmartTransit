@@ -30,11 +30,11 @@ const jsonHeaders = {
 function publicUser(user) {
     return {
         id: user.id,
-        name: user.name,
-        email: user.email,
+        name: String(user.name ?? "").trim(),
+        email: cleanEmail(user.email),
         role: user.role,
         status: user.status ?? "active",
-        initials: user.initials,
+        initials: user.initials || buildStaffNameInitials(user.name),
         enrollment: user.enrollment,
         phone: user.phone,
         routeCode: user.routeCode,
@@ -147,6 +147,23 @@ function routeValue(value, fallback) {
     return value === undefined || value === null || value === "" ? fallback : value;
 }
 
+function trimText(value) {
+    return typeof value === "string" ? value.trim() : value;
+}
+
+function trimAdminRecordStrings(record = {}) {
+    return Object.fromEntries(Object.entries(record).map(([key, value]) => [key, trimText(value)]));
+}
+
+function trimManagedRouteStrings(route = {}) {
+    return {
+        ...trimAdminRecordStrings(route),
+        stops: Array.isArray(route.stops)
+            ? route.stops.map((stop) => trimAdminRecordStrings(stop))
+            : route.stops,
+    };
+}
+
 function normalizedStopName(name) {
     return String(name ?? "").trim().toLowerCase();
 }
@@ -169,10 +186,11 @@ function normalizedRouteStops(stops = [], templateStops = []) {
 
 function routeFromData(data, routeCode) {
     const normalizedRouteCode = String(routeCode ?? "").trim().toUpperCase();
-    const managedRoute = data.admin?.routes?.find((route) => String(route.code ?? "").toUpperCase() === normalizedRouteCode);
+    const managedRouteRecord = data.admin?.routes?.find((route) => String(route.code ?? "").trim().toUpperCase() === normalizedRouteCode);
+    const managedRoute = managedRouteRecord ? trimManagedRouteStrings(managedRouteRecord) : null;
     const routeTemplate = indusRoutes.find((route) => route.code === normalizedRouteCode);
     const assignedBus = managedRoute?.busId
-        ? data.admin?.records?.buses?.find((bus) => bus.id === managedRoute.busId)
+        ? data.admin?.records?.buses?.map((bus) => trimAdminRecordStrings(bus)).find((bus) => bus.id === managedRoute.busId)
         : null;
     const assignedBusNumber = assignedBus?.name;
     if (managedRoute && routeTemplate) {
@@ -375,7 +393,7 @@ function verifyStoredPasswordResetOtp(email, inputOtp, record) {
 }
 
 function userByEmail(data, email) {
-    return data.users.find((user) => user.email.toLowerCase() === email);
+    return data.users.find((user) => cleanEmail(user.email) === email);
 }
 
 function studentCodeFromEmail(email) {
@@ -530,9 +548,12 @@ function syncStaffUser(data, kind, record) {
     if (kind !== "drivers" && kind !== "conductors")
         return { record };
     const role = kind === "drivers" ? "driver" : "conductor";
-    const accountEmail = cleanEmail(record.accountEmail);
+    const cleaned = {
+        ...trimAdminRecordStrings(record),
+        assignment: String(record.assignment ?? "Unassigned").trim() || "Unassigned",
+    };
+    const accountEmail = cleanEmail(cleaned.accountEmail);
     const temporaryPassword = String(record.temporaryPassword ?? "");
-    const cleaned = { ...record };
     delete cleaned.temporaryPassword;
     if (!accountEmail)
         return { record: cleaned };
@@ -1068,7 +1089,8 @@ function routeByStaffRecord(data, kind, recordId) {
     if (!recordId)
         return null;
     const key = kind === "drivers" ? "driverId" : "conductorId";
-    const managedRoute = data.admin?.routes?.find((route) => route[key] === recordId);
+    const normalizedRecordId = String(recordId).trim();
+    const managedRoute = data.admin?.routes?.find((route) => String(route[key] ?? "").trim() === normalizedRecordId);
     if (managedRoute)
         return routeFromData(data, managedRoute.code);
     const staticRoute = kind === "drivers"
@@ -1080,7 +1102,7 @@ function routeByStaffRecord(data, kind, recordId) {
 function busRecordForRoute(data, route) {
     if (!route)
         return null;
-    const records = data.admin?.records?.buses ?? [];
+    const records = (data.admin?.records?.buses ?? []).map((bus) => trimAdminRecordStrings(bus));
     return records.find((bus) => bus.id === route.busId) ??
         records.find((bus) => bus.name === route.primaryBusNumber) ??
         null;
@@ -1124,8 +1146,8 @@ function staffAssignmentForRoute(data, route) {
     const fallback = getRouteStaffAssignment(route?.code);
     const drivers = data.admin?.records?.drivers ?? [];
     const conductors = data.admin?.records?.conductors ?? [];
-    const driverRecord = drivers.find((driver) => driver.id === route?.driverId);
-    const conductorRecord = conductors.find((conductor) => conductor.id === route?.conductorId);
+    const driverRecord = trimAdminRecordStrings(drivers.find((driver) => driver.id === route?.driverId));
+    const conductorRecord = trimAdminRecordStrings(conductors.find((conductor) => conductor.id === route?.conductorId));
     return {
         driver: {
             id: driverRecord?.id ?? fallback.driver.id,
@@ -1274,7 +1296,8 @@ function routeForConductorRecord(conductorId) {
 function adminDataWithConsistentAssignments(data) {
     const admin = data.admin ?? {};
     const records = admin.records ?? {};
-    const buses = (records.buses ?? []).map((bus) => {
+    const buses = (records.buses ?? []).map((record) => {
+        const bus = trimAdminRecordStrings(record);
         const route = (admin.routes ?? [])
             .map((routeRecord) => routeFromData(data, routeRecord.code))
             .find((item) => item && (item.busId === bus.id || item.primaryBusNumber === bus.name));
@@ -1288,7 +1311,8 @@ function adminDataWithConsistentAssignments(data) {
             assignment: `${route.code} - ${staff.driver.name}`,
         };
     });
-    const drivers = (records.drivers ?? []).map((driver) => {
+    const drivers = (records.drivers ?? []).map((record) => {
+        const driver = trimAdminRecordStrings(record);
         const route = routeByStaffRecord(data, "drivers", driver.id);
         const busNumber = route ? busNumberForRoute(data, route) : "";
         return {
@@ -1298,7 +1322,8 @@ function adminDataWithConsistentAssignments(data) {
             accountUserId: driver.accountUserId || (driver.id === "driver-101" ? "drv-101" : ""),
         };
     });
-    const conductors = (records.conductors ?? []).map((conductor) => {
+    const conductors = (records.conductors ?? []).map((record) => {
+        const conductor = trimAdminRecordStrings(record);
         const route = routeByStaffRecord(data, "conductors", conductor.id);
         const busNumber = route ? busNumberForRoute(data, route) : "";
         return {
@@ -1308,8 +1333,9 @@ function adminDataWithConsistentAssignments(data) {
             accountUserId: conductor.accountUserId || (conductor.id === "conductor-101" ? "con-101" : ""),
         };
     });
-    const students = (records.students ?? []).map((student) => studentRecordWithConsistentAssignment(data, student));
-    const routes = (admin.routes ?? []).map((routeRecord) => {
+    const students = (records.students ?? []).map((student) => studentRecordWithConsistentAssignment(data, trimAdminRecordStrings(student)));
+    const routes = (admin.routes ?? []).map((record) => {
+        const routeRecord = trimManagedRouteStrings(record);
         const route = routeFromData(data, routeRecord.code) ?? indusRoutes.find((item) => item.id === routeRecord.id);
         if (!route)
             return routeRecord;
@@ -2552,7 +2578,7 @@ export function createApiServer(store, options = {}) {
                 const updated = await store.update((data) => {
                     const kind = adminRecordMatch[1];
                     const id = adminRecordMatch[2];
-                    let next = body?.id ? body : { ...data.admin.records[kind].find((item) => item.id === id), ...body };
+                    let next = trimAdminRecordStrings(body?.id ? body : { ...data.admin.records[kind].find((item) => item.id === id), ...body });
                     if (kind === "students") {
                         const assignment = normalizeStudentRecordAssignment(data, next);
                         if (assignment.error)
@@ -2592,7 +2618,7 @@ export function createApiServer(store, options = {}) {
                 const body = await readBody(request);
                 const updated = await store.update((data) => {
                     const id = routeMatch[1];
-                    const next = body?.id ? body : { ...data.admin.routes.find((item) => item.id === id), ...body };
+                    const next = trimManagedRouteStrings(body?.id ? body : { ...data.admin.routes.find((item) => item.id === id), ...body });
                     const exists = data.admin.routes.some((item) => item.id === id);
                     data.admin.routes = exists
                         ? data.admin.routes.map((item) => item.id === id ? next : item)
