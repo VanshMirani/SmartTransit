@@ -4,7 +4,11 @@ Date: 20 September 2026 (Asia/Kolkata)
 
 Target: https://smart-transit-lyart.vercel.app/
 
-## Latest Submission Review
+## Latest Route-Editor Correction
+
+Release **`4387358`** is now live: Vercel is READY with the production alias, and Render is live on the same commit. Existing-route map edits now target a named existing stop; failed saves display their reason inside the editor and retain the draft. Active-trip route protection remains in effect. Lint, 105 tests and build passed; disposable MongoDB verification passed 25 tests and adapter checks. Post-release API health returned 200/ok and unsigned admin access returned 401. No existing production records were changed. Browser interaction/visual verification remains policy-blocked; see [the route-pin follow-up](./QA_AUDIT_REPORT.md#existing-route-pin-save-follow-up-20-september-2026) for exact coverage and manual checks.
+
+## Previous Submission Review
 
 **Frontend and backend now run release `8afd90d`**, including administration safeguards and the isolated Admin GPS simulator. Vercel reports READY and Render reports live on that commit. The authorized temporary-record live API check passed all eight groups; zero created test records remain and deleted staff sessions were revoked. Existing users, real trips and alert history were not edited or deleted. Full local verification passed lint, 100 tests and build; temporary MongoDB verification passed 24 tests plus adapter concurrency/reopen checks.
 

@@ -25,6 +25,8 @@ Files: `Frontend/src/pages/admin/AdminRoutesPage.jsx`, `Frontend/src/components/
 
 Manual check after release: Admin > Routes > Edit route; select the stop under **Stop to update on map**; click its correct pickup point; Save route; refresh and reopen the route to confirm the pin. If the route has an active trip, the save must explain the restriction rather than silently succeeding. Preserve any current unsaved work before refreshing to load the update.
 
+Published under the user's existing approval: **`4387358ec299484a03fbadd5ad95b34660e27056`** is on GitHub `main` and the audit branch. Vercel production `dpl_A4hJ3sMrBXCAfr6zySfVbqrqetR3` is **READY** with `smart-transit-lyart.vercel.app` assigned and no alias error. Render `dep-danrm44s728c73b3ec70` is **live** on the same commit, completed at 16:23:55 IST. Post-release read-only API checks returned health 200/ok, unsigned admin bootstrap 401, JSON responses and the expected production CORS origin. The existing isolated local API also returned health 200. No real route, trip, account, coordinates or credentials were modified, and no alert or email was sent. The previous deployed commit `8afd90d` is the rollback reference. This publication does not remove the broader handover gates below.
+
 ## Submission Audit Follow-Up (20 September 2026)
 
 Scope: the user authorized a submission review, fixes in the existing project, an optional faculty GPS simulator, and temporary live records with exact cleanup. They subsequently explicitly confirmed **Publish and test temporary records**, keeping real users, trips and alert history untouched. No reset/cleanup seed command was run. The unrelated pre-existing `DEPLOYMENT.md` edit and earlier screenshot folders are preserved.
