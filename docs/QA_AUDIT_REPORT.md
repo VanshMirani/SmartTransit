@@ -6,9 +6,20 @@ Date: 5 September 2026 (Asia/Kolkata)
 
 The user explicitly requested publication to the live website after the GPS follow-up. This release includes the audited backend/frontend, departure-time propagation fix and GPS presentation/retry changes below. Earlier statements that no deployment occurred describe their respective historical test runs.
 
-Pre-release checks: lint, all 86 automated tests and production build passed again. Both hosted production services currently run `4abc104aca1fd1678b8ffadd0bc46e1f1cd3563a` from `main`; Render auto-deploys that branch. The public frontend uses the correct HTTPS API, and API health/CORS checks passed. No environment variables, accounts or production records were modified. The unrelated local `DEPLOYMENT.md` edit is excluded.
+Pre-release checks: lint, all 86 automated tests and production build passed again. Before publication, both hosted production services ran `4abc104aca1fd1678b8ffadd0bc46e1f1cd3563a` from `main`; Render auto-deploys that branch. The pre-release public frontend used the correct HTTPS API, and API health/CORS checks passed. No environment variables, accounts or production records were modified. The unrelated local `DEPLOYMENT.md` edit is excluded.
 
-Rollback reference: Vercel `dpl_3Ag9TZGk4PCALcRUoaK8SVBdJdw5`, Render `dep-dad9e70ae00c73dlqovg`. Publication and post-release verification results will be recorded here after deployment. Newest GPS UI/retry browser verification remains blocked by the computer-use security check; the earlier 22-scenario browser result and latest automated tests are not a substitute for real-phone testing.
+Published `cc7032efcf9e3b3387ccdd66fa4c650b419fa42e` by fast-forwarding both `main` and `codex/qa-reliability-audit`. Application fixes are in `0a70b75` on top of the earlier audited commits. Both deployments were triggered by the existing Git integrations, with no manual duplicate deploy:
+
+- Vercel production `dpl_AMndRZQFoz2BZ4ykTjSdUUiMwSze`: **READY**, correct commit, with `smart-transit-lyart.vercel.app` assigned and no alias error.
+- Render `dep-danovsflk1mc73fhg8kg`: **live**, correct commit, completed 20 September 2026 at 13:19:45 IST.
+- Post-release read-only API checks: `/api/health` returned 200 and `ok: true`; `/api/auth/session`, `/api/student/transit` and `/api/admin/bootstrap` each returned 401 without credentials. All returned the intended frontend CORS origin.
+- No production sign-in, trip start/end, GPS upload, passenger count, account reset, email or emergency test was performed. Existing production data was not reset or seeded.
+
+Rollback reference: Vercel `dpl_3Ag9TZGk4PCALcRUoaK8SVBdJdw5`, Render `dep-dad9e70ae00c73dlqovg`. No rollback was performed. This post-release documentation is kept on the audit branch without triggering another production restart.
+
+Newest GPS UI/retry browser verification remains blocked by the computer-use security check, including a fresh attempt to open the production site. No indirect browser-access workaround was used. Vercel's build-log connector returned an unavailable-tool error; Render logs required a separately confirmed workspace, so detailed hosted logs were not reviewed. Deployment states and API responses above were verified through their independent deployment/service interfaces. The earlier 22-scenario browser result and latest automated tests are not a substitute for real-phone testing or production workflow certification.
+
+User check: refresh the live website, sign in with the existing driver account, allow location access on a GPS-capable phone, and use Retry GPS if prompted. After starting a trip at an unscheduled time, stops should use the saved actual-departure plan; reliable accepted GPS may refine the estimates. Missing GPS must show a labelled start-based arrival, not a fake live ETA. An active trip that predates this release cannot be guaranteed to contain the new saved timing plan; do not reset it merely to refresh the display.
 
 ## Missing GPS Presentation Follow-Up (20 September 2026)
 

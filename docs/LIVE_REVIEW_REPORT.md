@@ -4,7 +4,7 @@ Date: 20 September 2026 (Asia/Kolkata)
 
 Target: https://smart-transit-lyart.vercel.app/
 
-Release follow-up: the user subsequently authorized publication of the reviewed fixes. See the production-release section of [QA_AUDIT_REPORT.md](./QA_AUDIT_REPORT.md) for current release status. The observations below describe the older deployment and are retained as historical evidence.
+Release follow-up: the user subsequently authorized publication of the reviewed fixes. **Frontend and backend now run release `cc7032e`**; Vercel reports READY, Render reports live, and read-only backend health/access checks pass. See the production-release section of [QA_AUDIT_REPORT.md](./QA_AUDIT_REPORT.md) for deployment IDs and verification limitations. The observations below describe the older deployment and are retained as historical evidence, not the current release verdict.
 
 ## Verdict
 
