@@ -33,7 +33,17 @@ Added **Admin > GPS simulator**, preserving the existing theme/navigation. It is
 - Configuration-only production check passed without connecting to the database or printing values.
 - Browser access was explicitly denied because the admin-enforced browser security check was unavailable. No alternative browser/curl/proxy access was used to bypass that restriction. **No fresh UI screenshots, live button walkthrough, mobile rendering, console/network or browser failure-injection pass is claimed for this follow-up.** Earlier browser evidence below predates these changes.
 
-Release publication and temporary live-record results are recorded after deployment below. No real operational trip, emergency, complaint or notification will be created in production for this check: existing history must remain intact and there is no safe general history-deletion operation. Those scenarios are exercised in isolated data instead.
+### Published Release And Live API Results
+
+Published application commit `c83d692` and documentation commit **`8afd90d4d990cb34f0657baed99ae323c1fb46bb`** to the existing GitHub `main` and audit branches. Vercel production `dpl_B2Zt25RDomjuCRp1dk517iKVdLWq` is **READY**, with `smart-transit-lyart.vercel.app` assigned and no alias error. Render `dep-danqg6h7lnhs73ede7l0` is **live** on the same commit, completed 20 September at 15:03:00 IST. No environment-variable or existing-account reset was performed. Prior application release `1bdd371` is the rollback reference.
+
+The authorized live API run completed at **15:04:30 IST**. All eight check groups passed: health/auth/CORS, temporary record creation, route assignment and persistence, independent new staff logins/consistent bus/route, unauthorized-role rejection, protected deletion, isolated hosted simulator and exact cleanup/session revocation. Temporary bus, driver, conductor, pending student transport record and route were removed. **Zero newly created test records remain; cleanup reported no failure.** Test login sessions were logged out or revoked. The pending student record was not a verified student login and no email was sent for it. Evidence: `qa/2026-09-20-submission/live-api-results.json`. The final local backend was restarted and the same API smoke check passed again.
+
+No real operational trip, emergency, complaint or notification was created in production: existing history must remain intact and there is no safe general history-deletion operation. Those scenarios were exercised in isolated data instead. The simulator did not change production GPS, occupancy or trip state. This is API verification, not a browser-button or real-phone pass.
+
+Read-only production data checks found **one duplicate student email among transport records** and **repeated coordinates on IU-R9**. A subsequent narrow read confirmed that **Electrotherm and Saanvi share the exact same pin**. This needs transport-office confirmation: it could be an accidental copied coordinate or an intentional shared pickup point. Correct place/pin links were requested; no physical location was guessed and no existing student/route was edited or deleted. New duplicate records and accidental blank/default stop pins are now blocked, but existing data is not silently repaired. Resolve the student duplicate before editing its conflicting records, and confirm IU-R9 pins before trusting its ETA or using it in the simulator.
+
+No new frontend screenshot was captured because browser access remained policy-blocked. Hosting state and API tests do not certify the final rendered UI. Audit-only evidence commits after `8afd90d` do not change the production application.
 
 ### Handover Gates
 
@@ -42,6 +52,7 @@ Release publication and temporary live-record results are recorded after deploym
 3. Test foreground GPS on real Android/iPhone outdoors and compare ETA to actual journeys. Screen-lock/background tracking is not guaranteed. Validate physical stop pins and return-road differences with transport staff.
 4. In-app emergencies are saved records, not a tested SMS/push/telephone dispatch or acknowledgement. Confirm human responders, contacts and procedures.
 5. Existing single-document MongoDB storage, process-local rate limiting and polling need load/backup/recovery review before university-wide operational deployment. This follow-up is not a penetration test or scale certification.
+6. Confirm the Electrotherm/Saanvi pins on IU-R9 and review the duplicate student email record. The simulator intentionally refuses adjacent stops at effectively the same location; use a validated route until this is resolved.
 
 Changed files in this follow-up: `Backend/apiServer.js`, new `adminRecords.js`, `gpsSimulation.js`, `scripts/qa-live-submission.js`, backend regression tests; `Frontend/src/App.jsx`, admin/communications contexts, assignment helper, Admin layout/UI/management/routes/assignments/notifications/new simulator page, scoped CSS, frontend regression test; README, integration guide and these QA records. No production secrets or new environment variables are required for the simulator.
 

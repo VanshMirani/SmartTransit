@@ -4,9 +4,15 @@ Date: 20 September 2026 (Asia/Kolkata)
 
 Target: https://smart-transit-lyart.vercel.app/
 
-Release follow-up: the user subsequently authorized publication of the reviewed fixes. **Frontend and backend now run release `1bdd371`**, including the subsequent distance-based arrival correction; Vercel reports READY, Render reports live, and read-only backend health/access checks pass. See [QA_AUDIT_REPORT.md](./QA_AUDIT_REPORT.md) for deployment IDs and verification limitations. The observations below describe the older deployment and are retained as historical evidence, not the current release verdict.
+## Latest Submission Review
 
-## Verdict
+**Frontend and backend now run release `8afd90d`**, including administration safeguards and the isolated Admin GPS simulator. Vercel reports READY and Render reports live on that commit. The authorized temporary-record live API check passed all eight groups; zero created test records remain and deleted staff sessions were revoked. Existing users, real trips and alert history were not edited or deleted. Full local verification passed lint, 100 tests and build; temporary MongoDB verification passed 24 tests plus adapter concurrency/reopen checks.
+
+**Not an unconditional production sign-off:** the public demo administrator password was confirmed to work live and needs owner-controlled rotation. IU-R9's Electrotherm and Saanvi stops share a pin, and one student email is duplicated across transport records. These existing records were left untouched pending confirmation. Real-phone GPS, external notification delivery and a fresh visual/mobile walkthrough remain unverified. Browser security policy blocked access; no workaround was used.
+
+Use **Admin > GPS simulator** for clearly labelled movement/ETA demonstration on a route with valid distinct pins. It does not publish fake positions to real users. See [QA_AUDIT_REPORT.md](./QA_AUDIT_REPORT.md#submission-audit-follow-up-20-september-2026) for current findings, deployment IDs, changed files and handover actions. The rest of this document is historical evidence from the older review, not the current application's bug list.
+
+## Historical Verdict
 
 The public website and backend are available, and the main public layouts are usable. The currently deployed frontend is **not ready for an operational sign-off**: emergency submission can report success after failure, and a temporary session-verification outage logs the user out.
 
