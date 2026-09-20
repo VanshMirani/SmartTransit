@@ -14,12 +14,13 @@ export function driverGpsDisplay({ trip, nextStop, status, updatedAt, error }) {
     const sharing = status === 'sharing' && hasAcceptedLocation;
     const hasGpsEstimate = sharing && ['driver-phone-speed', 'gps-calculated-speed', 'driver-phone-average'].includes(trip.etaSource)
         && /\d/.test(trip.nextStopEta ?? '');
-    const hasPlan = Number.isFinite(Date.parse(nextStop?.departureEstimateAt ?? ''));
+    const arrival = trip.nextStopEstimatedArrivalAt ?? nextStop?.estimatedArrivalAt;
+    const hasArrival = hasGpsEstimate && Number.isFinite(Date.parse(arrival ?? ''));
     return {
         sharing,
-        label: hasGpsEstimate ? 'Live ETA' : hasPlan ? 'Start-based arrival' : 'Live ETA',
-        value: hasGpsEstimate ? trip.nextStopEta : hasPlan ? formatTime(nextStop.departureEstimateAt) : 'ETA unavailable',
-        note: hasGpsEstimate ? 'Approximate GPS estimate' : hasPlan ? 'Departure plan, not a live GPS estimate' : 'Waiting for a reliable location',
+        label: 'Estimated arrival',
+        value: hasArrival ? formatTime(arrival) : 'ETA unavailable',
+        note: sharing ? `${hasArrival ? `${trip.nextStopEta} away. ` : ''}${trip.etaNote || 'Waiting for a distance-based estimate.'}` : 'Waiting for a reliable GPS location',
         distance: sharing ? (/\d/.test(trip.remainingDistance ?? '') ? trip.remainingDistance : 'Distance unavailable') : 'Waiting for GPS',
         speed: sharing && Number.isFinite(trip.currentSpeed) ? `${Math.round(trip.currentSpeed)} km/h` : 'Waiting for GPS',
         lastAccepted: hasAcceptedLocation ? formatEventTime(updatedAt) : 'No location received yet',

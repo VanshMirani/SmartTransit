@@ -139,6 +139,106 @@ for (const action of ['GPS upload', 'seat update']) {
     });
 }
 
+test('distance and stop arrivals use accepted GPS even away from the schematic route, in both directions', async (t) => {
+    const { request, login } = await fixture(t);
+    const driver = await login('driver'), conductor = await login('conductor');
+    const student = await login('student'), admin = await login('admin');
+    let fixAt = Date.now();
+    for (const direction of ['morning', 'return']) {
+        const prepared = (await request('/driver/trips/current/direction', driver, { direction })).data;
+        const id = prepared.activeStaffTrip.id;
+        const started = (await request(`/driver/trips/${id}/start`, driver, {})).data;
+        const first = started.operationalStops[0];
+        const latitude = Math.max(...started.operationalStops.map((stop) => stop.coordinates[0])) + 0.05;
+        const upload = async (speedKmh, lat = latitude) => {
+            fixAt = Math.max(Date.now(), fixAt + 1);
+            const response = await request(`/driver/trips/${id}/location`, driver, {
+                latitude: lat, longitude: first.coordinates[1], accuracy: 10, speedKmh,
+                timestamp: new Date(fixAt).toISOString(),
+            });
+            assert.equal(response.status, 201);
+            return response.data;
+        };
+        const fast = await upload(30);
+        const fastTrip = fast.activeStaffTrip;
+        assert.ok(fastTrip.distanceToNextStopKm > 1);
+        assert.equal(fastTrip.distanceSource, 'coordinate-estimate');
+        assert.equal(fast.operationalStops.filter((stop) => stop.status === 'completed').length, 0);
+        for (const stop of fast.operationalStops) {
+            assert.ok(Number.isFinite(stop.distanceFromBusKm));
+            const expectedMinutes = Math.max(1, Math.round(stop.distanceFromBusKm / 30 * 60));
+            assert.equal(Date.parse(stop.estimatedArrivalAt) - fixAt, expectedMinutes * 60000);
+            assert.equal(stop.etaCalculatedAt, new Date(fixAt).toISOString());
+            assert.equal(stop.etaSource, 'driver-phone-speed');
+        }
+        const slow = await upload(6);
+        assert.equal(slow.activeStaffTrip.etaSpeedKmh, 6, 'slow buses must not be treated as travelling at 12 km/h');
+        assert.ok(Date.parse(slow.operationalStops[0].estimatedArrivalAt) > Date.parse(fast.operationalStops[0].estimatedArrivalAt));
+        const slowArrival = slow.operationalStops.map((stop) => stop.estimatedArrivalAt);
+        const staff = (await request('/conductor/trips/current', conductor)).data;
+        const refreshed = (await request('/driver/trips/current', driver)).data;
+        const transit = (await request('/student/transit', student)).data;
+        const fleet = (await request('/admin/bootstrap', admin)).data.fleetVehicles.find((bus) => bus.route === fastTrip.routeCode);
+        assert.deepEqual(staff.operationalStops.map((stop) => stop.estimatedArrivalAt), slowArrival);
+        assert.deepEqual(refreshed.operationalStops.map((stop) => stop.estimatedArrivalAt), slowArrival);
+        assert.deepEqual(transit.route.stops.map((stop) => stop.estimatedArrivalAt), slowArrival);
+        assert.equal(fleet.nextStopEta, slow.activeStaffTrip.nextStopEta);
+        assert.equal(fleet.distanceToNextStopKm, slow.activeStaffTrip.distanceToNextStopKm);
+        assert.equal(fleet.estimatedArrivalAt, slow.operationalStops.at(-1).estimatedArrivalAt);
+        const closer = await upload(6, (latitude + first.coordinates[0]) / 2);
+        assert.ok(closer.activeStaffTrip.distanceToNextStopKm < slow.activeStaffTrip.distanceToNextStopKm);
+        assert.ok(Date.parse(closer.operationalStops[0].estimatedArrivalAt) < Date.parse(slow.operationalStops[0].estimatedArrivalAt));
+        await request(`/driver/trips/${id}/end`, driver, {});
+    }
+});
+
+test('stationary GPS retains distance without inventing an arrival, and stale GPS never becomes fresh', async (t) => {
+    const { request, login, store } = await fixture(t);
+    const driver = await login('driver');
+    const before = (await request('/driver/trips/current', driver)).data;
+    const id = before.activeStaffTrip.id;
+    await request(`/driver/trips/${id}/start`, driver, {});
+    const first = before.operationalStops[0];
+    const stopped = (await request(`/driver/trips/${id}/location`, driver, {
+        latitude: first.coordinates[0] + 0.05, longitude: first.coordinates[1],
+        accuracy: 10, speedKmh: 0, timestamp: new Date().toISOString(),
+    })).data;
+    assert.ok(stopped.activeStaffTrip.distanceToNextStopKm > 0);
+    assert.equal(stopped.activeStaffTrip.nextStopEta, 'ETA unavailable');
+    assert.match(stopped.activeStaffTrip.etaNote, /stopped/i);
+    assert.ok(stopped.operationalStops[1].distanceFromBusKm > 0);
+    assert.equal(stopped.operationalStops[1].estimatedArrivalAt, undefined);
+    await store.update((data) => {
+        data.operations.liveLocations[id].updatedAt = new Date(Date.now() - 300000).toISOString();
+        return true;
+    });
+    const stale = (await request('/driver/trips/current', driver)).data;
+    assert.equal(stale.activeStaffTrip.distanceToNextStopKm, null);
+    assert.equal(stale.operationalStops[1].estimatedArrivalAt, undefined);
+    assert.equal(stale.activeStaffTrip.nextStopEta, 'ETA unavailable');
+});
+
+test('unknown speed is explicitly assumed, while GPS jitter does not imply a moving bus', async (t) => {
+    const { request, login } = await fixture(t);
+    const driver = await login('driver');
+    const before = (await request('/driver/trips/current', driver)).data;
+    const id = before.activeStaffTrip.id;
+    await request(`/driver/trips/${id}/start`, driver, {});
+    const first = before.operationalStops[0];
+    const now = Date.now();
+    const upload = (latitude, timestamp) => request(`/driver/trips/${id}/location`, driver, {
+        latitude, longitude: first.coordinates[1], accuracy: 20, timestamp: new Date(timestamp).toISOString(),
+    });
+    const assumed = (await upload(first.coordinates[0], now - 10000)).data;
+    assert.equal(assumed.activeStaffTrip.etaSource, 'driver-phone-average');
+    assert.match(assumed.activeStaffTrip.etaNote, /assumed 24 km\/h/);
+    assert.equal(assumed.operationalStops[1].etaSource, 'driver-phone-average');
+    const jitter = (await upload(first.coordinates[0] + 0.00001, now)).data;
+    assert.equal(jitter.activeStaffTrip.currentSpeed, 0);
+    assert.equal(jitter.operationalStops[1].estimatedArrivalAt, undefined);
+    assert.ok(jitter.operationalStops[1].distanceFromBusKm > 0);
+});
+
 test('seat updates are atomic, idempotent and authoritative, including a lost-response retry', async (t) => {
     const { request, login, store } = await fixture(t);
     const driver = await login('driver'), conductor = await login('conductor');

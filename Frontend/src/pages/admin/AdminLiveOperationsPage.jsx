@@ -190,7 +190,7 @@ export function AdminLiveOperationsPage() {
                 {selected.tripActive ? "Active route" : "Assigned route"}
               </small>
               <strong>{route.name}</strong>
-              {selected.tripActive && <small>Started {formatEventTime(selected.startedAt)} · Arrival plan {formatEventTime(selected.departureEstimateAt)}</small>}
+              {selected.tripActive && <small>Started {formatEventTime(selected.startedAt)} · Approx. arrival {selected.estimatedArrivalAt ? formatEventTime(selected.estimatedArrivalAt) : 'unavailable'}</small>}
             </span>
           </div>
           <div className="live-detail-route">

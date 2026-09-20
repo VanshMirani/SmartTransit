@@ -161,6 +161,7 @@ export function LiveTrackingPage() {
             <span>
               <MapPin /> {selectedStop.name}
             </span>
+            {state === 'live' && selectedStop.status !== 'completed' && <small>{data.bus.etaNote}</small>}
           </section>
           <div className="tracking-metrics">
             <div>

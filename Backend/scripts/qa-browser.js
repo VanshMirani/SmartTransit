@@ -246,7 +246,7 @@ try {
         await driver.waitForFunction(() => window.__qaWatcherCount() > 0);
         await driver.locator('.driver-stop small').first().waitFor();
         assert.deepEqual(await driver.locator('.driver-stop small').allTextContents(),
-            starting.operationalStops.slice(1, 5).map((stop) => `Start-based estimate · ${formatEventTime(stop.departureEstimateAt)}`));
+            starting.operationalStops.slice(1, 5).map((stop) => `${stopTimeSource(stop)} · ${stopTimeLabel(stop)}`));
         const locationSaved = driver.waitForResponse((response) => response.url().endsWith('/location') && response.request().method() === 'POST');
         await driver.evaluate((point) => window.__qaEmitGps(point), route[0].coordinates);
         const afterGps = await (await locationSaved).json();
@@ -300,7 +300,7 @@ try {
         await student.context().setOffline(true);
         try {
             await student.locator('.gps-chip--live').waitFor({ state: 'detached', timeout: 3000 });
-            assert.equal(await student.getByText('GPS estimate', { exact: true }).count(), 0);
+            assert.equal(await student.getByText('Distance-based estimate', { exact: true }).count(), 0);
             assert.equal(await student.locator('.map-updated').innerText(), timestamp);
             assert.equal(await student.evaluate(() => Boolean(sessionStorage.getItem('smarttransit.authToken'))), true);
             await snapshot(student, 'tracking-offline.png');
@@ -399,7 +399,7 @@ try {
         assert.equal((await api(student, '/student/transit')).data.bus.occupiedSeats, 1);
         const returnStopTimes = await conductor.locator('.conductor-stop small').allTextContents();
         for (const [index, stop] of current.operationalStops.entries()) {
-            assert.ok(returnStopTimes[index].startsWith(`Start-based estimate · ${formatEventTime(stop.departureEstimateAt)}`));
+            assert.ok(returnStopTimes[index].startsWith(`${stopTimeSource(stop)} · ${stopTimeLabel(stop)}`));
         }
         await snapshot(conductor, 'return-departure-plan-after-seats.png');
         await snapshot(driver, 'return-trip.png');

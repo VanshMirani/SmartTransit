@@ -5002,6 +5002,7 @@ button {
 .active-trip-hero {
   padding: 22px;
   display: flex;
+  gap: 20px;
   align-items: center;
   justify-content: space-between;
   color: white;
@@ -5022,12 +5023,15 @@ button {
 }
 .active-trip-hero > div:first-child {
   display: flex;
+  min-width: 0;
+  overflow-wrap: anywhere;
   align-items: center;
   gap: 14px;
 }
 .active-trip-hero > div:first-child > span {
   width: 52px;
   height: 52px;
+  flex-shrink: 0;
   display: grid;
   place-items: center;
   border-radius: 15px;
@@ -5050,14 +5054,18 @@ button {
   display: flex;
   flex-direction: column;
   text-align: right;
+  min-width: 0;
+  max-width: 390px;
+  overflow-wrap: anywhere;
 }
 .active-trip-countdown strong {
   color: var(--teal-500);
   font: 800 2rem var(--font-heading);
 }
 .active-trip-countdown span {
-  color: #9fb7c5;
-  font-size: 0.55rem;
+  color: #bcd0da;
+  font-size: 0.72rem;
+  line-height: 1.5;
 }
 .driver-trip-grid {
   margin-top: 16px;

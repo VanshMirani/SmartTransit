@@ -12,7 +12,7 @@ const passwordResetOtpExpiryMinutes = 10;
 const defaultSessionHours = 8;
 const defaultGpsStaleMinutes = 2;
 const defaultEtaSpeedKmh = 24;
-const minimumEtaSpeedKmh = 12;
+const minimumEtaSpeedKmh = 1;
 const maximumEtaSpeedKmh = 60;
 const roadDistanceFactor = 1.25;
 const stopPassedThresholdKm = 0.08;
@@ -713,10 +713,13 @@ function gpsSpeedFromPreviousLocation(previousLocation, currentLocation) {
     const distanceKm = directDistanceKmBetween(previousLocation.coordinates, currentLocation.coordinates);
     if (distanceKm === null)
         return null;
+    const uncertaintyMeters = Math.hypot(previousLocation.accuracy ?? 0, currentLocation.accuracy ?? 0);
+    if (distanceKm * 1000 <= uncertaintyMeters)
+        return 0;
     const speedKmh = distanceKm / (elapsedSeconds / 3600);
-    if (!Number.isFinite(speedKmh) || speedKmh <= 0)
+    if (!Number.isFinite(speedKmh))
         return null;
-    return Math.max(minimumEtaSpeedKmh, Math.min(maximumEtaSpeedKmh, speedKmh));
+    return speedKmh < minimumEtaSpeedKmh ? 0 : Math.min(maximumEtaSpeedKmh, speedKmh);
 }
 
 function routeDistanceKm(stops, fromIndex, toIndex) {
@@ -860,15 +863,15 @@ function stopProgressFromLocation(route, coordinates, trip = {}) {
 }
 
 function etaSpeedKmh(location) {
-    const speed = Number(location?.speedKmh);
-    if (Number.isFinite(speed) && speed > 0)
-        return Math.max(minimumEtaSpeedKmh, Math.min(maximumEtaSpeedKmh, speed));
+    const speed = location?.speedKmh;
+    if (Number.isFinite(speed))
+        return speed < minimumEtaSpeedKmh ? 0 : Math.min(maximumEtaSpeedKmh, speed);
     return defaultEtaSpeedKmh;
 }
 
 function etaLabel(distanceKm, speedKmh) {
     if (!Number.isFinite(distanceKm) || distanceKm < 0 || !Number.isFinite(speedKmh) || speedKmh <= 0)
-        return "Waiting for GPS";
+        return "ETA unavailable";
     const minutes = Math.max(1, Math.round(distanceKm / speedKmh * 60));
     if (minutes < 60)
         return `${minutes} min`;
@@ -881,10 +884,10 @@ function distanceLabel(distanceKm) {
     if (!Number.isFinite(distanceKm) || distanceKm < 0)
         return "Waiting for GPS";
     if (distanceKm < 0.1)
-        return "<100 m";
+        return "~<100 m";
     if (distanceKm < 1)
-        return `${Math.round(distanceKm * 1000)} m`;
-    return `${distanceKm.toFixed(distanceKm >= 10 ? 0 : 1)} km`;
+        return `~${Math.round(distanceKm * 1000)} m`;
+    return `~${distanceKm.toFixed(distanceKm >= 10 ? 0 : 1)} km`;
 }
 
 function stopDistanceFromLiveLocation(route, nextStopIndex, targetStopIndex, location) {
@@ -956,23 +959,26 @@ function buildLiveEtaContext(data, route, trip, locationOverride) {
         };
     }
     const speedKmh = etaSpeedKmh(location);
-    const projection = closestRouteProjection(route.stops, location.coordinates, cumulativeRouteDistancesKm(route.stops));
-    if (projection?.distanceMeters > 1000 || location.speedKmh === 0) {
-        return { nextStopId, nextStopName: nextStop?.name, nextStopEta: 'ETA unavailable', remainingDistance: 'ETA unavailable', etaSource: 'unavailable', gpsStatus, distanceToNextStopKm: null };
-    }
+    // Stop-to-stop lines are not road geometry. They can gate progress, not distance availability.
     const distanceToNextStopKm = stopDistanceFromLiveLocation(route, nextStopIndex, nextStopIndex, location);
+    const hasDistance = Number.isFinite(distanceToNextStopKm);
+    const etaSource = !hasDistance ? 'unavailable' : speedKmh === 0 ? 'stationary'
+        : location?.speedSource === 'device' && Number(location?.speedKmh) > 0 ? 'driver-phone-speed'
+            : location?.speedSource === 'calculated' && Number(location?.speedKmh) > 0 ? 'gps-calculated-speed'
+                : 'driver-phone-average';
     return {
         nextStopId: nextStop?.id ?? nextStopId,
         nextStopName: nextStop?.name ?? trip.nextStopName,
         nextStopEta: etaLabel(distanceToNextStopKm, speedKmh),
-        remainingDistance: distanceLabel(distanceToNextStopKm),
-        etaSource: location?.speedSource === "device" && Number(location?.speedKmh) > 0
-            ? "driver-phone-speed"
-            : location?.speedSource === "calculated" && Number(location?.speedKmh) > 0
-                ? "gps-calculated-speed"
-                : "driver-phone-average",
+        remainingDistance: hasDistance ? distanceLabel(distanceToNextStopKm) : 'Stop coordinates unavailable',
+        distanceSource: hasDistance ? 'coordinate-estimate' : 'unavailable',
+        etaSource,
+        etaNote: !hasDistance ? 'Stop coordinates are missing. Ask the transport administrator to check the route.'
+            : speedKmh === 0 ? 'Bus stopped or moving too slowly for an arrival estimate. Distance remains approximate.'
+                : etaSource === 'driver-phone-average' ? `Approximate distance; assumed ${defaultEtaSpeedKmh} km/h. No road or traffic data.`
+                    : 'Approximate distance and GPS speed. No road or traffic data.',
         etaSpeedKmh: speedKmh,
-        calculatedAt: Date.now(),
+        calculatedAt: Date.parse(location.reportedAt ?? location.updatedAt),
         distanceToNextStopKm,
         gpsStatus,
         location,
@@ -994,8 +1000,26 @@ function etaForStop(etaContext, stopId) {
         return etaContext ? { eta: 'ETA unavailable', distanceFromBus: 'Unavailable' } : null;
     return {
         eta: etaLabel(distanceKm, etaContext.etaSpeedKmh),
-        estimatedArrivalAt: new Date(etaContext.calculatedAt + Math.max(1, Math.round(distanceKm / etaContext.etaSpeedKmh * 60)) * 60000).toISOString(),
+        estimatedArrivalAt: etaContext.etaSpeedKmh > 0 && Number.isFinite(etaContext.calculatedAt)
+            ? new Date(etaContext.calculatedAt + Math.max(1, Math.round(distanceKm / etaContext.etaSpeedKmh * 60)) * 60000).toISOString()
+            : undefined,
         distanceFromBus: distanceLabel(distanceKm),
+        distanceFromBusKm: distanceKm,
+        distanceSource: etaContext.distanceSource,
+        etaSource: etaContext.etaSource,
+        etaSpeedKmh: etaContext.etaSpeedKmh,
+        etaCalculatedAt: new Date(etaContext.calculatedAt).toISOString(),
+    };
+}
+
+function etaSummary(etaContext, route) {
+    return {
+        distanceToNextStopKm: etaContext.distanceToNextStopKm,
+        distanceSource: etaContext.distanceSource ?? 'unavailable',
+        etaNote: etaContext.etaNote ?? 'Waiting for a reliable GPS location.',
+        etaCalculatedAt: Number.isFinite(etaContext.calculatedAt) ? new Date(etaContext.calculatedAt).toISOString() : null,
+        estimatedArrivalAt: etaForStop(etaContext, route?.stops?.at(-1)?.id)?.estimatedArrivalAt ?? null,
+        nextStopEstimatedArrivalAt: etaForStop(etaContext, etaContext.nextStopId)?.estimatedArrivalAt ?? null,
     };
 }
 
@@ -1081,6 +1105,7 @@ function busWithLiveLocation(data, bus, routeCode) {
         nextStopEta: etaContext.nextStopEta,
         remainingDistance: etaContext.remainingDistance,
         etaSource: etaContext.etaSource,
+        ...etaSummary(etaContext, route),
         distanceToNextStop: etaContext.distanceToNextStopKm === null
             ? etaContext.remainingDistance
             : distanceLabel(etaContext.distanceToNextStopKm),
@@ -1268,6 +1293,7 @@ function activeTripWithConsistentAssignments(data, trip) {
         remainingDistance: etaContext.remainingDistance,
         etaSource: etaContext.etaSource,
         etaSpeedKmh: etaContext.etaSpeedKmh,
+        ...etaSummary(etaContext, route),
         lastReachedStopId: etaContext.lastReachedStopId ?? trip.lastReachedStopId ?? "",
         distanceToNextStop: etaContext.distanceToNextStopKm === null
             ? etaContext.remainingDistance

@@ -2,6 +2,25 @@
 
 Date: 5 September 2026 (Asia/Kolkata)
 
+## Distance-Based Arrival Correction (20 September 2026)
+
+The next live screenshot showed GPS Active and a speed, but no distance and an old start-based arrival. Inspection confirmed two medium-severity calculation defects: `buildLiveEtaContext()` discarded distance when the bus was over 1 km from schematic stop-to-stop lines or had zero speed, and inferred speeds were clamped upwards to 12 km/h even for tiny GPS jitter. This explains a reproducible failure class; no private production trip was queried to prove its exact stored coordinates.
+
+Fixes:
+
+- Keep approximate distance independent from motion and the schematic-route corridor. The existing GPS-only stop-progress safeguards remain unchanged, so an off-corridor fix does not skip the first stop.
+- Derive active arrivals from the latest reliable GPS fix time plus remaining ordered-stop distance divided by usable speed. Refreshing alone does not move the predicted clock forward. Morning and return use their own ordered stops.
+- Remove the start-plan fallback from active arrival labels. Preserve schedules and recorded departure plans in data, but never present them as a current arrival prediction. Passed stops say Passed.
+- Keep distance when stationary; withhold arrival predictions until motion is usable. Do not inflate slow measured speeds to 12 km/h. Treat displacement inside the combined accuracy envelope as no reliable movement rather than inferred speed. If speed is genuinely unknown, retain the existing 24 km/h assumption and explicitly label it as assumed.
+- Publish common numeric distance, estimate timestamp, source and arrival fields in staff, student and admin responses. Driver and admin final-arrival summaries now use the same distance-based result. GPS timestamps and trip records are unchanged.
+- Keep the existing layout; allow the Driver estimate note to wrap and increase its small text for readability.
+
+Important accuracy boundary: this is a **coordinate-based approximation**, using bus-to-next-stop and subsequent ordered-stop segments with the existing 1.25 distance factor. It is not actual road routing or traffic-aware ETA. Distances show `~`, and the UI identifies the approximation/assumed speed. No bus coordinates were sent to another service. An approved road-routing provider and validated stop pins would be needed for better road-distance accuracy.
+
+Verification: three new backend regressions failed before the correction, then passed; `npm run check` passed lint, **91 automated tests**, and production build. A separate temporary MongoDB run passed **18 tests**, plus cross-adapter concurrent-write, exact reopen and empty-production fail-closed checks. Coverage includes both trip directions, distance/speed changes, cross-role equality, stationary and stale GPS, jitter and assumed speed. No production records or real GPS were used. Browser expectation updates are included, but not run because the browser security restriction remains unresolved; no new visual or real-phone pass is claimed. Fresh full local QA preview is on port 5177; the existing port 5176 preview was preserved.
+
+Changed: backend ETA/speed calculations and regression tests; shared stop-time and driver GPS helpers and tests; Driver home, Student tracking and Admin live arrival summaries; scoped Driver CSS; browser regression expectations; this report. No new secrets, configuration variables, packages or database migration are required. Publication results follow after deployment.
+
 ## Authorized Production Release (20 September 2026)
 
 The user explicitly requested publication to the live website after the GPS follow-up. This release includes the audited backend/frontend, departure-time propagation fix and GPS presentation/retry changes below. Earlier statements that no deployment occurred describe their respective historical test runs.

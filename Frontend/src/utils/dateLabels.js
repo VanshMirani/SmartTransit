@@ -50,15 +50,15 @@ export function formatEventTime(value) {
 
 export function stopTimeLabel(stop, active = true) {
     if (!active) return stop?.scheduledTime || 'Time unavailable';
-    const value = [stop?.estimatedArrivalAt, stop?.departureEstimateAt]
-        .find((timestamp) => Number.isFinite(Date.parse(timestamp ?? '')));
-    return value ? formatEventTime(value) : 'ETA unavailable';
+    if (stop?.status === 'completed') return 'Passed';
+    return Number.isFinite(Date.parse(stop?.estimatedArrivalAt ?? '')) ? formatEventTime(stop.estimatedArrivalAt) : 'ETA unavailable';
 }
 
 export function stopTimeSource(stop, active = true) {
     if (!active) return 'Scheduled';
-    if (Number.isFinite(Date.parse(stop?.estimatedArrivalAt ?? ''))) return 'GPS estimate';
-    if (Number.isFinite(Date.parse(stop?.departureEstimateAt ?? ''))) return 'Start-based estimate';
+    if (stop?.status === 'completed') return 'GPS progress';
+    if (Number.isFinite(Date.parse(stop?.estimatedArrivalAt ?? '')))
+        return stop.etaSource === 'driver-phone-average' ? `Estimate (assumed ${stop.etaSpeedKmh} km/h)` : 'Distance-based estimate';
     return 'Estimate unavailable';
 }
 
