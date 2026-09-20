@@ -2,6 +2,94 @@
 
 Date: 5 September 2026 (Asia/Kolkata)
 
+## Authorized Production Release (20 September 2026)
+
+The user explicitly requested publication to the live website after the GPS follow-up. This release includes the audited backend/frontend, departure-time propagation fix and GPS presentation/retry changes below. Earlier statements that no deployment occurred describe their respective historical test runs.
+
+Pre-release checks: lint, all 86 automated tests and production build passed again. Both hosted production services currently run `4abc104aca1fd1678b8ffadd0bc46e1f1cd3563a` from `main`; Render auto-deploys that branch. The public frontend uses the correct HTTPS API, and API health/CORS checks passed. No environment variables, accounts or production records were modified. The unrelated local `DEPLOYMENT.md` edit is excluded.
+
+Rollback reference: Vercel `dpl_3Ag9TZGk4PCALcRUoaK8SVBdJdw5`, Render `dep-dad9e70ae00c73dlqovg`. Publication and post-release verification results will be recorded here after deployment. Newest GPS UI/retry browser verification remains blocked by the computer-use security check; the earlier 22-scenario browser result and latest automated tests are not a substitute for real-phone testing.
+
+## Missing GPS Presentation Follow-Up (20 September 2026)
+
+The supplied Driver screenshot showed working start-based stop times but no accepted GPS fix. Confirmed UI issues: a green `GPS Inactive` badge, `GPS updated Not sharing`, repeated unavailable text, and a freshness timer replacing the original device/upload error with a stale-location warning even before the first accepted location.
+
+Local fixes preserve the current layout and do not fabricate tracking:
+
+- Share accurate GPS labels between Driver home and active-trip pages. Use the existing amber status style unless GPS is actually sharing; the status dot follows its text colour.
+- Show a clearly labelled start-based arrival when no usable live ETA exists, separate from GPS-derived speed/distance. Show `No location received yet` instead of presenting `Not sharing` as a timestamp.
+- Display the actionable GPS error near the trip summary and offer `Retry GPS`. Retrying disposes the old uploader/watch before creating a new attempt; it does not override browser or device permission settings.
+- Preserve permission, weak-signal, device and upload errors through freshness checks. First-fix waiting no longer implies a previous location exists. An older upload acknowledgement cannot erase a newer permission error.
+
+Files: `Frontend/src/operations/gpsSync.js`, `OperationsContext.jsx`, new `gpsPresentation.js`; Driver home/trip pages; scoped status/notice CSS; frontend regression tests; and the browser regression script's GPS scenario.
+
+`npm run check` passed lint, **86 automated tests**, and production build. Added tests cover first-fix waiting, persistent device/upload errors, late acknowledgement after permission denial, planned versus live values, and stale/missing location display. No backend logic or production data was changed in this follow-up.
+
+**Visual/browser limitation:** computer-use access to the existing local tab failed because its admin-enforced browser security check was unavailable. No alternative browser-control mechanism was used to bypass it. The new retry-button browser scenario was updated but **not executed**; the earlier 22-scenario browser pass predates these presentation/retry changes. A visual check of the updated banner and an actual retry/recovery check are still required. Real-device GPS delivery is not proven by the supplied screenshot or by unit tests. No push or deployment occurred.
+
+## Stop-Time Regression Follow-Up (20 September 2026)
+
+The user reported fixed stop times on the **live website**. Earlier local fixes had not been deployed. Investigation also reproduced an additional local bug that the previous read/refresh checks missed.
+
+**Confirmed, medium severity:** starting a trip and reading a dashboard returned actual-departure estimates, but `storeDriverLocation()` and the first successful `updateTripProgressFromSeatUpdate()` response returned raw timetable stops. The staff contexts replace their displayed stops with these mutation responses, losing `departureEstimateAt` and `estimatedArrivalAt` until the next poll. Frequent GPS uploads could repeatedly restore fixed times. The shared stop-label helper then silently displayed `scheduledTime` for an active trip without an estimate.
+
+Reproduction: start a morning trip outside its schedule, open Driver > Active trip, accept a controlled GPS update, then submit a conductor passenger count. Inspect both POST responses and the immediately rendered stop times rather than only refreshing the page. Repeat with a separate return trip. New tests for both responses and the active-stop fallback all failed before the fix.
+
+Fix: both write responses now use `operationsWithLiveLocation()`, the same assigned-trip projection as the read/start endpoints. They retain the saved departure plan, supply usable GPS estimates, and preserve recorded GPS timestamps. Active stops with missing/invalid estimates show `ETA unavailable`, never an unlabelled fallback to the original timetable. Before departure, the scheduled timetable remains unchanged. Starting late shifts the initial plan by the actual departure time; usable GPS can refine it, and clock time still does not mark stops as passed.
+
+Files: `Backend/apiServer.js`, `Frontend/src/utils/dateLabels.js`, `Backend/tests/reliability.test.js`, `Frontend/tests/dateLabels.test.js`, `Backend/scripts/qa-browser.js`, and this report. Earlier uncommitted work remains preserved.
+
+Verification:
+
+- `npm run check`: lint, **81 tests**, and production build passed. Added cases cover morning/return, stationary and moving test GPS, first passenger submission, duplicate retry, refresh consistency, and missing/invalid estimate labels. Existing early/late/midnight timing tests also pass.
+- Full production-built local HTTPS/MongoDB browser review: **22 scenarios passed**, no uncaught page errors or map-loading limitations. New assertions compare the rendered Driver labels immediately after GPS upload and Conductor labels immediately after seat submission against the returned estimates, including a return journey without GPS. MongoDB adapter reopening preserved exact saved state.
+- The first browser attempt exposed a missing wait in the new test for the lazy-loaded Driver page; corrected the wait and repeated the full run successfully. Evidence is retained in `docs/qa/2026-09-20-stop-estimates/` and `docs/qa/2026-09-20-stop-estimates-final/`.
+- Visually inspected `actual-departure-plan.png` and `return-departure-plan-after-seats.png` in the final directory. Refreshed the disposable local preview at `http://127.0.0.1:5176` and confirmed its sign-in page loads without browser errors.
+
+No push, deployment, real email, production account operation or production trip change was performed. **Both frontend and backend need an explicitly approved release before this fix appears on the live website.** No new configuration variables or data migration are required. Outdoor/real-phone GPS accuracy remains unverified; this change corrects time propagation, not traffic-aware routing.
+
+## Live Review Remediation (20 September 2026)
+
+**Status: all confirmed live-review findings have local fixes and regression coverage. The live website has not been deployed or changed by this work.** The earlier emergency/location/session fixes were already present on `codex/qa-reliability-audit`; this follow-up verified them again and corrected the remaining public-site issues. The original production observations are preserved in [LIVE_REVIEW_REPORT.md](./LIVE_REVIEW_REPORT.md).
+
+### Fixes and Reproduction
+
+| Finding | Resolution | Verification |
+| --- | --- | --- |
+| Emergency forms claimed receipt after a failed request, and used the next stop as current GPS. | Retained the existing audited server-confirmed submission, idempotent retry and server-selected reliable-location logic. Both staff forms identify missing/unconfirmed information honestly; the conductor heading reflects actual trip state. | Driver and conductor each tested with HTTP 503 and network failure before a trip: no success screen, retained note and identical retry ID, no client-invented coordinates. Existing accepted-but-lost response test saves exactly one alert; backend location tests pass. |
+| Temporary session-verification errors logged users out. | Retained the audited distinction between temporary failure and confirmed 401/403. Also normalized network/timeout errors into actionable language without changing authentication status. | Failed connection and 503 retain the session while blocking initially unverified content; retry restores access; 401 clears authentication. Added four API-client tests for failures, timeouts, cancellation, HTML responses and interrupted response bodies. |
+| Privacy header overflowed at 320px. | Header actions now wrap with intact labels and touch targets. | Public pages checked at 320, 390, 768 and 1440px; no page overflow. |
+| Public preview and readiness copy implied real live data or an unfinished backend. | Kept the existing visual identity, replaced development/presentation wording, qualified arrival estimates, removed the hardcoded route count and fictional person/bus/seat/arrival values, and clearly labelled the phone as a preview. | Browser asserts no fake live claim or old presentation copy. Visual inspection also found a floating badge over the heading and mobile navigation covering the next stop. Removed the redundant badge and its unused CSS; changed only the illustration's internal layout to fixed header/navigation rows and a flexible map area. Dedicated four-width checks confirm visible next-stop text and a fitting heading. |
+| Public Help sent signed-out users back to login. | `/help` now provides public account, approval, assignment, staff-access and GPS guidance. Private `/student/help` and all backend permissions remain protected. Added sign-in help and privacy links. Public help/privacy remain available even with missing API configuration. | Direct load, refresh, FAQ expansion, reset navigation, browser Back, and sign-in help link pass. A separately built, intentionally unconfigured production bundle blocks transport access but still exposes help/privacy. |
+| Public contact address was unverified. | Public home/footer/privacy/help now use the university's published general help desk/email and identify them as university contacts, not a confirmed dedicated transport mailbox. | Checked against the [official university contact page](https://indusuni.ac.in/contact-us.php) on 20 September 2026. Email delivery and call routing were not tested. |
+| Homepage downloaded maps and charts it did not use. | Lazy-load the six map/chart role pages, with a visible loading state and recoverable error boundary. | Production browser confirms no maps/charts JavaScript on the homepage. Blocking a tracking-page download shows recovery; reload restores the page. All role pages, maps and reports still pass. Main bundle is approximately 455 kB instead of 515 kB; no chunk-size warning. |
+
+### Actual Verification
+
+- Baseline: lint, 74 tests and build passed before this follow-up.
+- Final `npm run check`: lint, **78 tests**, and production build pass.
+- Production-built frontend with HTTPS loopback API and fresh disposable MongoDB: **22 browser scenarios pass**, **90 public/role page-width checks**, **zero uncaught page errors**, and **zero map-loading limitations**. Negative tests deliberately generate failed requests/console errors, recorded separately in the evidence.
+- Verified all four roles, actual-departure estimates, controlled GPS input, polling between independent sessions, seat retries, separate return journeys, captured-email password reset and signup, pending/approval, complaint resolution, preference saving, route access rejection, offline/reconnection and logout cleanup.
+- Exact MongoDB state survived adapter closure/reopening after the browser workflows.
+- A separate missing-configuration production-build check passed; public help never becomes an alternative route into private transport data.
+- The final phone-internal CSS adjustment followed the full functional run and was then checked independently at all four widths, with explicit heading-fit, page-overflow and next-stop/navigation bounds assertions. No backend or dashboard logic changed after the full functional run.
+
+Evidence: `docs/qa/2026-09-20-release-review/browser-results.json`, `preview-layout-results.json`, selected viewport screenshots and the generated role/public screenshot gallery. Configuration evidence: `docs/qa/2026-09-20-public-config/public-config-results.json`. Screenshots remain local under the existing ignore rule; no production identifiers or secrets were recorded.
+
+### Changed Files
+
+- Application: `Frontend/src/App.jsx`, `components/DeferredPage.jsx`, `components/Footer.jsx`, `components/PhonePreview.jsx`, `pages/HomePage.jsx`, `pages/PrivacyPage.jsx`, `pages/PublicHelpPage.jsx`, `pages/auth/LoginPage.jsx`, `services/apiClient.js`, `services/supportContacts.js`, and `styles.css`.
+- Verification: `Frontend/tests/apiClient.test.js`, `Backend/scripts/qa-browser.js`, `Backend/scripts/qa-public-config.js`, and `Backend/scripts/qa-server.js` (optional `QA_PORT` for an unused local port).
+- Documentation/evidence: this report, the live-review status note, README and the QA evidence directories. The pre-existing `DEPLOYMENT.md` edit was preserved unchanged. No package, lockfile, production configuration, account or data changes.
+
+### Manual Review and Release
+
+Local frontend/backend preview: `http://127.0.0.1:5176`, using a new disposable database and captured test email. Open Home, Help, Privacy and Sign in at mobile and desktop sizes. Use the documented isolated demo accounts to review each role; do not try published demo credentials in production.
+
+No new API keys or configuration variables are required for these UI/recovery fixes. The earlier audited backend and frontend must be reviewed and released together where their API contracts require it. Nothing in this follow-up was committed, pushed, merged or deployed. Production still needs an explicitly authorized release and post-release verification.
+
+Real Android/iPhone GPS, screen lock/background behavior, weak reception, outdoor ETA accuracy, controlled Brevo delivery, hosted configuration/Atlas, load testing and operational emergency response remain unverified. This is ready for release review, not a claim of complete university production certification.
+
 ## Supervised Local Staging Review (20 September 2026)
 
 **Decision: the tested local staging workflows pass after fixes. Proceed to a hosted staging/deployment review, not university production sign-off.** No separate staging URL was provided. This run did not deploy to Vercel/Render, inspect production accounts, send provider emails, or modify live data. Earlier uncommitted work remains preserved.

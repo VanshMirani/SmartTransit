@@ -10,6 +10,7 @@ SmartTransit is a responsive college transportation frontend for Indus Universit
 - MongoDB-ready production storage for public deployment.
 
 Current verified results and remaining limitations are in [docs/QA_AUDIT_REPORT.md](./docs/QA_AUDIT_REPORT.md). Older checklists and [PROJECT_PLAN.md](./PROJECT_PLAN.md) describe earlier milestones, not production certification.
+The live-site findings and subsequent local remediation status are recorded in [docs/LIVE_REVIEW_REPORT.md](./docs/LIVE_REVIEW_REPORT.md). Local fixes are not proof that the hosted deployment has been updated.
 Faculty-facing explanation notes are available in [FACULTY_PRESENTATION_NOTES.md](./FACULTY_PRESENTATION_NOTES.md).
 Use [DEMO_CHECKLIST.md](./DEMO_CHECKLIST.md) before a live presentation.
 Use [DEPLOYMENT.md](./DEPLOYMENT.md) when you are ready to host the real frontend and backend.
@@ -44,6 +45,7 @@ npm run dev:full
 This starts the API on `http://127.0.0.1:5050/api` when available and the Vite frontend on `http://localhost:5173`. If API port `5050` is busy, the script automatically uses the next free API port and connects the frontend to it.
 
 For a disposable test environment, use `node Backend/scripts/qa-server.js`. It starts both services with a fresh temporary JSON database, captures test OTPs locally, and does not load deployment environment files or send email. The QA guide explains browser and MongoDB tests. Do not run `reset:data` or `clean:presentation` against existing data without reviewing the scope and taking a backup.
+When the default QA port is busy, choose a free one, for example `QA_PORT=5176 node Backend/scripts/qa-server.js`.
 
 Production verification:
 
@@ -105,15 +107,15 @@ MongoDB persists accounts, hashed OTP records, server sessions, complaints, noti
 
 ## Demo Login Credentials
 
-Faculty demonstration credentials are stored in [docs/LOGIN_CREDENTIALS.txt](./docs/LOGIN_CREDENTIALS.txt). They are for presentation testing only and should not be used in production.
+Isolated local demonstration credentials are stored in [docs/LOGIN_CREDENTIALS.txt](./docs/LOGIN_CREDENTIALS.txt). They match the local test fixtures and must not be used in production. The QA preview creates a fresh temporary database: live accounts such as Mahipal and Vraj are not copied into it. Use the local Admin dashboard to create and assign additional test staff when needed.
 
-## Current Demo Accounts
+## Local Demo Accounts
 
 | Role             | Email                      | Password        | Landing route |
 | ---------------- | -------------------------- | --------------- | ------------- |
 | Student          | `student@iite.indusuni.ac.in`        | `Student@123`   | `/student`    |
-| Driver           | `mahipal@transport.indusuni.ac.in`   | `Mahipal@123`   | `/driver`     |
-| Conductor        | `vraj@transport.indusuni.ac.in`      | `Vraj@123`      | `/conductor`  |
+| Driver           | `driver@transport.indusuni.ac.in`    | `Driver@123`    | `/driver`     |
+| Conductor        | `conductor@transport.indusuni.ac.in` | `Conductor@123` | `/conductor`  |
 | Admin / Operator | `admin@transport.indusuni.ac.in`     | `Admin@123`     | `/admin`      |
 
 These published credentials must be restricted to isolated demonstrations. They were not tried against production during the audit. If any still work there, an authorized administrator must rotate or disable them before rollout; this audit does not reset accounts. Students register with an allowed university email and OTP, then remain pending until admin approval. Email verification is not transport approval. Password reset verifies an OTP and revokes existing sessions. The browser keeps an opaque bearer token in `sessionStorage`; server-side sessions, expiry, role/status and assignments are authoritative. Staff accounts are issued only by administrators.
