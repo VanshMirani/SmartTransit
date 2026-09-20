@@ -36,6 +36,19 @@ The server uses scrypt and persisted opaque bearer sessions, not JWT. Role, appr
 
 ## Expected endpoints
 
+### Safe Administration And Simulator
+
+- `DELETE /admin/{buses|drivers|conductors|students|routes}/:id`: admin-only, repeat-safe deletion. Unassign records first. Active trips, linked student assignments, completed trip history and linked student complaint history protect records from deletion; deactivate historical records instead. Deleting a removable staff/student record revokes its linked login sessions. There is no general notification-history deletion endpoint.
+- Record/route writes validate IDs, capacity, duplicate codes, linked accounts and conflicting active assignments. Assigned resources cannot be changed during an active trip. New students created in management are transport records, not a substitute for email-verified registration.
+- `GET /admin/simulation`: current authenticated admin session's isolated simulation or `idle`.
+- `POST /admin/simulation`: `{ routeId, direction: 'morning'|'return', speedKmh, playbackRate }`; speed 5-60, playback 1/10/30/60.
+- `PATCH /admin/simulation`: `{ id, action: 'pause'|'resume' }`; stale simulation IDs are rejected.
+- `DELETE /admin/simulation`: exit. Logout clears the simulation too.
+
+Simulation state is memory-only and session-private with a 30-minute inactivity expiry, not persisted GPS. It uses the same backend ETA/progress projection with explicitly simulated locations. It does not write transport records or broadcast to other roles. Multiple backend instances would need a shared simulation store or session affinity; real operations continue to use MongoDB independently.
+
+Notification creation accepts `requestId` for safe retry. Repeating the same administrator/request ID and normalized details returns the existing publication; changing details with that ID is rejected. Publication does not prove external delivery or administrator acknowledgement. JSON request bodies are limited to 512 KiB.
+
 ### Authentication
 
 - `POST /auth/login`

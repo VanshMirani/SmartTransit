@@ -2,6 +2,49 @@
 
 Date: 5 September 2026 (Asia/Kolkata)
 
+## Submission Audit Follow-Up (20 September 2026)
+
+Scope: the user authorized a submission review, fixes in the existing project, an optional faculty GPS simulator, and temporary live records with exact cleanup. They subsequently explicitly confirmed **Publish and test temporary records**, keeping real users, trips and alert history untouched. No reset/cleanup seed command was run. The unrelated pre-existing `DEPLOYMENT.md` edit and earlier screenshot folders are preserved.
+
+### Confirmed Findings And Changes
+
+| Severity | Reproduction / finding | Fix / relevant files |
+| --- | --- | --- |
+| Critical, unresolved | One login using the publicly documented demonstration administrator credentials succeeded against the live API. The test session was immediately revoked. | Owner must reset this account using its controlled inbox, review other published demo logins and revoke affected access. No password, token or OTP is included in this report, and no existing password was changed without permission. This prevents production handover sign-off. |
+| High | Remove a route's bus assignment; template/old bus details can still appear. Inactive route/team resources could start a trip. | `apiServer.js`: explicit managed bus assignment is authoritative; incomplete student/staff transport is unassigned, not a seeded bus. Trip start requires active route, bus, driver and conductor. Regression covers missing and inactive resources. |
+| High | Submit conflicting route resources, mismatched IDs or invalid capacity; management had insufficient server validation. | `adminRecords.js`, `apiServer.js`: reject duplicate codes/linked accounts, malformed capacity, invalid stops and conflicting active assignments; block changing assigned resources during active trips. Existing records are not automatically repaired or reassigned. |
+| Medium | No supported deletion path for newly created management records. | Admin-only guarded deletion with confirmation and in-dialog errors; assigned/historical records are protected; removable linked login sessions revoked; deleted template routes cannot reappear. `AdminDataContext`, `ManagementPage`, `AdminRoutesPage`. No unrestricted alert/notification deletion was added. |
+| Medium | Unsaved assignment selections were replaced by polling; reused management component retained previous-kind state. | Dirty assignment draft merging; keyed management pages. Assignment regression test. |
+| Medium | Route activation failure lacked useful feedback; dialogs lacked keyboard containment; deletion could leave an empty final page. | Awaited status/error handling, focus/Tab/Escape/restore handling, clamped pagination. New visual behaviour still requires a browser check. |
+| Medium | New stops defaulted repeatedly to the same preset coordinates. | New/reset stop coordinate fields start empty and require a selected map point. Existing coordinates were not guessed or overwritten. |
+| Medium | Notification retry could duplicate a publication; fetch errors were hidden; Delivered overclaimed receipt. | Server request-ID deduplication and frontend retained retry ID, form guard, preserved errors; Published label and refresh warning. Tests cover identical retry, changed retry, invalid route/type and scheduled retry. |
+| Medium | Malformed JSON surfaced as 500 and request buffering was unbounded. | JSON object validation, 512 KiB limit, 400/413 responses and generic unexpected-error response; targeted API tests. |
+
+Added **Admin > GPS simulator**, preserving the existing theme/navigation. It is session-private, memory-only, explicitly labelled and does not write real trips, locations, seats or alerts. It shares the backend distance/stop-progress calculation and has morning/return, speed/playback, start/pause/resume/restart/exit. The path is the configured straight stop sequence, not actual road routing. Old simulation IDs, invalid coordinates and collapsed adjacent stops are rejected. State expires after inactivity/logout/restart. This is a demonstration of calculations, not a phone or cross-role live-GPS certification.
+
+### Actual Verification In This Follow-Up
+
+- Baseline: lint, 91 tests and build passed before edits.
+- Latest full check: lint, **100 tests passed**, production build passed. Main JS about 461 kB / 127 kB gzip; simulator is a separately loaded chunk. No dependency or framework replacement.
+- Temporary real MongoDB: **24 tests passed**, plus independent-adapter concurrent writes, exact state reopening and empty-production fail-closed checks. No production Atlas data was reset.
+- Complete local app started at `http://127.0.0.1:5180` with disposable JSON storage and local captured mail, not production credentials/data.
+- API smoke test: eight groups passed for health/auth/CORS boundary, new bus/staff/pending transport record, assigned route persistence, separate driver/conductor sessions, role rejection, protected deletion, simulator movement/pause/return/exit, exact cleanup and session revocation. Zero created test records remained. Evidence: `qa/2026-09-20-submission/local-api-results.json`.
+- Existing API regressions passed for signup/OTP/pending/approval/rejection/reset, seat arithmetic/duplicate/concurrent retries, trip start/end/separate return, accepted GPS/staleness/weak fixes, emergency retry, complaints, notifications and restart persistence. These are isolated tests, not claims that these write workflows were exercised on real users.
+- Configuration-only production check passed without connecting to the database or printing values.
+- Browser access was explicitly denied because the admin-enforced browser security check was unavailable. No alternative browser/curl/proxy access was used to bypass that restriction. **No fresh UI screenshots, live button walkthrough, mobile rendering, console/network or browser failure-injection pass is claimed for this follow-up.** Earlier browser evidence below predates these changes.
+
+Release publication and temporary live-record results are recorded after deployment below. No real operational trip, emergency, complaint or notification will be created in production for this check: existing history must remain intact and there is no safe general history-deletion operation. Those scenarios are exercised in isolated data instead.
+
+### Handover Gates
+
+1. Rotate the exposed live administrator password immediately through its controlled inbox. Review other public demo credentials; do not distribute production passwords in documents.
+2. Manually check the current homepage and all role pages on desktop/mobile, especially new dialogs, route editor and simulator. Browser tooling could not perform this final visual check.
+3. Test foreground GPS on real Android/iPhone outdoors and compare ETA to actual journeys. Screen-lock/background tracking is not guaranteed. Validate physical stop pins and return-road differences with transport staff.
+4. In-app emergencies are saved records, not a tested SMS/push/telephone dispatch or acknowledgement. Confirm human responders, contacts and procedures.
+5. Existing single-document MongoDB storage, process-local rate limiting and polling need load/backup/recovery review before university-wide operational deployment. This follow-up is not a penetration test or scale certification.
+
+Changed files in this follow-up: `Backend/apiServer.js`, new `adminRecords.js`, `gpsSimulation.js`, `scripts/qa-live-submission.js`, backend regression tests; `Frontend/src/App.jsx`, admin/communications contexts, assignment helper, Admin layout/UI/management/routes/assignments/notifications/new simulator page, scoped CSS, frontend regression test; README, integration guide and these QA records. No production secrets or new environment variables are required for the simulator.
+
 ## Distance-Based Arrival Correction (20 September 2026)
 
 The next live screenshot showed GPS Active and a speed, but no distance and an old start-based arrival. Inspection confirmed two medium-severity calculation defects: `buildLiveEtaContext()` discarded distance when the bus was over 1 km from schematic stop-to-stop lines or had zero speed, and inferred speeds were clamped upwards to 12 km/h even for tiny GPS jitter. This explains a reproducible failure class; no private production trip was queried to prove its exact stored coordinates.

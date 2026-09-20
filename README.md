@@ -93,6 +93,14 @@ Deployment steps are documented in [DEPLOYMENT.md](./DEPLOYMENT.md).
 
 Map tiles use OpenStreetMap by default, with SmartTransit stop labels and an Indus University campus marker added on top of the map. To use a Google-like commercial tile provider later, set `VITE_MAP_TILE_URL` and `VITE_MAP_TILE_ATTRIBUTION` without changing dashboard code. Admin stop coordinates can be filled by choosing a saved stop, pasting a Google Maps link or `lat,lng`, using the current device location, or clicking the route map.
 
+## Faculty GPS Demonstration
+
+Sign in as an administrator and open **GPS simulator**. Choose a route and morning/return direction, choose speed/playback, then **Start simulator**. Pause/resume, restart and exit controls are available. Exit before selecting a different route or direction.
+
+This is an explicitly labelled, session-private simulation using the backend's distance/stop-progress calculation. It follows straight stop segments, not actual roads or traffic, and does not change real trips, GPS, passengers or notifications. It requires valid, distinct stop pins and the connected backend. It expires after 30 minutes without requests and is removed on logout or backend restart. It is not visible as a real bus in student/driver dashboards and does not prove phone GPS works.
+
+Use only isolated demo accounts for demonstrations. Published fixture credentials must not remain usable on the public deployment. Review the latest release gates in the QA report before university handover.
+
 ## Production Database
 
 Local development uses JSON storage by default. For a real public production app, set:
