@@ -1,6 +1,6 @@
 # Backend integration guide
 
-SmartTransit runs in demo mode by default. To connect a backend, create a `.env` file from `.env.example` and set:
+Development can use browser demo mode; production builds require the real backend and fail clearly if it is not configured. To connect the existing Node HTTP backend, create a `.env` file from `.env.example` and set:
 
 ```bash
 VITE_USE_BACKEND=true
@@ -30,7 +30,9 @@ If API port `5050` is already busy, `npm run dev:full` automatically tries the n
 
 Use `npm run backend` if you want to run only the API, and `npm run test:backend` if you want to test only the API endpoints.
 
-Use `npm run reset:data` to restore the local JSON store to the original demo state before a presentation.
+Use `node Backend/scripts/qa-server.js` for disposable testing without loading production environment files. Do not automatically reset or clean existing data.
+
+The server uses scrypt and persisted opaque bearer sessions, not JWT. Role, approval and assignment checks run on the backend. JSON writes are serialized and atomic within one process; MongoDB uses a revision-checked state document. Multi-process JSON is unsupported. Polling, not sockets, carries updates between independently signed-in users.
 
 ## Expected endpoints
 
@@ -49,6 +51,14 @@ Use `npm run reset:data` to restore the local JSON store to the original demo st
   - Response: `{ token, user: { id, name, email, role, initials } }`
 - `POST /auth/password-reset`
   - Body: `{ email }`
+- `POST /auth/password-reset/confirm`
+  - Body: `{ email, otp, password }`; resets the password and revokes sessions.
+- `GET /auth/session`
+  - Returns the current authorized user; 401/403 clears browser authentication. Network/5xx failures do not mean logout.
+- `POST /auth/logout`
+  - Revokes the bearer session on the server.
+
+New verified students remain pending. Registration does not automatically sign the browser into restricted transport pages. Administrators approve/reject and assign transport separately. Existing sessions are checked for changed status.
 
 ### OTP email sending
 
@@ -87,6 +97,10 @@ Keep both allowed-domain values empty for the final deployment; signup will then
 - `POST /student/complaints`
   - Body: `{ category, subject, relatedService, description }`
   - Response: full complaint object.
+- `GET /student/preferences`, `PATCH /student/preferences`
+  - Persist only the signed-in student's supported notification preferences.
+- `POST /student/notifications/read`
+  - Persists read state for the current student, not all recipients.
 
 ### Admin communications
 
@@ -102,14 +116,14 @@ Keep both allowed-domain values empty for the final deployment; signup will then
 ### Admin management
 
 - `GET /admin/bootstrap`
-  - Response: `{ records, routes, fleetVehicles, adminActivity }`
+  - Response includes `{ records, routes, fleetVehicles, adminActivity, tripHistory }`.
 - `PUT /admin/:kind/:id`
-  - `kind` can be `buses`, `drivers`, `conductors`, `students`, or `stops`.
+  - Writable kinds: `buses`, `drivers`, `conductors`, `students`. Stops are derived from routes; direct stop-directory writes are rejected.
   - Body: full record object.
 - `PATCH /admin/:kind/:id/status`
   - Body: updated record object.
 - `PUT /admin/routes/:id`
-  - Body: full route object.
+  - Body: full route object. Explicit coordinates are validated and marked admin-owned so template enrichment cannot replace them.
 - `PATCH /admin/routes/:id/status`
   - Body: updated route object.
 
@@ -120,15 +134,25 @@ Keep both allowed-domain values empty for the final deployment; signup will then
 - `POST /driver/trips/:id/start`
 - `POST /driver/trips/:id/end`
 - `POST /staff/emergencies`
-  - Body: `{ id, type, note, location, coordinates, submittedAt }`
+  - Body: `{ id, tripId, type, note }`. Retain the same ID and payload after an unconfirmed response for safe retry. The server validates the trip assignment and derives reliable GPS; it does not trust a route stop as the bus location.
+  - Server persistence, external provider delivery and administrator acknowledgement are separate events. External emergency delivery is not connected.
 - `GET /conductor/trips/current`
   - Response: current operation state with seat updates.
 - `POST /conductor/trips/:id/seat-updates`
-  - Body: `{ id, stopId, stopName, boarded, deboarded, occupiedSeats, availableSeats, timestamp }`
-  - Response: saved seat update object.
+  - Body: `{ id, stopId, boarded, deboarded }`. Use the same ID and payload when retrying an unconfirmed submission.
+  - Assigned active trip required. Server calculates occupancy and availability from stored state; client totals/timestamps are not authoritative. Invalid integers, stops and capacity violations are rejected. Duplicate IDs with different input are rejected.
+- `POST /driver/trips/:id/location`
+  - Body: `{ latitude, longitude, accuracy, speedMetersPerSecond, heading, timestamp }`.
+  - Requires the assigned active trip and a recent, reliable position. Old/out-of-order fixes are rejected. Response includes the actual fix time and server acceptance time.
+
+Outbound and return runs have separate trip IDs and histories. New runs start with zero occupancy and no inherited GPS. Conductors enter actual campus boarding for return runs. Current return stop order reverses the configured outbound stops; different return roads/stops require a separately designed route model and university confirmation.
 
 ## Route data
 
-The frontend currently keeps Indus route data in `Frontend/src/services/indusRoutes.js`. When the backend is ready, return the same route, stop, bus, and trip shapes from API responses so the UI can switch over without component rewrites.
+`Frontend/src/services/indusRoutes.js` contains reference route templates. Backend records and explicit admin coordinate edits drive connected dashboards. Backend mode does not substitute a default trip for an unassigned user.
 
 Stop coordinates in the current demo are approximate where exact public coordinates were unavailable.
+
+ETA is a qualified estimate from remaining stop geometry and usable speed, not a traffic-aware road routing prediction. Missing, stale, stopped or off-route GPS can make ETA unavailable. Do not substitute scheduled time for live stop progress. All event times are full timestamps displayed in Asia/Kolkata; scheduled times remain schedules.
+
+Scheduled in-app notices become published when the communications endpoint is fetched after their due time. This is not a background notification worker or delivery receipt. System settings/permission switches are read-only in backend mode; a general configuration API and complete administrator audit log are not implemented. See [the QA report](docs/QA_AUDIT_REPORT.md) for evidence and remaining work.

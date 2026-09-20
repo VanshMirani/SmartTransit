@@ -9,7 +9,7 @@ SmartTransit is a responsive college transportation frontend for Indus Universit
 - an included local Node.js API for backend-ready testing;
 - MongoDB-ready production storage for public deployment.
 
-The complete implementation status is listed in [FINAL_CHECKLIST.md](./FINAL_CHECKLIST.md). The phase-by-phase build record is in [PROJECT_PLAN.md](./PROJECT_PLAN.md).
+Current verified results and remaining limitations are in [docs/QA_AUDIT_REPORT.md](./docs/QA_AUDIT_REPORT.md). Older checklists and [PROJECT_PLAN.md](./PROJECT_PLAN.md) describe earlier milestones, not production certification.
 Faculty-facing explanation notes are available in [FACULTY_PRESENTATION_NOTES.md](./FACULTY_PRESENTATION_NOTES.md).
 Use [DEMO_CHECKLIST.md](./DEMO_CHECKLIST.md) before a live presentation.
 Use [DEPLOYMENT.md](./DEPLOYMENT.md) when you are ready to host the real frontend and backend.
@@ -43,13 +43,7 @@ npm run dev:full
 
 This starts the API on `http://127.0.0.1:5050/api` when available and the Vite frontend on `http://localhost:5173`. If API port `5050` is busy, the script automatically uses the next free API port and connects the frontend to it.
 
-To reset local JSON API data before a presentation:
-
-```bash
-npm run reset:data
-```
-
-Run this before `npm run dev:full`, or restart the local backend after resetting. This command is for local JSON data, not production MongoDB.
+For a disposable test environment, use `node Backend/scripts/qa-server.js`. It starts both services with a fresh temporary JSON database, captures test OTPs locally, and does not load deployment environment files or send email. The QA guide explains browser and MongoDB tests. Do not run `reset:data` or `clean:presentation` against existing data without reviewing the scope and taking a backup.
 
 Production verification:
 
@@ -66,13 +60,13 @@ Or run linting, tests and build verification together:
 npm run check
 ```
 
-After production environment variables are filled, verify MongoDB and hosting settings with:
+After production environment variables are filled, check required configuration with:
 
 ```bash
 npm run check:production
 ```
 
-OpenStreetMap tiles require an internet connection. All other demonstration data is local, and the local API stores changes in `Backend/data/smarttransit-db.json`.
+This configuration check does not connect to MongoDB, seed data, send email or verify deployment health. OpenStreetMap tiles require internet. The normal local JSON adapter stores changes in `Backend/data/smarttransit-db.json`; the QA server uses a separate temporary directory.
 
 The production frontend build is created in `Frontend/dist`. The backend can be started with `npm start` on hosting platforms that expect a start command.
 
@@ -90,7 +84,7 @@ Use `Frontend/src` when editing screens, styles, routes and UI behavior. Use `Ba
 
 ## Backend-ready mode
 
-The app stays in browser demo mode unless a backend is enabled. For the included local backend, use `npm run dev:full`. For another backend, copy `.env.example` to `.env`, set `VITE_USE_BACKEND=true`, and point `VITE_API_BASE_URL` to your API server. If you temporarily enable local demo shortcut buttons, keep their passwords in your local `.env` values instead of the frontend source.
+Development can use explicit browser demonstration mode. Production builds always require the backend: missing or invalid `VITE_API_BASE_URL` shows an unavailable/configuration screen, never demo dashboards. Use `npm run dev:full` for backend development. Set `VITE_USE_BACKEND=true` and `VITE_API_BASE_URL` to the HTTPS API URL for deployment. Every `VITE_*` value is public: never put a real password, OTP signing secret or private provider key there.
 
 Backend calls are centralized in `Frontend/src/services/apiClient.js`. Endpoint expectations and data shapes are documented in [BACKEND_INTEGRATION.md](./BACKEND_INTEGRATION.md).
 Deployment steps are documented in [DEPLOYMENT.md](./DEPLOYMENT.md).
@@ -107,7 +101,7 @@ SMARTTRANSIT_MONGODB_URI=your-mongodb-atlas-uri
 SMARTTRANSIT_MONGODB_DB=smarttransit
 ```
 
-When MongoDB is enabled, accounts, OTP records, sessions, complaints, notifications and transport-operation changes are stored in MongoDB. The backend seeds the initial Indus University data automatically when the database is empty.
+MongoDB persists accounts, hashed OTP records, server sessions, complaints, notifications and transport operations in one state document. Revision-based compare-and-swap protects concurrent writes. Production must use MongoDB. Empty production state fails startup rather than creating public demo accounts; initialization requires a separately reviewed provision/import procedure. Existing production data is not reset. Local/test environments may initialize isolated fixtures.
 
 ## Demo Login Credentials
 
@@ -122,7 +116,7 @@ Faculty demonstration credentials are stored in [docs/LOGIN_CREDENTIALS.txt](./d
 | Conductor        | `vraj@transport.indusuni.ac.in`      | `Vraj@123`      | `/conductor`  |
 | Admin / Operator | `admin@transport.indusuni.ac.in`     | `Admin@123`     | `/admin`      |
 
-These accounts are configured for presentation and testing. Students can create an account at `/signup` using any email ending with `indusuni.ac.in`, such as `name@iite.indusuni.ac.in` or `zoom1@indusuni.ac.in`, plus OTP verification. Forgot password also uses email OTP verification before changing the password. Real OTP delivery uses the configured backend email provider. Local Gmail SMTP needs a Gmail App Password; Render Free should use Brevo. New student registrations are stored in JSON during local development and in MongoDB when production storage is enabled. The active authentication session is stored in `sessionStorage`. Driver, conductor and operator accounts remain transport-office provisioned.
+These published credentials must be restricted to isolated demonstrations. They were not tried against production during the audit. If any still work there, an authorized administrator must rotate or disable them before rollout; this audit does not reset accounts. Students register with an allowed university email and OTP, then remain pending until admin approval. Email verification is not transport approval. Password reset verifies an OTP and revokes existing sessions. The browser keeps an opaque bearer token in `sessionStorage`; server-side sessions, expiry, role/status and assignments are authoritative. Staff accounts are issued only by administrators.
 
 ## Real OTP email setup
 
@@ -175,7 +169,7 @@ The UI can run without a backend for quick demos, or against the included local 
 - `Frontend/src/admin/AdminDataContext.jsx`: fleet, people, route and assignment mutation boundary.
 - `Frontend/src/settings/SystemSettingsContext.jsx`: settings, permissions and audit boundary.
 
-Keep component-facing interfaces stable when adding Node.js/Express adapters. Real-time updates should enter through the contexts rather than directly inside page components.
+The existing server uses Node's built-in HTTP module, scrypt password hashing and persisted opaque sessions, not Express, JWT or Socket.IO. Cross-role updates use authenticated HTTP polling (normally 15 seconds, student home 30 seconds) and refresh after writes. Keep these existing boundaries stable.
 
 ## Privacy and safety rules
 
@@ -183,7 +177,7 @@ Keep component-facing interfaces stable when adding Node.js/Express adapters. Re
 - Inactive-trip vehicles show `Not sharing`; their markers are omitted from live operator maps.
 - Drivers have no seat-count controls.
 - Conductors cannot submit negative, below-zero or over-capacity seat counts.
-- Emergency submissions attach the current trip location.
+- Emergency success means the server saved the alert, not external delivery or administrator acknowledgement. Attach only a timestamped bus location; otherwise show unavailable/last known.
 - GPS and seat information always includes freshness/timestamp context.
 
 ## Responsive and accessibility foundations
