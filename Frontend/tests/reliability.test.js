@@ -47,3 +47,60 @@ test('failed GPS uploads are not successful syncs, retry with a new fix, and ign
     await upload;
     assert.equal(accepted, 1);
 });
+
+test('GPS first-fix waiting and device errors are not replaced with misleading stale-location messages', async () => {
+    let now = Date.now();
+    const messages = [];
+    const sync = createGpsSync({ tripId: 'waiting', now: () => now,
+        request: async () => { throw new Error('offline'); },
+        onState: (status, message) => messages.push({ status, message }), onAccepted: () => assert.fail('No successful upload expected'),
+    });
+    sync.checkFreshness();
+    assert.equal(messages.length, 0);
+    now += 31000;
+    sync.checkFreshness();
+    assert.equal(messages.at(-1).status, 'waiting');
+    assert.match(messages.at(-1).message, /No GPS location has been received/);
+    assert.doesNotMatch(messages.at(-1).message, /last accepted|out of date/);
+    for (const code of [1, 2, 3]) {
+        sync.reportError({ code });
+        const failure = messages.at(-1);
+        assert.equal(failure.status, code === 1 ? 'permission' : 'error');
+        now += 60000;
+        sync.checkFreshness();
+        assert.equal(messages.at(-1), failure);
+    }
+    const position = (accuracy) => ({ timestamp: now, coords: { latitude: 23, longitude: 72, accuracy } });
+    await sync.receive(position(500));
+    const weak = messages.at(-1);
+    now += 31000;
+    sync.checkFreshness();
+    assert.equal(messages.at(-1), weak);
+    await sync.receive(position(10));
+    const uploadFailure = messages.at(-1);
+    assert.match(uploadFailure.message, /upload was not confirmed/);
+    now += 60000;
+    sync.checkFreshness();
+    assert.equal(messages.at(-1), uploadFailure);
+    sync.dispose();
+    sync.reportError({ code: 1 });
+    assert.equal(messages.at(-1), uploadFailure);
+});
+
+test('a late GPS upload acknowledgement cannot erase a newer permission error', async () => {
+    const now = Date.now();
+    let finish;
+    const states = [];
+    const sync = createGpsSync({ tripId: 'permission-changed', now: () => now,
+        request: () => new Promise((resolve) => { finish = resolve; }),
+        onState: (status) => states.push(status), onAccepted: () => {},
+    });
+    const uploading = sync.receive({ timestamp: now, coords: { latitude: 23, longitude: 72, accuracy: 10 } });
+    sync.reportError({ code: 1 });
+    finish({ ok: true, location: { updatedAt: new Date(now).toISOString() } });
+    await uploading;
+    assert.equal(states.at(-1), 'permission');
+    sync.checkFreshness();
+    assert.equal(states.at(-1), 'permission');
+    sync.dispose();
+});

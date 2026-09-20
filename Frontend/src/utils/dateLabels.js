@@ -49,14 +49,17 @@ export function formatEventTime(value) {
 }
 
 export function stopTimeLabel(stop, active = true) {
-    const value = active ? stop?.estimatedArrivalAt ?? stop?.departureEstimateAt : null;
-    return value ? formatEventTime(value) : stop?.scheduledTime || 'Time unavailable';
+    if (!active) return stop?.scheduledTime || 'Time unavailable';
+    const value = [stop?.estimatedArrivalAt, stop?.departureEstimateAt]
+        .find((timestamp) => Number.isFinite(Date.parse(timestamp ?? '')));
+    return value ? formatEventTime(value) : 'ETA unavailable';
 }
 
 export function stopTimeSource(stop, active = true) {
-    if (active && stop?.estimatedArrivalAt) return 'GPS estimate';
-    if (active && stop?.departureEstimateAt) return 'Start-based estimate';
-    return 'Scheduled';
+    if (!active) return 'Scheduled';
+    if (Number.isFinite(Date.parse(stop?.estimatedArrivalAt ?? ''))) return 'GPS estimate';
+    if (Number.isFinite(Date.parse(stop?.departureEstimateAt ?? ''))) return 'Start-based estimate';
+    return 'Estimate unavailable';
 }
 
 export function relativeTimeLabel(value, fallback = "Not available") {

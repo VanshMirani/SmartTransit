@@ -1586,11 +1586,7 @@ function storeDriverLocation(data, user, tripId, locationInput) {
     return {
         ok: true,
         location,
-        gpsUpdatedAt: locationAgeLabel(updatedAt),
-        tripStatus: tripState.tripStatus,
-        operationalCurrentStopId: tripState.operationalCurrentStopId,
-        operationalStops: tripState.operationalStops,
-        activeStaffTrip: tripState.activeStaffTrip,
+        ...operationsWithLiveLocation(data, tripState),
     };
 }
 
@@ -1931,9 +1927,7 @@ function updateTripProgressFromSeatUpdate(data, tripId, body) {
     return {
         ...update,
         update,
-        activeStaffTrip: tripState.activeStaffTrip,
-        operationalStops: tripState.operationalStops,
-        operationalCurrentStopId: tripState.operationalCurrentStopId,
+        ...operationsWithLiveLocation(data, tripState),
     };
 }
 

@@ -1,6 +1,7 @@
 import { Clock3, Database, Eye, LockKeyhole, MapPin, ShieldCheck, UserCheck, } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Brand } from "../components/Brand";
+import { universityContact } from '../services/supportContacts';
 export function PrivacyPage() {
     return (<main className="privacy-page">
       <header className="privacy-header">
@@ -82,12 +83,11 @@ export function PrivacyPage() {
         <article className="privacy-feature-card privacy-feature-card--wide">
           <LockKeyhole />
           <div>
-            <h2>Production implementation notice</h2>
+            <h2>Account and transport access</h2>
             <p>
-              This deployment uses role-protected authentication, verified
-              institute email access and backend API safeguards for transport
-              records. These privacy rules apply across student, driver,
-              conductor and operator workspaces.
+              Verifying an institute email does not approve a transport account.
+              Student access also requires administrator approval and a route
+              assignment. Staff accounts are issued by transport administrators.
             </p>
           </div>
         </article>
@@ -96,12 +96,13 @@ export function PrivacyPage() {
         <div>
           <h2>Questions about transport data?</h2>
           <p>
-            Contact the Indus University transport office for access or privacy
-            assistance.
+            Contact the university help desk and ask for transport or privacy
+            assistance. Account help is also available without signing in.
           </p>
+          <Link className="text-link" to="/help">Account and transport help</Link>
         </div>
-        <a className="button button--primary" href="mailto:transport@indusuni.ac.in">
-          transport@indusuni.ac.in
+        <a className="button button--primary" href={`mailto:${universityContact.email}`}>
+          {universityContact.email}
         </a>
       </section>
       <footer className="privacy-footer">

@@ -8,15 +8,6 @@ import { createGpsSync } from './gpsSync.js';
 import { useAuth } from '../auth/AuthContext';
 const DriverContext = createContext(null);
 const staffTripRefreshIntervalMs = 15000;
-function geolocationErrorMessage(error) {
-    if (error?.code === 1)
-        return "Location permission is blocked. Allow location access for SmartTransit to share live GPS.";
-    if (error?.code === 2)
-        return "Your phone could not detect a reliable location yet.";
-    if (error?.code === 3)
-        return "Location request timed out. Keep GPS and mobile data enabled.";
-    return "Unable to read phone GPS right now.";
-}
 export function DriverOperationsProvider({ children, }) {
     const { logout } = useAuth();
     const [activeTrip, setActiveTrip] = useState(backendConfig.enabled ? null : fallbackActiveTrip);
@@ -26,6 +17,8 @@ export function DriverOperationsProvider({ children, }) {
     const [gpsUpdatedAt, setGpsUpdatedAt] = useState("Not sharing");
     const [gpsSharingStatus, setGpsSharingStatus] = useState("idle");
     const [gpsError, setGpsError] = useState("");
+    const [gpsAttempt, setGpsAttempt] = useState(0);
+    const retryGps = useCallback(() => setGpsAttempt((attempt) => attempt + 1), []);
     const [tripLoadError, setTripLoadError] = useState("");
     const [lastGpsLocation, setLastGpsLocation] = useState(null);
     const [emergency, setEmergency] = useState(null);
@@ -88,7 +81,7 @@ export function DriverOperationsProvider({ children, }) {
             setGpsSharingStatus("demo");
             return undefined;
         }
-        if (!("geolocation" in navigator)) {
+        if (typeof navigator.geolocation?.watchPosition !== 'function') {
             setGpsSharingStatus("unsupported");
             setGpsError("This device or browser does not support GPS sharing.");
             return undefined;
@@ -106,17 +99,13 @@ export function DriverOperationsProvider({ children, }) {
                 if (payload.operationalStops) setStops(payload.operationalStops);
             },
         });
-        let permissionDenied = false;
-        const freshnessTimer = window.setInterval(() => { if (!permissionDenied) sync.checkFreshness(); }, 10000);
+        const freshnessTimer = window.setInterval(() => sync.checkFreshness(), 10000);
         const watchId = navigator.geolocation.watchPosition((position) => {
-            permissionDenied = false;
             void sync.receive(position);
         }, (error) => {
             if (cancelled)
                 return;
-            permissionDenied = error?.code === 1;
-            setGpsSharingStatus(permissionDenied ? 'permission' : 'error');
-            setGpsError(geolocationErrorMessage(error));
+            sync.reportError(error);
         }, {
             enableHighAccuracy: true,
             maximumAge: 5000,
@@ -128,7 +117,7 @@ export function DriverOperationsProvider({ children, }) {
             window.clearInterval(freshnessTimer);
             navigator.geolocation.clearWatch(watchId);
         };
-    }, [activeTrip?.id, tripStatus]);
+    }, [activeTrip?.id, tripStatus, gpsAttempt]);
     const value = useMemo(() => ({
         tripStatus,
         activeTrip,
@@ -138,6 +127,7 @@ export function DriverOperationsProvider({ children, }) {
         gpsUpdatedAt,
         gpsSharingStatus,
         gpsError,
+        retryGps,
         lastGpsLocation,
         emergency,
         history,
@@ -213,7 +203,7 @@ export function DriverOperationsProvider({ children, }) {
             setEmergency(report);
             return report;
         },
-    }), [activeTrip, stops, tripStatus, checklist, tripLoadError, gpsUpdatedAt, gpsSharingStatus, gpsError, lastGpsLocation, emergency, history, refreshDriverTrip]);
+    }), [activeTrip, stops, tripStatus, checklist, tripLoadError, gpsUpdatedAt, gpsSharingStatus, gpsError, lastGpsLocation, emergency, history, refreshDriverTrip, retryGps]);
     return (<DriverContext.Provider value={value}>{!activeTrip ? <AssignmentUnavailable error={tripLoadError} retry={refreshDriverTrip} logout={logout}/> : children}</DriverContext.Provider>);
 }
 // eslint-disable-next-line react-refresh/only-export-components

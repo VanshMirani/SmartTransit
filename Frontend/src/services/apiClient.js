@@ -69,6 +69,13 @@ async function request(path, { method = "GET", body, headers = {}, signal } = {}
     const token = getBackendToken();
     if (method !== 'GET') mutationVersion += 1;
     const version = mutationVersion;
+    const networkFailure = (error) => {
+        if (signal?.aborted || error instanceof ApiError) throw error;
+        const message = error.name === 'TimeoutError'
+            ? 'The transport service is taking too long to respond. Please retry shortly.'
+            : 'Unable to reach the transport service. Check your internet connection and try again.';
+        throw new ApiError(message, 0);
+    };
     const response = await fetch(endpoint(path), {
         method,
         signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
@@ -79,8 +86,8 @@ async function request(path, { method = "GET", body, headers = {}, signal } = {}
             ...headers,
         },
         body: body ? JSON.stringify(body) : undefined,
-    });
-    const data = await parseResponse(response);
+    }).catch(networkFailure);
+    const data = await parseResponse(response).catch(networkFailure);
     if (path !== '/auth/logout' && token && token !== getBackendToken())
         throw new ApiError('Session changed during the request.', 409);
     if (method === 'GET' && version !== mutationVersion)

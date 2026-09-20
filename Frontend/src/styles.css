@@ -383,6 +383,8 @@ button {
 .phone {
   width: 270px;
   height: 542px;
+  display: grid;
+  grid-template-rows: 25px 48px minmax(0, 1fr) 49px;
   border: 8px solid #061522;
   border-radius: 38px;
   overflow: hidden;
@@ -447,6 +449,17 @@ button {
 }
 .phone__body {
   padding: 14px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.phone__body > * {
+  flex-shrink: 0;
+}
+.phone__body .mini-map {
+  flex: 1 1 auto;
+  min-height: 80px;
+  height: auto;
 }
 .phone__body .eyebrow {
   margin: 0;
@@ -623,9 +636,6 @@ button {
   color: #b8cbd8;
 }
 .phone__nav {
-  position: absolute;
-  bottom: 0;
-  inset-inline: 0;
   height: 49px;
   display: flex;
   justify-content: space-around;
@@ -633,28 +643,6 @@ button {
   color: #dce9f1;
   background: var(--navy-900);
   font-size: 0.55rem;
-}
-.live-pill {
-  position: absolute;
-  z-index: 3;
-  right: 4%;
-  top: 19%;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 10px 13px;
-  border-radius: 999px;
-  color: var(--navy-800);
-  background: white;
-  box-shadow: var(--shadow-sm);
-  font-size: 0.74rem;
-  font-weight: 700;
-}
-.live-pill span {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #30bf7c;
 }
 .route-orbit {
   position: absolute;
@@ -4432,7 +4420,7 @@ button {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #25ad77;
+  background: currentColor;
 }
 .staff-assignment-card,
 .staff-action-card,
@@ -5019,6 +5007,18 @@ button {
   color: white;
   border-radius: 17px;
   background: linear-gradient(130deg, var(--navy-900), #155461);
+}
+.driver-gps-notice {
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.driver-gps-notice > div {
+  flex: 1 1 220px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.driver-gps-notice > button {
+  flex-shrink: 0;
 }
 .active-trip-hero > div:first-child {
   display: flex;
@@ -10513,11 +10513,46 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-block: 16px;
 }
 .privacy-header-actions {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.privacy-header-actions > a {
+  white-space: nowrap;
+}
+.public-help-content {
+  width: min(1120px, calc(100% - 36px));
+  margin-inline: auto;
+  padding-block: 24px 40px;
+}
+.public-help-heading {
+  margin-bottom: 24px;
+}
+.public-help-heading h1 {
+  margin: 0 0 12px;
+  font-size: 2rem;
+  letter-spacing: 0;
+}
+.public-help-heading p {
+  color: var(--gray-600);
+}
+.public-help-content .help-contact-card strong {
+  overflow-wrap: anywhere;
+}
+.public-help-content .help-page-grid > * {
+  min-width: 0;
+}
+.public-help-content .help-safety-card h2 {
+  margin-block: 12px;
+  font-size: 1rem;
+  line-height: 1.4;
 }
 .privacy-create-link {
   min-height: 44px;

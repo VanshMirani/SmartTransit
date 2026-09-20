@@ -19,3 +19,15 @@ test('stop labels distinguish timetable, departure plan and live GPS estimate', 
     assert.equal(stopTimeSource(live), 'GPS estimate');
     assert.equal(stopTimeSource({ ...live, estimatedArrivalAt: null }), 'Start-based estimate');
 });
+
+test('active stop times never fall back to the fixed timetable when estimates are missing or invalid', () => {
+    for (const fields of [{}, { estimatedArrivalAt: 'invalid', departureEstimateAt: 'invalid' }]) {
+        const stop = { scheduledTime: '7:30 AM', ...fields };
+        assert.equal(stopTimeLabel(stop, true), 'ETA unavailable');
+        assert.equal(stopTimeSource(stop, true), 'Estimate unavailable');
+        assert.equal(stopTimeLabel(stop, false), '7:30 AM');
+    }
+    const planned = { estimatedArrivalAt: 'invalid', departureEstimateAt: '2026-09-20T04:00:00Z' };
+    assert.equal(stopTimeLabel(planned), formatEventTime(planned.departureEstimateAt));
+    assert.equal(stopTimeSource(planned), 'Start-based estimate');
+});

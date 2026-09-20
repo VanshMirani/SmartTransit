@@ -4,16 +4,17 @@ import { BrandLogo } from '../components/Brand';
 import { Footer } from '../components/Footer';
 import { PhonePreview } from '../components/PhonePreview';
 import { PublicHeader } from '../components/PublicHeader';
+import { universityContact } from '../services/supportContacts';
 const heroMetrics = [
-    { value: '8', label: 'Indus route corridors' },
+    { value: 'Routes', label: 'University pickup points' },
     { value: '4', label: 'role-based portals' },
     { value: 'OTP', label: 'verified student signup' },
 ];
 const features = [
     { icon: LocateFixed, title: 'Live location', text: 'Follow your assigned college bus on an active route map with fresh GPS context.' },
-    { icon: Clock3, title: 'Estimated arrival', text: 'Know when your bus is expected at your selected stop before leaving home.' },
+    { icon: Clock3, title: 'Estimated arrival', text: 'See a GPS-based estimate when a reliable location is available. Traffic and signal quality can affect arrival times.' },
     { icon: Users, title: 'Seat availability', text: 'Check available seats as conductors update boarding and deboarding details.' },
-    { icon: BellRing, title: 'Instant alerts', text: 'Receive important delay, cancellation and route-change updates in one place.' },
+    { icon: BellRing, title: 'Transport updates', text: 'Check important delay, cancellation and route-change notices in one place.' },
 ];
 const roleCards = [
     { icon: Smartphone, title: 'Student portal', text: 'Live tracking, ETA, seat count, alerts, complaints, profile and help center.' },
@@ -23,7 +24,7 @@ const roleCards = [
 ];
 const readinessItems = [
     { icon: ServerCog, title: 'Shared transport records', text: 'Approved users see the bus, route and passenger updates recorded by transport staff.' },
-    { icon: MailCheck, title: 'Real email OTP', text: 'Student signup now verifies email ownership before the account is created.' },
+    { icon: MailCheck, title: 'Verified student access', text: 'Verify your institute email, then wait for transport approval and a route assignment.' },
     { icon: MonitorCheck, title: 'Responsive experience', text: 'Student and staff screens work on mobile, while operator screens stay efficient on desktop.' },
     { icon: ShieldCheck, title: 'Role protection', text: 'Students, drivers, conductors and admins only see the pages meant for their role.' },
 ];
@@ -86,7 +87,7 @@ export function HomePage() {
           <div className="container journey__inner">
             <div className="journey__visual" aria-hidden="true">
               <div className="journey__map"><span className="journey__line"/><i className="journey__stop journey__stop--1"/><i className="journey__stop journey__stop--2"/><i className="journey__stop journey__stop--3"/><span className="journey__bus"><Route /></span></div>
-              <div className="arrival-card"><span><Clock3 /></span><div><small>Arriving at your stop</small><strong>8 minutes</strong></div></div>
+              <div className="arrival-card"><span><Clock3 /></span><div><small>Your selected stop</small><strong>Arrival estimate</strong></div></div>
             </div>
             <div className="journey__copy"><span className="section-kicker">Built around your day</span><h2>From campus gate to home, stay one step ahead.</h2><p>See your bus progress, next stop and latest update at a glance. SmartTransit keeps the information that matters easy to find.</p><ul><li><ShieldCheck /> Location is shared only during active trips</li><li><BellRing /> Timely alerts when the plan changes</li><li><BusFront /> Indus University routes and stops already mapped</li></ul><Link to="/track" className="text-link">Explore live tracking <ArrowRight /></Link></div>
           </div>
@@ -102,9 +103,9 @@ export function HomePage() {
         <section className="readiness section">
           <div className="container readiness__panel">
             <div className="readiness__copy">
-              <span className="section-kicker section-kicker--light">Ready to present</span>
-              <h2>Built like a real deployable application.</h2>
-              <p>The interface is prepared for live use: responsive layouts, real OTP signup, centralized backend connection points and production build support.</p>
+              <span className="section-kicker section-kicker--light">Your daily commute</span>
+              <h2>Campus transport, connected.</h2>
+              <p>Check your assigned route, follow trip updates and contact the transport team from your account.</p>
               <div className="readiness__actions">
                 <Link className="button button--accent" to="/login">Open app portals</Link>
                 <Link className="button button--ghost" to="/privacy">View privacy details</Link>
@@ -117,7 +118,7 @@ export function HomePage() {
         </section>
 
         <section className="help section" id="help">
-          <div className="container help__card"><div className="help__icon"><MessageCircleQuestion /></div><div><span className="section-kicker">We’re here to help</span><h2>Need support with your commute?</h2><p>Visit the help center or contact the Indus University transport office.</p></div><div className="help__actions"><Link className="button button--primary" to="/help">Open help center</Link><a className="button button--secondary" href="mailto:info@indusuni.ac.in"><HeartHandshake /> Contact us</a></div></div>
+          <div className="container help__card"><div className="help__icon"><MessageCircleQuestion /></div><div><span className="section-kicker">We’re here to help</span><h2>Need support with your commute?</h2><p>Get account help or ask the university help desk for transport assistance.</p></div><div className="help__actions"><Link className="button button--primary" to="/help">Open help center</Link><a className="button button--secondary" href={`mailto:${universityContact.email}`}><HeartHandshake /> Contact us</a></div></div>
         </section>
       </main>
       <Footer />

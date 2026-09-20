@@ -93,6 +93,52 @@ test('actual departure and stop estimates persist and agree across roles without
     assert.equal(Date.parse(returned.operationalStops[1].departureEstimateAt) - Date.parse(returned.activeStaffTrip.startedAt), 5 * 60000);
 });
 
+for (const action of ['GPS upload', 'seat update']) {
+    test(`${action} responses retain actual-departure estimates for morning and return trips`, async (t) => {
+        const { request, login } = await fixture(t);
+        const driver = await login('driver'), conductor = await login('conductor');
+        for (const direction of ['morning', 'return']) {
+            const prepared = (await request('/driver/trips/current/direction', driver, { direction })).data;
+            const id = prepared.activeStaffTrip.id;
+            const started = (await request(`/driver/trips/${id}/start`, driver, {})).data;
+            const plan = started.operationalStops.map((stop) => stop.departureEstimateAt);
+            const first = started.operationalStops[0];
+            let lastFix = 0;
+            const sendLocation = (speedKmh) => {
+                lastFix = Math.max(Date.now(), lastFix + 1);
+                return request(`/driver/trips/${id}/location`, driver, {
+                    latitude: first.coordinates[0], longitude: first.coordinates[1], accuracy: 10,
+                    speedKmh, timestamp: new Date(lastFix).toISOString(),
+                });
+            };
+            for (const speed of [0, 24]) {
+                const gps = await sendLocation(speed);
+                assert.equal(gps.status, 201);
+                const input = { id: `seats-${direction}-${speed}`, stopId: first.id, boarded: 1, deboarded: 0 };
+                const response = action === 'GPS upload' ? gps
+                    : await request(`/conductor/trips/${id}/seat-updates`, conductor, input);
+                assert.equal(response.status, 201);
+                assert.deepEqual(response.data.operationalStops.map((stop) => stop.departureEstimateAt), plan);
+                assert.equal(response.data.activeStaffTrip.departureEstimateAt, plan.at(-1));
+                assert.equal(response.data.activeStaffTrip.startedAt, started.activeStaffTrip.startedAt);
+                assert.equal(Boolean(response.data.operationalStops[1].estimatedArrivalAt), speed > 0);
+                const refreshed = (await request('/driver/trips/current', driver)).data;
+                assert.deepEqual(refreshed.operationalStops.map((stop) => stop.departureEstimateAt), plan);
+                if (speed > 0) {
+                    assert.ok(Math.abs(Date.parse(response.data.operationalStops[1].estimatedArrivalAt)
+                        - Date.parse(refreshed.operationalStops[1].estimatedArrivalAt)) < 1000);
+                }
+                if (action === 'seat update') {
+                    const retry = (await request(`/conductor/trips/${id}/seat-updates`, conductor, input)).data;
+                    assert.deepEqual(retry.operationalStops.map((stop) => stop.departureEstimateAt), plan);
+                    assert.equal(retry.update.occupiedSeats, response.data.update.occupiedSeats);
+                }
+            }
+            assert.equal((await request(`/driver/trips/${id}/end`, driver, {})).status, 200);
+        }
+    });
+}
+
 test('seat updates are atomic, idempotent and authoritative, including a lost-response retry', async (t) => {
     const { request, login, store } = await fixture(t);
     const driver = await login('driver'), conductor = await login('conductor');

@@ -17,13 +17,16 @@ const captureMail = async ({ to, otp }) => {
 const api = createApiServer(store, { otpEmailSender: captureMail, passwordResetEmailSender: captureMail });
 await new Promise((resolve) => api.listen(0, '127.0.0.1', resolve));
 const apiUrl = `http://127.0.0.1:${api.address().port}/api`;
+const port = Number(process.env.QA_PORT || 5175);
+if (!Number.isInteger(port) || port < 1024 || port > 65535)
+    throw new Error('QA_PORT must be a port between 1024 and 65535.');
 const vite = await createViteServer({
     root: path.resolve('Frontend'), envDir: directory,
-    server: { host: '127.0.0.1', port: 5175, strictPort: true },
+    server: { host: '127.0.0.1', port, strictPort: true },
     define: { 'import.meta.env.VITE_USE_BACKEND': '"true"', 'import.meta.env.VITE_API_BASE_URL': JSON.stringify(apiUrl) },
 });
 await vite.listen();
-console.log(`QA frontend: http://127.0.0.1:5175\nQA API: ${apiUrl}\nQA data: ${directory}`);
+console.log(`QA frontend: http://127.0.0.1:${port}\nQA API: ${apiUrl}\nQA data: ${directory}`);
 async function close() { await vite.close(); api.close(() => process.exit(0)); }
 process.on('SIGINT', close);
 process.on('SIGTERM', close);

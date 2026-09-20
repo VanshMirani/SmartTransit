@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { formatEventTime, stopTimeSource } from '../../Frontend/src/utils/dateLabels.js';
+import { formatEventTime, stopTimeLabel, stopTimeSource } from '../../Frontend/src/utils/dateLabels.js';
 
 const base = process.env.QA_BASE_URL || 'http://127.0.0.1:5175';
 const dataDirectory = process.env.QA_DATA_DIR;
@@ -115,18 +115,102 @@ async function startTrip(page) {
 try {
     const publicPage = await pageFor(null);
     await check('Public desktop and mobile pages render without horizontal overflow', async () => {
-        for (const width of [1440, 390]) {
+        for (const width of [1440, 768, 390, 320]) {
             await publicPage.setViewportSize({ width, height: 900 });
-            for (const route of ['/', '/login', '/signup', '/forgot-password', '/privacy']) {
+            for (const route of ['/', '/login', '/signup', '/forgot-password', '/privacy', '/help']) {
                 await publicPage.goto(`${base}${route}`);
                 await publicPage.locator('h1:visible, h2:visible').first().waitFor();
                 await snapshot(publicPage, `public-${route.replaceAll('/', '') || 'home'}-${width}.png`);
+                if (route === '/') {
+                    const nextStop = await publicPage.locator('.phone .next-stop').boundingBox();
+                    const navigation = await publicPage.locator('.phone__nav').boundingBox();
+                    assert.ok(nextStop.y + nextStop.height <= navigation.y + 1, 'Phone navigation must not cover the next stop');
+                }
             }
         }
     });
+    await check('Public support is accessible without login, and homepage makes no fake live claim', async () => {
+        await publicPage.goto(base);
+        await publicPage.getByText('Campus transport, connected.', { exact: true }).waitFor();
+        const preview = publicPage.getByLabel('SmartTransit mobile application preview');
+        assert.match(await preview.innerText(), /App preview/);
+        assert.equal(await preview.locator('.live-pill').count(), 0, 'A floating badge must not overlap the preview heading');
+        assert.doesNotMatch(await preview.innerText(), /Live now|9468|Aarav|17 \/ 50|8 min/);
+        assert.doesNotMatch(await publicPage.locator('main').innerText(), /Ready to present|Backend-ready APIs|Accurate ETA/);
+        if (base.startsWith('https:')) {
+            const resources = await publicPage.evaluate(() => performance.getEntriesByType('resource').map((entry) => entry.name));
+            assert.equal(resources.some((url) => /\/assets\/(maps|charts)-.*\.js/.test(url)), false, 'Public homepage must not download dashboard maps/charts');
+        }
+        await publicPage.getByRole('link', { name: 'Open help center', exact: true }).click();
+        await publicPage.waitForURL('**/help');
+        await publicPage.reload();
+        await publicPage.getByRole('heading', { name: 'Account and transport help' }).waitFor();
+        await publicPage.getByText('Why is my student account pending?', { exact: true }).click();
+        await publicPage.getByText(/Email verification confirms ownership/).waitFor({ state: 'visible' });
+        assert.equal(await publicPage.getByRole('link', { name: 'Official contact details' }).getAttribute('href'), 'https://indusuni.ac.in/contact-us.php');
+        await publicPage.getByRole('link', { name: 'Reset password', exact: true }).click();
+        await publicPage.waitForURL('**/forgot-password');
+        await publicPage.goBack();
+        await publicPage.waitForURL('**/help');
+        await publicPage.goto(`${base}/login`);
+        await publicPage.getByRole('link', { name: 'Need help signing in?' }).click();
+        await publicPage.waitForURL('**/help');
+    });
+    await check('Failed sign-in has readable recovery guidance and preserves input', async () => {
+        await publicPage.goto(`${base}/login`);
+        await publicPage.getByLabel('University email').fill('review@example.invalid');
+        await publicPage.getByLabel('Password', { exact: true }).fill('Fictional-Review!9');
+        await publicPage.route('**/auth/login', (route) => route.abort());
+        await publicPage.getByRole('button', { name: 'Sign in', exact: true }).click();
+        await publicPage.getByText(/Check your internet connection and try again/).waitFor();
+        assert.equal(await publicPage.getByLabel('University email').inputValue(), 'review@example.invalid');
+        assert.equal(await publicPage.getByRole('button', { name: 'Sign in', exact: true }).isEnabled(), true);
+        await publicPage.unroute('**/auth/login');
+    });
     const driver = await pageFor('driver'), conductor = await pageFor('conductor'), admin = await pageFor('admin'), student = await pageFor('student');
+    if (base.startsWith('https:')) {
+        await check('A failed dashboard download offers recovery and reload restores the page', async () => {
+            const page = await pageFor('student');
+            const chunk = '**/assets/LiveTrackingPage-*.js';
+            await page.route(chunk, (route) => route.abort());
+            await page.goto(`${base}/student/track`);
+            await page.getByRole('heading', { name: 'This page could not be loaded' }).waitFor();
+            assert.equal(await page.getByRole('link', { name: 'Get help', exact: true }).getAttribute('href'), '/help');
+            await page.unroute(chunk);
+            await page.getByRole('button', { name: 'Reload page', exact: true }).click();
+            await page.getByRole('heading', { name: 'No active trip right now' }).waitFor();
+            await page.context().close();
+        });
+    }
     if (!process.env.QA_PAGES_ONLY) {
     let trip, route;
+    await check('Both emergency forms reject failed submissions without inventing a location', async () => {
+        for (const [role, page] of [['driver', driver], ['conductor', conductor]]) {
+            await page.goto(`${base}/${role}/emergency`);
+            await page.getByText('No active trip', { exact: true }).waitFor();
+            assert.doesNotMatch(await page.locator('.attached-location').innerText(), /Near |Current location attached/);
+            await page.getByRole('button', { name: 'Breakdown', exact: false }).click();
+            await page.getByLabel('Additional details', { exact: false }).fill('Isolated outage review');
+            const attempts = [];
+            await page.route('**/staff/emergencies', (route) => {
+                attempts.push(route.request().postDataJSON());
+                return attempts.length === 1
+                    ? route.fulfill({ status: 503, contentType: 'application/json', body: '{"message":"Unavailable"}' })
+                    : route.abort();
+            });
+            for (let attempt = 0; attempt < 2; attempt += 1) {
+                await page.getByRole('button', { name: 'Confirm & send alert' }).click();
+                await page.getByText(/Alert submission was not confirmed/).waitFor();
+                assert.equal(await page.getByLabel('Additional details', { exact: false }).inputValue(), 'Isolated outage review');
+                assert.equal(await page.getByRole('heading', { name: 'Alert saved by server' }).count(), 0);
+            }
+            assert.equal(attempts.length, 2);
+            assert.equal(attempts[0].id, attempts[1].id);
+            assert.equal(attempts[0].coordinates, undefined);
+            await snapshot(page, `${role}-emergency-outage.png`);
+            await page.unroute('**/staff/emergencies');
+        }
+    });
     await check('Separate role sessions and direct API role rejection', async () => {
         assert.equal((await api(student, '/admin/bootstrap')).status, 403);
         assert.equal((await api(conductor, '/driver/trips/current')).status, 403);
@@ -160,14 +244,31 @@ try {
         await admin.getByText(`Started ${formatEventTime(actualStart)}`, { exact: false }).waitFor();
         await driver.goto(`${base}/driver/trip`);
         await driver.waitForFunction(() => window.__qaWatcherCount() > 0);
+        await driver.locator('.driver-stop small').first().waitFor();
+        assert.deepEqual(await driver.locator('.driver-stop small').allTextContents(),
+            starting.operationalStops.slice(1, 5).map((stop) => `Start-based estimate · ${formatEventTime(stop.departureEstimateAt)}`));
+        const locationSaved = driver.waitForResponse((response) => response.url().endsWith('/location') && response.request().method() === 'POST');
         await driver.evaluate((point) => window.__qaEmitGps(point), route[0].coordinates);
+        const afterGps = await (await locationSaved).json();
         await driver.getByText('GPS Active', { exact: true }).waitFor();
+        assert.deepEqual(afterGps.operationalStops.map((stop) => stop.departureEstimateAt),
+            starting.operationalStops.map((stop) => stop.departureEstimateAt));
+        assert.deepEqual(await driver.locator('.driver-stop small').allTextContents(),
+            afterGps.operationalStops.slice(1, 5).map((stop) => `${stopTimeSource(stop)} · ${stopTimeLabel(stop)}`));
         await conductor.goto(`${base}/conductor/trip`);
         const increase = conductor.getByRole('button', { name: 'Increase Boarded students' });
         await increase.waitFor();
         for (let i = 0; i < 3; i += 1) await increase.click();
+        const seatsSaved = conductor.waitForResponse((response) => response.url().endsWith('/seat-updates') && response.request().method() === 'POST');
         await conductor.getByRole('button', { name: 'Submit seat update' }).click();
+        const afterSeats = await (await seatsSaved).json();
         await conductor.getByText('Seat update confirmed', { exact: true }).waitFor();
+        assert.deepEqual(afterSeats.operationalStops.map((stop) => stop.departureEstimateAt),
+            starting.operationalStops.map((stop) => stop.departureEstimateAt));
+        const seatStopTimes = await conductor.locator('.conductor-stop small').allTextContents();
+        for (const [index, stop] of afterSeats.operationalStops.entries()) {
+            assert.ok(seatStopTimes[index].startsWith(`${stopTimeSource(stop)} · ${stopTimeLabel(stop)}`));
+        }
         const data = (await api(student, '/student/transit')).data;
         assert.equal(data.bus.occupiedSeats, 3);
         assert.equal(data.bus.tripActive, true);
@@ -243,10 +344,13 @@ try {
         await driver.goto(`${base}/driver/trip`);
         await driver.waitForFunction(() => window.__qaWatcherCount() > 0);
         await driver.evaluate(() => window.__qaGpsError(1));
-        await driver.getByText(/Location permission is blocked/).waitFor();
+        await driver.locator('.driver-gps-notice').getByText(/Location access is blocked/).waitFor();
+        assert.equal(await driver.locator('.staff-page-heading .staff-status--active').count(), 0);
+        await driver.getByRole('button', { name: 'Retry GPS', exact: true }).click();
+        await driver.waitForFunction(() => window.__qaWatcherCount() === 1);
         await driver.route('**/location', (route) => route.abort());
         await driver.evaluate((point) => window.__qaEmitGps(point), route[0].coordinates);
-        await driver.getByText(/upload was not confirmed/).waitFor();
+        await driver.locator('.driver-gps-notice').getByText(/upload was not confirmed/).waitFor();
         await driver.unroute('**/location');
         await snapshot(driver, 'gps-upload-failed.png');
     });
@@ -257,6 +361,14 @@ try {
         assert.equal(await student.evaluate(() => Boolean(sessionStorage.getItem('smarttransit.authToken'))), true);
         assert.equal(await student.locator('.student-app').count(), 0);
         await snapshot(student, 'session-reconnecting.png');
+        await student.unroute('**/auth/session');
+        await student.getByRole('button', { name: 'Retry connection' }).click();
+        await student.locator('.student-app').waitFor();
+        await student.route('**/auth/session', (route) => route.fulfill({ status: 503, contentType: 'application/json', body: '{"message":"Temporarily unavailable"}' }));
+        await student.reload();
+        await student.getByRole('heading', { name: 'Unable to verify your session' }).waitFor();
+        assert.equal(await student.evaluate(() => Boolean(sessionStorage.getItem('smarttransit.authToken'))), true);
+        assert.equal(await student.locator('.student-app').count(), 0);
         await student.unroute('**/auth/session');
         await student.getByRole('button', { name: 'Retry connection' }).click();
         await student.locator('.student-app').waitFor();
@@ -285,6 +397,11 @@ try {
         await conductor.getByRole('button', { name: 'Submit seat update' }).click();
         await conductor.getByText('Seat update confirmed', { exact: true }).waitFor();
         assert.equal((await api(student, '/student/transit')).data.bus.occupiedSeats, 1);
+        const returnStopTimes = await conductor.locator('.conductor-stop small').allTextContents();
+        for (const [index, stop] of current.operationalStops.entries()) {
+            assert.ok(returnStopTimes[index].startsWith(`Start-based estimate · ${formatEventTime(stop.departureEstimateAt)}`));
+        }
+        await snapshot(conductor, 'return-departure-plan-after-seats.png');
         await snapshot(driver, 'return-trip.png');
     });
     await check('Browser registration, captured test mail, pending state and administrator approval', async () => {
