@@ -1,4 +1,4 @@
-import { ArrowDownAZ, ChevronLeft, ChevronRight, Eye, Filter, Pencil, Plus, Search, ToggleLeft, ToggleRight, } from "lucide-react";
+import { ArrowDownAZ, ChevronLeft, ChevronRight, Eye, Filter, Pencil, Plus, Search, ToggleLeft, ToggleRight, Trash2, } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAdminData } from "../../admin/AdminDataContext";
@@ -168,7 +168,7 @@ export function ManagementPage({ kind }) {
     const config = labels[kind];
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
-    const { records, routes, upsertRecord, toggleRecord } = useAdminData();
+    const { records, routes, upsertRecord, toggleRecord, deleteRecord } = useAdminData();
     const [query, setQuery] = useState(() => searchParams.get("search") ?? "");
     const [filter, setFilter] = useState("all");
     const [ascending, setAscending] = useState(true);
@@ -180,6 +180,9 @@ export function ManagementPage({ kind }) {
     const [feedback, setFeedback] = useState(null);
     const [savingRecord, setSavingRecord] = useState(false);
     const [savingStatus, setSavingStatus] = useState(false);
+    const [deleting, setDeleting] = useState(null);
+    const [deletePending, setDeletePending] = useState(false);
+    const [deleteError, setDeleteError] = useState('');
     const pageSize = 5;
     useEffect(() => {
         setQuery(searchParams.get("search") ?? "");
@@ -192,7 +195,8 @@ export function ManagementPage({ kind }) {
             .includes(query.toLowerCase()))
         .sort((a, b) => (ascending ? 1 : -1) * a.name.localeCompare(b.name)), [records, kind, filter, query, ascending]);
     const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-    const visible = filtered.slice((page - 1) * pageSize, page * pageSize);
+    const currentPage = Math.min(page, totalPages);
+    const visible = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
     const openAdd = () => {
         if (kind === 'stops') { navigate('/admin/routes'); return; }
         setEditing(prepareEditableRecord(emptyRecord(kind), kind, routes));
@@ -350,6 +354,7 @@ export function ManagementPage({ kind }) {
                       {kind !== 'stops' && <button onClick={() => setConfirming(item)} aria-label={`${recordStatusAction(kind, item.status)} ${item.name}`}>
                         {item.status === "active" ? (<ToggleRight />) : (<ToggleLeft />)}
                       </button>}
+                      {kind !== 'stops' && <button onClick={() => { setDeleteError(''); setDeleting(item); }} title={`Delete ${item.name}`} aria-label={`Delete ${item.name}`}><Trash2 /></button>}
                     </div>
                   </td>
                 </tr>))}
@@ -366,13 +371,13 @@ export function ManagementPage({ kind }) {
             Showing {visible.length} of {filtered.length} records
           </span>
           <div>
-            <button disabled={page === 1} onClick={() => setPage(page - 1)} aria-label="Previous page">
+            <button disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} aria-label="Previous page">
               <ChevronLeft />
             </button>
             <span>
-              Page {page} of {totalPages}
+              Page {currentPage} of {totalPages}
             </span>
-            <button disabled={page === totalPages} onClick={() => setPage(page + 1)} aria-label="Next page">
+            <button disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)} aria-label="Next page">
               <ChevronRight />
             </button>
           </div>
@@ -387,6 +392,7 @@ export function ManagementPage({ kind }) {
               </button>
             </>}>
           <form className="admin-record-form" onSubmit={save} noValidate>
+            {kind === 'students' && <p className="admin-confirm-copy">This creates a transport record, not a login. The student must verify their university email through registration.</p>}
             <AdminField label={config.name} value={editing.name} setValue={(value) => setEditing({ ...editing, name: value })} error={errors.name}/>
             <AdminField label={config.code} value={editing.code} setValue={(value) => setEditing({ ...editing, code: value })} error={errors.code}/>
             <AdminField label={config.detail} value={editing.detail} setValue={(value) => setEditing({ ...editing, detail: value })} error={errors.detail}/>
@@ -410,6 +416,19 @@ export function ManagementPage({ kind }) {
             </label>
           </form>
         </AdminModal>)}
+      {deleting && <AdminModal title={`Delete ${deleting.name}?`} description="This permanently removes the record and any linked login. Assigned records and records with history are protected." close={() => { if (!deletePending) setDeleting(null); }} footer={<>
+        <button className="button button--secondary" disabled={deletePending} onClick={() => setDeleting(null)}>Cancel</button>
+        <button className="button button--danger" disabled={deletePending} onClick={async () => {
+            setDeletePending(true);
+            setDeleteError('');
+            try {
+                await deleteRecord(kind, deleting.id);
+                setDeleting(null);
+                setFeedback({ type: 'success', title: 'Record deleted', message: `${deleting.name} was removed.` });
+            } catch (error) { setDeleteError(error.message); }
+            finally { setDeletePending(false); }
+        }}><Trash2 /> {deletePending ? 'Deleting...' : 'Delete record'}</button>
+      </>}><p>Use Deactivate instead when you need to retain this record.</p>{deleteError && <AdminFeedback type="error" title="Not deleted" message={deleteError} dismiss={() => setDeleteError('')} />}</AdminModal>}
       {viewing && (<AdminModal title={viewing.name} description={`${config.singular[0].toUpperCase() + config.singular.slice(1)} details`} close={() => setViewing(null)}>
           <dl className="admin-detail-list">
             <div>

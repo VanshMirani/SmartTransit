@@ -46,6 +46,7 @@ const AdminLiveOperationsPage = lazy(() => import('./pages/admin/AdminLiveOperat
 const AdminOverviewPage = lazy(() => import('./pages/admin/AdminOverviewPage').then((module) => ({ default: module.AdminOverviewPage })));
 const AdminReportsPage = lazy(() => import('./pages/admin/AdminReportsPage').then((module) => ({ default: module.AdminReportsPage })));
 const AdminRoutesPage = lazy(() => import('./pages/admin/AdminRoutesPage').then((module) => ({ default: module.AdminRoutesPage })));
+const AdminSimulatorPage = lazy(() => import('./pages/admin/AdminSimulatorPage').then((module) => ({ default: module.AdminSimulatorPage })));
 export default function App() {
     const { pathname } = useLocation();
     if (backendConfig.configurationError && !['/help', '/privacy'].includes(pathname))
@@ -101,12 +102,13 @@ export default function App() {
           </ProtectedRoute>}>
         <Route index element={<DeferredPage><AdminOverviewPage /></DeferredPage>}/>
         <Route path="live" element={<DeferredPage><AdminLiveOperationsPage /></DeferredPage>}/>
-        <Route path="buses" element={<ManagementPage kind="buses"/>}/>
+        <Route path="simulator" element={<DeferredPage><AdminSimulatorPage /></DeferredPage>}/>
+        <Route path="buses" element={<ManagementPage key="buses" kind="buses"/>}/>
         <Route path="routes" element={<DeferredPage><AdminRoutesPage /></DeferredPage>}/>
-        <Route path="stops" element={<ManagementPage kind="stops"/>}/>
-        <Route path="drivers" element={<ManagementPage kind="drivers"/>}/>
-        <Route path="conductors" element={<ManagementPage kind="conductors"/>}/>
-        <Route path="students" element={<ManagementPage kind="students"/>}/>
+        <Route path="stops" element={<ManagementPage key="stops" kind="stops"/>}/>
+        <Route path="drivers" element={<ManagementPage key="drivers" kind="drivers"/>}/>
+        <Route path="conductors" element={<ManagementPage key="conductors" kind="conductors"/>}/>
+        <Route path="students" element={<ManagementPage key="students" kind="students"/>}/>
         <Route path="assignments" element={<AdminAssignmentsPage />}/>
         <Route path="notifications" element={<AdminNotificationsPage />}/>
         <Route path="complaints" element={<AdminComplaintsPage />}/>

@@ -10895,3 +10895,32 @@ button {
 }
 .staff-history-card > p { padding: 20px; }
 .staff-history-card article small, .staff-history-card article strong { overflow-wrap: anywhere; }
+.button--danger { background: #a82d35; color: #fff; border-color: #a82d35; }
+.simulation-notice { display: flex; gap: 12px; align-items: center; padding: 16px; margin-block: 20px; background: #fff5df; border: 1px solid #dfc58c; color: #654710; border-radius: 6px; }
+.simulation-notice > svg { flex-shrink: 0; }
+.simulation-notice strong { display: block; margin-bottom: 4px; }
+.simulation-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; padding-block: 12px 24px; border-bottom: 1px solid var(--border, #dce5eb); }
+.simulation-controls label { min-width: 0; }
+.simulation-controls select { width: 100%; min-width: 0; }
+.simulation-controls input[type="range"] { width: 100%; padding: 0; accent-color: #087d79; }
+.simulation-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 12px; }
+.simulation-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; padding-block: 24px; }
+.simulation-summary small, .simulation-summary strong { display: block; overflow-wrap: anywhere; }
+.simulation-summary small { color: #526a7b; margin-bottom: 6px; }
+.simulation-summary strong { font-size: 18px; }
+.simulation-workspace { display: grid; grid-template-columns: minmax(0, 2fr) minmax(240px, 1fr); gap: 24px; padding-block: 20px; }
+.simulation-map { min-width: 0; }
+.simulation-leaflet { height: 480px; width: 100%; z-index: 0; border: 1px solid #dce5eb; border-radius: 6px; }
+.simulation-map > p { font-size: 13px; color: #526a7b; margin-block: 10px; }
+.simulation-stops { min-width: 0; max-height: 530px; overflow-y: auto; }
+.simulation-stops h2 { font-size: 20px; margin-bottom: 12px; }
+.simulation-stops article { display: flex; gap: 12px; padding: 14px 0; border-bottom: 1px solid #dce5eb; }
+.simulation-stops article > span { width: 24px; flex-shrink: 0; color: #087d79; }
+.simulation-stops article div { min-width: 0; overflow-wrap: anywhere; }
+.simulation-stops strong, .simulation-stops small { display: block; }
+.simulation-stops small { color: #526a7b; margin-top: 4px; }
+@media (max-width: 760px) {
+  .simulation-controls, .simulation-workspace { grid-template-columns: minmax(0, 1fr); }
+  .simulation-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .simulation-leaflet { height: 360px; }
+}

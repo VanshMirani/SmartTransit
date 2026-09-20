@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useEffect, useMemo, useState, } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { initialComplaintCases, initialNotificationCampaigns, initialStudentNotifications, } from "../services/communicationsData";
 import { apiRequest, backendConfig } from "../services/apiClient";
@@ -16,11 +16,15 @@ export function CommunicationsProvider({ children }) {
     const [notifications, setNotifications] = useState(backendConfig.enabled ? [] : initialStudentNotifications);
     const [campaigns, setCampaigns] = useState(backendConfig.enabled ? [] : initialNotificationCampaigns);
     const [complaints, setComplaints] = useState(backendConfig.enabled ? [] : initialComplaintCases);
+    const [loadError, setLoadError] = useState('');
+    const noticeRequest = useRef(null);
     useEffect(() => {
         if (!backendConfig.enabled) {
             return;
         }
         if (!userId) {
+            noticeRequest.current = null;
+            setLoadError('');
             setNotifications([]);
             setCampaigns([]);
             setComplaints([]);
@@ -35,8 +39,9 @@ export function CommunicationsProvider({ children }) {
             setNotifications(data.notifications ?? []);
             setCampaigns(data.campaigns ?? []);
             setComplaints(data.complaints ?? []);
+            setLoadError('');
         })
-            .catch(() => undefined);
+            .catch((error) => { if (!cancelled) setLoadError(error.message); });
         void load();
         const timer = window.setInterval(load, 15000);
         return () => {
@@ -51,8 +56,11 @@ export function CommunicationsProvider({ children }) {
         unreadCount: notifications.filter((item) => item.unread).length,
         sendNotification: async (input) => {
             if (backendConfig.enabled) {
-                const campaign = await apiRequest("/admin/notifications", { method: "POST", body: input });
-                setCampaigns((items) => [campaign, ...items]);
+                const signature = JSON.stringify([userId, ...['type', 'title', 'message', 'audience', 'routeCode', 'deliveryMode', 'scheduledFor'].map((field) => input[field] ?? '')]);
+                if (noticeRequest.current?.signature !== signature) noticeRequest.current = { signature, requestId: crypto.randomUUID() };
+                const campaign = await apiRequest("/admin/notifications", { method: "POST", body: { ...input, requestId: noticeRequest.current.requestId } });
+                noticeRequest.current = null;
+                setCampaigns((items) => [campaign, ...items.filter((item) => item.id !== campaign.id)]);
                 return campaign;
             }
 
@@ -192,8 +200,9 @@ export function CommunicationsProvider({ children }) {
             setComplaints((items) => items.map((item) => (item.id === input.id ? updated : item)));
             return updated;
         },
-    }), [campaigns, complaints, notifications]);
+    }), [campaigns, complaints, notifications, userId]);
     return (<CommunicationsContext.Provider value={value}>
+      {userId && loadError && <div className="connection-warning" role="alert">Notifications and complaints could not be refreshed. Last known information is shown. {loadError}</div>}
       {children}
     </CommunicationsContext.Provider>);
 }

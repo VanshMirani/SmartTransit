@@ -1,5 +1,6 @@
 import { BusFront, CheckCircle2, ClipboardList, Save, UserRound, Users, } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { mergeAssignmentDrafts } from '../../admin/assignmentDrafts';
 import { useAdminData } from "../../admin/AdminDataContext";
 import { AdminFeedback, AdminPageHeading, AdminStatusBadge, } from "../../components/admin/AdminUI";
 
@@ -19,13 +20,16 @@ export function AdminAssignmentsPage() {
     ])));
     const [feedback, setFeedback] = useState(null);
     const [savingId, setSavingId] = useState("");
+    const dirtyIds = useRef(new Set());
     useEffect(() => {
-        setDrafts(Object.fromEntries(routes.map((route) => [
-            route.id,
-            draftFromRoute(route),
-        ])));
+        setDrafts((current) => mergeAssignmentDrafts(routes, current, dirtyIds.current));
     }, [routes]);
+    const changeDraft = (routeId, patch) => {
+        dirtyIds.current.add(routeId);
+        setDrafts((current) => ({ ...current, [routeId]: { ...current[routeId], ...patch } }));
+    };
     const save = async (routeId) => {
+        if (savingId) return;
         const route = routes.find((item) => item.id === routeId);
         const draft = drafts[routeId];
         if (!route || !draft?.busId || !draft?.driverId || !draft?.conductorId) {
@@ -39,6 +43,7 @@ export function AdminAssignmentsPage() {
         setSavingId(routeId);
         try {
             const saved = await upsertRoute({ ...route, ...draft });
+            dirtyIds.current.delete(routeId);
             setDrafts((current) => ({
                 ...current,
                 [saved.id]: {
@@ -85,10 +90,7 @@ export function AdminAssignmentsPage() {
                 <span>
                   <BusFront /> Assigned bus
                 </span>
-                <select value={draft.busId} onChange={(e) => setDrafts({
-                    ...drafts,
-                    [route.id]: { ...draft, busId: e.target.value },
-                })}>
+                <select value={draft.busId} onChange={(e) => changeDraft(route.id, { busId: e.target.value })}>
                   <option value="">Select bus</option>
                   {records.buses
                     .filter((item) => item.status === "active" || item.id === draft.busId)
@@ -101,10 +103,7 @@ export function AdminAssignmentsPage() {
                 <span>
                   <UserRound /> Assigned driver
                 </span>
-                <select value={draft.driverId} onChange={(e) => setDrafts({
-                    ...drafts,
-                    [route.id]: { ...draft, driverId: e.target.value },
-                })}>
+                <select value={draft.driverId} onChange={(e) => changeDraft(route.id, { driverId: e.target.value })}>
                   <option value="">Select driver</option>
                   {records.drivers
                     .filter((item) => item.status === "active" || item.id === draft.driverId)
@@ -117,10 +116,7 @@ export function AdminAssignmentsPage() {
                 <span>
                   <Users /> Assigned conductor
                 </span>
-                <select value={draft.conductorId} onChange={(e) => setDrafts({
-                    ...drafts,
-                    [route.id]: { ...draft, conductorId: e.target.value },
-                })}>
+                <select value={draft.conductorId} onChange={(e) => changeDraft(route.id, { conductorId: e.target.value })}>
                   <option value="">Select conductor</option>
                   {records.conductors
                     .filter((item) => item.status === "active" ||
@@ -130,7 +126,7 @@ export function AdminAssignmentsPage() {
                       </option>))}
                 </select>
               </label>
-              <button className="button admin-primary-button" onClick={() => void save(route.id)} disabled={savingId === route.id}>
+              <button className="button admin-primary-button" onClick={() => void save(route.id)} disabled={Boolean(savingId)}>
                 <Save /> {savingId === route.id ? "Saving..." : "Save assignments"}
               </button>
               {draft.busId && draft.driverId && draft.conductorId && (<p className="assignment-complete">

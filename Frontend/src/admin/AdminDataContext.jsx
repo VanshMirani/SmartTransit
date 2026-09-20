@@ -50,6 +50,12 @@ export function AdminDataProvider({ children }) {
     }, []);
     const value = useMemo(() => ({
         records, routes, fleet, activity, refreshData, history, loadError,
+        deleteRecord: async (kind, id) => {
+            if (backendConfig.enabled) await apiRequest(`/admin/${kind}/${id}`, { method: 'DELETE' });
+            if (kind === 'routes') setRoutes((current) => current.filter((item) => item.id !== id));
+            else setRecords((current) => ({ ...current, [kind]: current[kind].filter((item) => item.id !== id) }));
+            if (backendConfig.enabled) await refreshData();
+        },
         upsertRecord: async (kind, record) => {
             if (backendConfig.enabled) {
                 const saved = await apiRequest(`/admin/${kind}/${record.id}`, { method: 'PUT', body: record });

@@ -6,6 +6,8 @@ import { isInstituteEmail, normalizeEmail, signupEmailHelpText, validatePassword
 import { sendPasswordResetOtpEmail, sendSignupOtpEmail } from "./emailService.js";
 import { hashPassword, verifyPassword } from "./passwords.js";
 import { captureStopOffsets, stopsWithDepartureEstimates } from './tripTiming.js';
+import { deleteManagedRecord, validateManagedRecord, validateManagedRoute } from './adminRecords.js';
+import { createGpsSimulator } from './gpsSimulation.js';
 
 const signupOtpExpiryMinutes = 10;
 const passwordResetOtpExpiryMinutes = 10;
@@ -93,16 +95,24 @@ function logPasswordResetEmailError(error) {
 
 async function readBody(request) {
     const chunks = [];
-    for await (const chunk of request)
-        chunks.push(chunk);
+    let size = 0;
+    let tooLarge = false;
+    for await (const chunk of request) {
+        size += chunk.length;
+        if (size > 512 * 1024) tooLarge = true;
+        if (!tooLarge) chunks.push(chunk);
+    }
+    if (tooLarge) throw Object.assign(new Error('Request is too large. Reduce the submitted data.'), { status: 413 });
     const raw = Buffer.concat(chunks).toString("utf8");
     if (!raw)
         return {};
     try {
-        return JSON.parse(raw);
+        const value = JSON.parse(raw);
+        if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Expected a JSON object.');
+        return value;
     }
     catch {
-        throw new Error("Invalid JSON request body.");
+        throw Object.assign(new Error('Submit a valid JSON object.'), { status: 400 });
     }
 }
 
@@ -179,6 +189,7 @@ function normalizedRouteStops(stops = [], templateStops = []) {
 
 function routeFromData(data, routeCode) {
     const normalizedRouteCode = String(routeCode ?? "").trim().toUpperCase();
+    if (data.admin?.deletedRouteCodes?.includes(normalizedRouteCode)) return null;
     const managedRouteRecord = data.admin?.routes?.find((route) => String(route.code ?? "").trim().toUpperCase() === normalizedRouteCode);
     const managedRoute = managedRouteRecord ? trimManagedRouteStrings(managedRouteRecord) : null;
     const routeTemplate = indusRoutes.find((route) => route.code === normalizedRouteCode);
@@ -186,6 +197,9 @@ function routeFromData(data, routeCode) {
         ? data.admin?.records?.buses?.map((bus) => trimAdminRecordStrings(bus)).find((bus) => bus.id === managedRoute.busId)
         : null;
     const assignedBusNumber = assignedBus?.name;
+    const managedBusFields = managedRoute && Object.hasOwn(managedRoute, 'busId')
+        ? { primaryBusNumber: assignedBusNumber ?? '', busNumbers: assignedBusNumber ? [assignedBusNumber] : [] }
+        : {};
     if (managedRoute && routeTemplate) {
         return {
             ...routeTemplate,
@@ -203,6 +217,7 @@ function routeFromData(data, routeCode) {
             notes: routeValue(managedRoute.notes, routeTemplate.notes),
             studentCount: routeValue(managedRoute.studentCount, routeTemplate.studentCount),
             stops: normalizedRouteStops(managedRoute.stops?.length ? managedRoute.stops : routeTemplate.stops, routeTemplate.stops),
+            ...managedBusFields,
         };
     }
     if (managedRoute) {
@@ -212,6 +227,7 @@ function routeFromData(data, routeCode) {
             busNumbers: managedRoute.busNumbers?.length ? managedRoute.busNumbers : assignedBusNumber ? [assignedBusNumber] : [],
             primaryBusNumber: routeValue(managedRoute.primaryBusNumber, assignedBusNumber),
             stops: normalizedRouteStops(managedRoute.stops ?? []),
+            ...managedBusFields,
         };
     }
     return routeTemplate ? { ...routeTemplate, stops: normalizedRouteStops(routeTemplate.stops, routeTemplate.stops) } : null;
@@ -1132,12 +1148,14 @@ function busRecordForRoute(data, route) {
     if (!route)
         return null;
     const records = (data.admin?.records?.buses ?? []).map((bus) => trimAdminRecordStrings(bus));
+    if (Object.hasOwn(route, 'busId')) return records.find((bus) => bus.id === route.busId) ?? null;
     return records.find((bus) => bus.id === route.busId) ??
         records.find((bus) => bus.name === route.primaryBusNumber) ??
         null;
 }
 
 function busNumberForRoute(data, route) {
+    if (route && Object.hasOwn(route, 'busId')) return busRecordForRoute(data, route)?.name ?? '';
     return busRecordForRoute(data, route)?.name ??
         route?.primaryBusNumber ??
         route?.busNumbers?.[0] ??
@@ -1147,6 +1165,7 @@ function busNumberForRoute(data, route) {
 function fleetBusMatchesRouteSelection(data, bus, route) {
     if (!bus || !route)
         return false;
+    if (Object.hasOwn(route, 'busId') && !route.busId) return false;
     const busNumber = busNumberForRoute(data, route);
     if (route.busId)
         return bus.id === route.busId || bus.number === busNumber;
@@ -1365,9 +1384,9 @@ function adminDataWithConsistentAssignments(data) {
         const busRecord = busRecordForRoute(data, route);
         return {
             ...routeRecord,
-            busId: routeRecord.busId || busRecord?.id || `bus-${busNumberForRoute(data, route)}`,
-            driverId: routeRecord.driverId || staff.driver.id,
-            conductorId: routeRecord.conductorId || staff.conductor.id,
+            busId: routeRecord.busId ?? busRecord?.id ?? `bus-${busNumberForRoute(data, route)}`,
+            driverId: routeRecord.driverId ?? staff.driver.id,
+            conductorId: routeRecord.conductorId ?? staff.conductor.id,
             primaryBusNumber: busNumberForRoute(data, route),
             stops: route.stops,
         };
@@ -1689,14 +1708,14 @@ function buildStaffTripForRoute(data, route, direction = "morning", overrides = 
 
 function operationsForAssignedStaff(data, user) {
     const assignedRoute = assignedRouteForStaff(data, user);
-    if (!assignedRoute) {
+    if (!assignedRoute || !busNumberForRoute(data, assignedRoute)) {
         return {
             ...data.operations,
             activeStaffTrip: null,
             operationalStops: [],
             operationalCurrentStopId: "",
             tripStatus: "unassigned",
-            gpsUpdatedAt: "No route assigned",
+            gpsUpdatedAt: "Transport assignment incomplete",
             liveLocation: null,
             seatUpdates: [],
         };
@@ -1994,7 +2013,7 @@ function buildUnassignedTransitData(data, approvalStatus = "pending") {
 
 function buildStudentTransitData(data, user) {
     const assignedRoute = routeForUser(data, user);
-    if (!assignedRoute || !assignedRoute.stops.some((stop) => stop.id === user.stopId)) {
+    if (!assignedRoute || !busNumberForRoute(data, assignedRoute) || !assignedRoute.stops.some((stop) => stop.id === user.stopId)) {
         return buildUnassignedTransitData(data, user.status === "active" ? "approved" : user.status);
     }
     const preferredStopId = user.stopId;
@@ -2078,6 +2097,16 @@ function communicationsForUser(data, user) {
 }
 
 export function createApiServer(store, options = {}) {
+    const simulator = createGpsSimulator({ project(route, trip, location) {
+        const data = { operations: { activeStaffTrip: trip, tripStatus: 'active', liveLocations: { [trip.id]: location } } };
+        const context = buildLiveEtaContext(data, route, trip, location);
+        return {
+            nextStopId: context.nextStopId, nextStopName: context.nextStopName,
+            lastReachedStopId: context.lastReachedStopId, nextStopEta: context.nextStopEta,
+            ...etaSummary(context, route),
+            stops: withStopProgress(route, context.nextStopId).map((stop) => ({ ...stop, ...(stop.status === 'completed' ? {} : etaForStop(context, stop.id)) })),
+        };
+    } });
     const otpEmailSender = options.otpEmailSender ?? sendSignupOtpEmail;
     const passwordResetEmailSender = options.passwordResetEmailSender ?? sendPasswordResetOtpEmail;
     const signupOtpLimiter = createRateLimiter({ limit: 3, windowMs: 15 * 60 * 1000 });
@@ -2392,6 +2421,7 @@ export function createApiServer(store, options = {}) {
             }
 
             if (method === 'POST' && pathname === '/api/auth/logout') {
+                simulator.remove(request.headers.authorization);
                 const token = String(request.headers.authorization ?? '').replace(/^Bearer /, '');
                 await store.update((data) => { delete data.sessions[token]; return { ok: true }; });
                 send(response, 200, { ok: true });
@@ -2555,30 +2585,44 @@ export function createApiServer(store, options = {}) {
                     return;
                 }
                 const body = await readBody(request);
-                if (!String(body.title ?? '').trim() || !String(body.message ?? '').trim() ||
+                if (typeof body.title !== 'string' || !body.title.trim() || body.title.length > 80 || typeof body.message !== 'string' || !body.message.trim() || body.message.length > 300 ||
+                    !['delay', 'route-change', 'cancellation', 'general'].includes(body.type) ||
                     !['all', 'route'].includes(body.audience) || !['now', 'scheduled'].includes(body.deliveryMode)) {
                     badRequest(response, 'Enter a title, message, valid audience and delivery time.'); return;
                 }
                 if (body.deliveryMode === 'scheduled') {
                     const value = String(body.scheduledFor ?? '');
                     const date = new Date(/(?:Z|[+-]\d{2}:\d{2})$/.test(value) ? value : `${value}+05:30`);
-                    if (!Number.isFinite(date.getTime()) || date.getTime() <= Date.now()) {
+                    if (!Number.isFinite(date.getTime())) {
                         badRequest(response, 'Choose a future notification time (India time).'); return;
                     }
                     body.scheduledFor = date.toISOString();
                 }
+                else delete body.scheduledFor;
+                if (body.audience === 'all') delete body.routeCode;
                 const campaign = await store.update((data) => {
+                    if (body.requestId !== undefined && (typeof body.requestId !== 'string' || !body.requestId.trim() || body.requestId.length > 128)) return { error: 'Invalid notification request ID.' };
+                    const fields = ['type', 'title', 'message', 'audience', 'routeCode', 'deliveryMode', 'scheduledFor'];
+                    const existing = body.requestId && data.communications.campaigns.find((item) => item.requestId === body.requestId && item.createdById === user.id);
+                    if (existing) {
+                        if (fields.some((field) => String(existing[field] ?? '') !== String(body[field] ?? ''))) return { error: 'This notification request was already used with different details.' };
+                        return existing;
+                    }
+                    if (body.deliveryMode === 'scheduled' && Date.parse(body.scheduledFor) <= Date.now()) return { error: 'Choose a future notification time (India time).' };
+                    if (body.audience === 'route' && !data.admin.routes.some((route) => route.code === body.routeCode)) return { error: 'Choose an existing route for this notification.' };
                     const recipientCount = body.audience === "all"
                         ? studentRecipientCount(data)
                         : studentRecipientCount(data, body.routeCode);
                     const next = {
                         ...body,
-                        id: `NTF-${new Date().getFullYear()}-${String(data.communications.campaigns.length + 183).padStart(4, "0")}`,
+                        id: `NTF-${randomUUID()}`,
+                        routeCode: body.audience === 'route' ? body.routeCode : undefined,
                         createdAt: currentShortDateTime(),
                         status: body.deliveryMode === "scheduled" ? "scheduled" : "delivered",
                         deliveredCount: body.deliveryMode === "scheduled" ? 0 : recipientCount,
                         recipientCount,
                         createdBy: user.name,
+                        createdById: user.id,
                     };
                     data.communications.campaigns.unshift(next);
                     if (next.status === "delivered") {
@@ -2594,6 +2638,7 @@ export function createApiServer(store, options = {}) {
                     }
                     return next;
                 });
+                if (campaign.error) { badRequest(response, campaign.error); return; }
                 send(response, 201, campaign);
                 return;
             }
@@ -2605,6 +2650,11 @@ export function createApiServer(store, options = {}) {
                     return;
                 }
                 const body = await readBody(request);
+                if (!['new', 'in-progress', 'resolved'].includes(body.status) ||
+                    ['assignedTo', 'resolution', 'internalNote'].some((key) => body[key] !== undefined && (typeof body[key] !== 'string' || body[key].length > 2000)) ||
+                    (body.status === 'resolved' && !body.resolution?.trim())) {
+                    badRequest(response, 'Choose a valid complaint status and provide a resolution before resolving it.'); return;
+                }
                 const updated = await store.update((data) => {
                     const complaint = data.communications.complaints.find((item) => item.id === complaintMatch[1]);
                     if (!complaint)
@@ -2664,6 +2714,34 @@ export function createApiServer(store, options = {}) {
             }
 
             const adminRecordMatch = pathname.match(/^\/api\/admin\/(buses|drivers|conductors|students|stops)\/([^/]+)(?:\/status)?$/);
+            const deleteMatch = pathname.match(/^\/api\/admin\/(buses|drivers|conductors|students|routes)\/([^/]+)$/);
+            if (method === 'DELETE' && deleteMatch) {
+                if (!requireRole(user, ['admin'])) { send(response, 403, { message: 'Only admins can delete records.' }); return; }
+                const result = await store.update((data) => deleteManagedRecord(data, deleteMatch[1], deleteMatch[2]));
+                if (result.error) { badRequest(response, result.error); return; }
+                send(response, 200, result);
+                return;
+            }
+            if (pathname === '/api/admin/simulation') {
+                if (!requireRole(user, ['admin'])) { send(response, 403, { message: 'Only admins can use the isolated simulator.' }); return; }
+                const key = request.headers.authorization;
+                let result;
+                if (method === 'GET') result = simulator.get(key);
+                else if (method === 'DELETE') result = simulator.remove(key);
+                else if (method === 'PATCH') result = simulator.update(key, await readBody(request));
+                else if (method === 'POST') {
+                    const body = await readBody(request);
+                    const data = await store.get();
+                    const managed = data.admin.routes.find((route) => route.id === body.routeId);
+                    if (!managed || !['morning', 'return'].includes(body.direction)) { badRequest(response, 'Choose an existing route and a trip direction.'); return; }
+                    const source = routeForTripDirection(routeFromData(data, managed.code), body.direction);
+                    const route = { id: source.id, code: source.code, name: source.name, direction: body.direction, stops: source.stops.map(({ id, name, coordinates, scheduledTime }) => ({ id, name, coordinates, scheduledTime })) };
+                    result = simulator.create(key, route, { speedKmh: body.speedKmh, playbackRate: body.playbackRate });
+                } else { notFound(response); return; }
+                if (result.error) { badRequest(response, result.error); return; }
+                send(response, 200, result);
+                return;
+            }
             if ((method === "PUT" || method === "PATCH") && adminRecordMatch) {
                 if (!requireRole(user, ["admin"])) {
                     send(response, 403, { message: "Only admins can manage records." });
@@ -2674,7 +2752,11 @@ export function createApiServer(store, options = {}) {
                     const kind = adminRecordMatch[1];
                     if (kind === 'stops') return { error: 'Stops are managed inside their routes. Open the route editor to change a stop.' };
                     const id = adminRecordMatch[2];
-                    let next = trimAdminRecordStrings(body?.id ? body : { ...data.admin.records[kind].find((item) => item.id === id), ...body });
+                    if (body.id && body.id !== id) return { error: 'Record ID does not match the requested record.' };
+                    const previous = data.admin.records[kind].find((item) => item.id === id);
+                    let next = trimAdminRecordStrings({ ...previous, ...body, id });
+                    const recordError = validateManagedRecord(data, kind, next, previous);
+                    if (recordError) return { error: recordError };
                     if (kind === "students") {
                         const assignment = normalizeStudentRecordAssignment(data, next);
                         if (assignment.error)
@@ -2714,7 +2796,11 @@ export function createApiServer(store, options = {}) {
                 const body = await readBody(request);
                 const updated = await store.update((data) => {
                     const id = routeMatch[1];
-                    const next = trimManagedRouteStrings(body?.id ? body : { ...data.admin.routes.find((item) => item.id === id), ...body });
+                    if (body.id && body.id !== id) return { error: 'Route ID does not match the requested route.' };
+                    const previous = data.admin.routes.find((item) => item.id === id);
+                    const next = trimManagedRouteStrings({ ...previous, ...body, id });
+                    const routeError = validateManagedRoute(data, next, previous);
+                    if (routeError) return { error: routeError };
                     if (Array.isArray(next.stops)) {
                         if (next.stops.some((stop) => !hasCoordinates(stop.coordinates)))
                             return { error: 'Every route stop needs a valid map location.' };
@@ -2724,6 +2810,7 @@ export function createApiServer(store, options = {}) {
                     data.admin.routes = exists
                         ? data.admin.routes.map((item) => item.id === id ? next : item)
                         : [next, ...data.admin.routes];
+                    data.admin.deletedRouteCodes = (data.admin.deletedRouteCodes ?? []).filter((code) => code !== next.code);
                     return next;
                 });
                 if (updated.error) { badRequest(response, updated.error); return; }
@@ -2780,6 +2867,12 @@ export function createApiServer(store, options = {}) {
                             (user.role === 'driver' && state.activeStaffTrip?.driverUserId === user.id)));
                     if (conflict) return { error: 'This bus or driver already has an active trip.' };
                     const route = routeForTrip(db, tripState.activeStaffTrip);
+                    const managedRoute = db.admin.routes.find((item) => item.code === route?.code);
+                    const assignedBus = db.admin.records.buses.find((item) => item.id === managedRoute?.busId);
+                    const assignedDriver = db.admin.records.drivers.find((item) => item.id === managedRoute?.driverId);
+                    const assignedConductor = db.admin.records.conductors.find((item) => item.id === managedRoute?.conductorId);
+                    if (managedRoute?.status !== 'active' || assignedBus?.status !== 'active' || assignedDriver?.status !== 'active' || assignedConductor?.status !== 'active')
+                        return { error: 'An active route, bus, driver and conductor must be assigned before starting this trip.' };
                     const firstStop = route?.stops?.[0];
                     tripState.tripStatus = "active";
                     tripState.gpsUpdatedAt = "Waiting for driver phone";
@@ -2991,8 +3084,9 @@ export function createApiServer(store, options = {}) {
             notFound(response);
         }
         catch (error) {
+            if (error.status === 400 || error.status === 413) { send(response, error.status, { message: error.message }); return; }
             console.error("[smarttransit-api]", request.method, new URL(request.url, "http://localhost").pathname, error);
-            send(response, 500, { message: error instanceof Error ? error.message : "Unexpected server error." });
+            send(response, 500, { message: 'The transport service could not complete this request. Please retry.' });
         }
     });
 }

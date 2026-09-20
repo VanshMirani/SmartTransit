@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { CircleMarker, MapContainer, Polyline, Popup, } from "react-leaflet";
 import { useMapEvents } from "react-leaflet";
 import { useAdminData } from "../../admin/AdminDataContext";
-import { AdminFeedback, AdminPageHeading, AdminStatusBadge, } from "../../components/admin/AdminUI";
+import { AdminFeedback, AdminModal, AdminPageHeading, AdminStatusBadge, } from "../../components/admin/AdminUI";
 import { CampusMapMarker, MapAutoCenter, MapFitBounds, SmartTileLayer, StopNameTooltip } from "../../components/maps/SmartTransitMap";
 import { coordinatesFromStop, coordinatesFromText, currentBrowserLocation, defaultAhmedabadMapCenter, formatCoordinate, onlineLocationResults, routeLocationResults, uniqueLocationResults, } from "../../services/locationSearch";
 const prepareRouteForEdit = (route) => ({
@@ -36,7 +36,7 @@ const emptyRoute = () => ({
 });
 const isCampusStop = (stop) => /indus university/i.test(String(stop?.name ?? ""));
 export function AdminRoutesPage() {
-    const { routes, records, upsertRoute, toggleRoute } = useAdminData();
+    const { routes, records, upsertRoute, toggleRoute, deleteRecord } = useAdminData();
     const [searchParams] = useSearchParams();
     const requestedRoute = routes.find((route) => route.code === searchParams.get('editRoute'));
     const [selectedId, setSelectedId] = useState(requestedRoute?.id ?? routes[0]?.id ?? "");
@@ -45,6 +45,9 @@ export function AdminRoutesPage() {
     const [errors, setErrors] = useState({});
     const [feedback, setFeedback] = useState(null);
     const [saving, setSaving] = useState(false);
+    const [changingStatus, setChangingStatus] = useState(false);
+    const [deleting, setDeleting] = useState(null);
+    const [deleteError, setDeleteError] = useState('');
     const filtered = useMemo(() => routes.filter((route) => `${route.code} ${route.name} ${route.startPoint} ${route.destination}`
         .toLowerCase()
         .includes(query.toLowerCase())), [routes, query]);
@@ -55,7 +58,7 @@ export function AdminRoutesPage() {
     };
     const save = async (event) => {
         event.preventDefault();
-        if (!editing)
+        if (!editing || saving)
             return;
         const next = {};
         if (!editing.code.trim())
@@ -140,13 +143,19 @@ export function AdminRoutesPage() {
                     </p>
                   </div>
                   <div>
-                    <button className="button button--secondary" onClick={() => void toggleRoute(selected.id)}>
+                    <button className="button button--secondary" disabled={changingStatus} onClick={async () => {
+                        setChangingStatus(true);
+                        try { await toggleRoute(selected.id); setFeedback({ type: 'success', title: 'Route status updated', message: selected.code }); }
+                        catch (error) { setFeedback({ type: 'error', title: 'Status not changed', message: error.message }); }
+                        finally { setChangingStatus(false); }
+                    }}>
                       {selected.status === "active" ? (<ToggleRight />) : (<ToggleLeft />)}
                       {selected.status === "active" ? "Deactivate" : "Activate"}
                     </button>
                     <button className="button admin-primary-button" onClick={() => beginEdit(selected)}>
                       <Pencil /> Edit route
                     </button>
+                    <button className="button button--secondary" title="Delete route" aria-label={`Delete ${selected.code}`} onClick={() => { setDeleteError(''); setDeleting(selected); }}><Trash2 /></button>
                   </div>
                 </header>
                 <div className="route-detail-grid">
@@ -203,14 +212,24 @@ export function AdminRoutesPage() {
               </section>)}
           </div>
         </>)}
+      {deleting && <AdminModal title={`Delete ${deleting.code}?`} description="Unassign its staff, bus and students first. Routes with trip history must be deactivated instead." close={() => { if (!saving) setDeleting(null); }} footer={<>
+        <button className="button button--secondary" disabled={saving} onClick={() => setDeleting(null)}>Cancel</button>
+        <button className="button button--danger" disabled={saving} onClick={async () => {
+            setSaving(true);
+            setDeleteError('');
+            try { await deleteRecord('routes', deleting.id); setDeleting(null); setFeedback({ type: 'success', title: 'Route deleted', message: deleting.code }); }
+            catch (error) { setDeleteError(error.message); }
+            finally { setSaving(false); }
+        }}><Trash2 /> {saving ? 'Deleting...' : 'Delete route'}</button>
+      </>}><p>Deleted routes cannot be restored through this screen.</p>{deleteError && <AdminFeedback type="error" title="Not deleted" message={deleteError} dismiss={() => setDeleteError('')} />}</AdminModal>}
     </div>);
 }
 function RouteEditor({ route, setRoute, errors, records, routes, save, saving, cancel, }) {
     const [newStop, setNewStop] = useState({
         name: "",
         scheduledTime: "",
-        lat: "23.0700",
-        lng: "72.5400",
+        lat: "",
+        lng: "",
     });
     const [coordinateTarget, setCoordinateTarget] = useState("new");
     const [stopError, setStopError] = useState("");
@@ -349,7 +368,7 @@ function RouteEditor({ route, setRoute, errors, records, routes, save, saving, c
                 },
             ],
         });
-        setNewStop({ name: "", scheduledTime: "", lat: "23.0700", lng: "72.5400" });
+        setNewStop({ name: "", scheduledTime: "", lat: "", lng: "" });
         setCoordinateTarget("new");
         setStopError("");
     };

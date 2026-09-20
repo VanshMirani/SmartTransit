@@ -42,8 +42,136 @@ async function fixture(t, options = {}) {
         await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
         return store;
     };
-    return { request, login, store, filename, restart };
+    const rawRequest = async (route, body) => fetch(`http://127.0.0.1:${server.address().port}/api${route}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+    return { request, rawRequest, login, store, filename, restart };
 }
+
+test('notification retries publish once and reject reused IDs with different content', async (t) => {
+    const { request, login, store } = await fixture(t);
+    const admin = await login('admin');
+    const input = { requestId: 'qa-notice-retry', type: 'general', title: 'QA notice', message: 'Local verification only.', audience: 'all', routeCode: 'ignored', deliveryMode: 'now' };
+    const first = await request('/admin/notifications', admin, input);
+    assert.equal(first.status, 201, first.data.message);
+    const retry = await request('/admin/notifications', admin, input);
+    assert.equal(retry.data.id, first.data.id);
+    assert.equal((await store.get()).communications.campaigns.filter((item) => item.requestId === input.requestId).length, 1);
+    assert.equal((await request('/admin/notifications', admin, { ...input, message: 'Changed' })).status, 400);
+    assert.equal((await request('/admin/notifications', admin, { ...input, requestId: 'qa-other', type: 'invalid' })).status, 400);
+    assert.equal((await request('/admin/notifications', admin, { ...input, requestId: 'qa-route', audience: 'route', routeCode: 'IU-R404' })).status, 400);
+    const scheduled = { ...input, requestId: 'qa-scheduled', deliveryMode: 'scheduled', scheduledFor: new Date(Date.now() + 60000).toISOString() };
+    const scheduledFirst = await request('/admin/notifications', admin, scheduled);
+    assert.equal(scheduledFirst.status, 201);
+    assert.equal((await request('/admin/notifications', admin, scheduled)).data.id, scheduledFirst.data.id);
+});
+
+test('inactive or missing route resources cannot start a trip', async (t) => {
+    const { request, login, store } = await fixture(t);
+    const driver = await login('driver');
+    const state = (await request('/driver/trips/current', driver)).data;
+    const trip = state.activeStaffTrip;
+    const initial = await store.get();
+    const route = initial.admin.routes.find((item) => item.code === trip.routeCode);
+    for (const [kind, field] of [['buses', 'busId'], ['drivers', 'driverId'], ['conductors', 'conductorId']]) {
+        await store.update((data) => { data.admin.records[kind].find((item) => item.id === route[field]).status = 'inactive'; return true; });
+        assert.notEqual((await request(`/driver/trips/${trip.id}/start`, driver, {})).status, 200);
+        await store.update((data) => { data.admin.records[kind].find((item) => item.id === route[field]).status = 'active'; return true; });
+    }
+    await store.update((data) => { data.admin.routes.find((item) => item.id === route.id).busId = ''; return true; });
+    const unassigned = (await request('/driver/trips/current', driver)).data;
+    assert.equal(unassigned.activeStaffTrip, null, 'A removed bus must not fall back to the seeded vehicle');
+    const student = await login('student');
+    const transit = (await request('/student/transit', student)).data;
+    assert.equal(transit.assignmentStatus, 'unassigned');
+    assert.equal(transit.approvalStatus, 'approved');
+    assert.equal(transit.bus.capacity, 0);
+    assert.equal((await request(`/driver/trips/${trip.id}/start`, driver, {})).status, 400);
+    await store.update((data) => { data.admin.routes.find((item) => item.id === route.id).busId = route.busId; return true; });
+    assert.equal((await request(`/driver/trips/${trip.id}/start`, driver, {})).status, 200);
+});
+
+test('malformed and oversized JSON are rejected without exposing server errors', async (t) => {
+    const { rawRequest } = await fixture(t);
+    for (const value of ['{invalid', 'null', '[]']) {
+        const response = await rawRequest('/auth/login', value);
+        assert.equal(response.status, 400);
+        assert.equal((await response.json()).message, 'Submit a valid JSON object.');
+    }
+    assert.equal((await rawRequest('/auth/login', JSON.stringify({ value: 'x'.repeat(513 * 1024) }))).status, 413);
+});
+
+test('admin CRUD rejects invalid identity, capacity and duplicate codes; deletion revokes only the new login', async (t) => {
+    const { request, login, store } = await fixture(t);
+    const admin = await login('admin');
+    const driver = await login('driver');
+    const before = await store.get();
+    const bus = { id: 'qa-bus', name: '9990', code: 'GJ-QA-9990', detail: 'QA bus', contact: '50 seats', assignment: 'Unassigned', status: 'active' };
+    assert.equal((await request('/admin/buses/qa-bus', admin, { ...bus, id: 'other' }, 'PUT')).status, 400);
+    for (const contact of ['-1', '12.5', 'zero', '0', '201']) assert.equal((await request('/admin/buses/qa-bus', admin, { ...bus, contact }, 'PUT')).status, 400);
+    assert.equal((await request('/admin/buses/qa-bus', admin, bus, 'PUT')).status, 200);
+    assert.equal((await request('/admin/buses/duplicate', admin, { ...bus, id: 'duplicate' }, 'PUT')).status, 400);
+    assert.equal((await request('/admin/buses/qa-bus', driver, undefined, 'DELETE')).status, 403);
+    const staff = { id: 'qa-driver', name: 'QA Driver', code: 'QA-DRV', detail: 'QA licence', contact: '9000000000', assignment: 'Unassigned', status: 'active', accountEmail: 'qa-driver@transport.indusuni.ac.in', temporaryPassword: 'QaDriver@2026!' };
+    const created = await request('/admin/drivers/qa-driver', admin, staff, 'PUT');
+    assert.equal(created.status, 200, created.data.message);
+    const auth = (await request('/auth/login', null, { email: staff.accountEmail, password: staff.temporaryPassword })).data;
+    assert.ok(auth.token);
+    assert.equal((await request('/admin/drivers/claimed', admin, { ...staff, id: 'claimed', code: 'QA-OTHER', accountUserId: created.data.accountUserId }, 'PUT')).status, 400);
+    assert.equal((await request('/admin/drivers/qa-driver', admin, undefined, 'DELETE')).status, 200);
+    assert.equal((await request('/auth/session', auth.token)).status, 401);
+    assert.equal((await request('/admin/drivers/qa-driver', admin, undefined, 'DELETE')).status, 200);
+    assert.equal((await request('/admin/buses/qa-bus', admin, undefined, 'DELETE')).status, 200);
+    const after = await store.get();
+    assert.deepEqual(after.admin.records, before.admin.records);
+    assert.deepEqual(after.users, before.users);
+    assert.equal((await request('/auth/session', admin)).status, 200);
+});
+
+test('route edits and deletion protect assignments, active trips, student stops and completed history', async (t) => {
+    const { request, login, store } = await fixture(t);
+    const admin = await login('admin'), driver = await login('driver');
+    const bootstrap = (await request('/admin/bootstrap', admin)).data;
+    const trip = (await request('/driver/trips/current', driver)).data.activeStaffTrip;
+    const route = bootstrap.routes.find((item) => item.code === trip.routeCode);
+    const duplicate = { ...route, id: 'qa-route', code: 'IU-R999', stops: route.stops };
+    assert.equal((await request('/admin/routes/qa-route', admin, duplicate, 'PUT')).status, 400);
+    const disposable = { ...duplicate, busId: '', driverId: '', conductorId: '' };
+    assert.equal((await request('/admin/routes/qa-route', admin, disposable, 'PUT')).status, 200);
+    assert.equal((await request('/admin/routes/qa-route', admin, { ...disposable, stops: [route.stops[0], route.stops[0]] }, 'PUT')).status, 400);
+    assert.equal((await request('/admin/routes/qa-route', admin, undefined, 'DELETE')).status, 200);
+    assert.equal((await request(`/admin/buses/${route.busId}`, admin, undefined, 'DELETE')).status, 400);
+    assert.equal((await request(`/driver/trips/${trip.id}/start`, driver, {})).status, 200);
+    assert.equal((await request(`/admin/routes/${route.id}`, admin, { ...route, name: 'Changed while running' }, 'PUT')).status, 400);
+    assert.equal((await request(`/admin/routes/${route.id}/status`, admin, { status: 'inactive' }, 'PATCH')).status, 400);
+    assert.equal((await request(`/admin/buses/${route.busId}`, admin, { contact: '10 seats' }, 'PATCH')).status, 400);
+    await request(`/driver/trips/${trip.id}/end`, driver, {});
+    assert.equal((await request(`/admin/routes/${route.id}`, admin, undefined, 'DELETE')).status, 400);
+    assert.equal((await store.get()).admin.routes.find((item) => item.id === route.id).name, route.name);
+});
+
+test('simulation is admin and session scoped, uses distance ETA, and makes no database writes', async (t) => {
+    const { request, login, store } = await fixture(t);
+    const admin = await login('admin'), secondAdmin = await login('admin');
+    const driver = await login('driver'), student = await login('student');
+    const before = await store.get();
+    const route = before.admin.routes[0];
+    for (const token of [driver, student]) assert.equal((await request('/admin/simulation', token)).status, 403);
+    const start = await request('/admin/simulation', admin, { routeId: route.id, direction: 'morning', speedKmh: 30, playbackRate: 60 });
+    assert.equal(start.status, 200, start.data.message);
+    assert.equal(start.data.simulation, true);
+    assert.equal(start.data.location.source, 'simulation');
+    assert.ok(start.data.stops[1].estimatedArrivalAt);
+    assert.equal(start.data.stops[1].distanceSource, 'coordinate-estimate');
+    assert.equal((await request('/admin/simulation', secondAdmin)).data.status, 'idle');
+    assert.equal((await request('/admin/simulation', admin, { id: start.data.id, action: 'pause' }, 'PATCH')).data.status, 'paused');
+    const paused = (await request('/admin/simulation', admin)).data;
+    assert.equal(paused.nextStopEstimatedArrivalAt, null);
+    assert.deepEqual(await store.get(), before, 'simulation must not touch sessions, users, operations, alerts or database revisions');
+    assert.equal((await request('/admin/simulation', admin, undefined, 'DELETE')).data.status, 'idle');
+    const returning = (await request('/admin/simulation', admin, { routeId: route.id, direction: 'return' })).data;
+    assert.equal(returning.route.stops[0].id, start.data.route.stops.at(-1).id);
+    await request('/auth/logout', admin, {});
+    assert.equal((await request('/admin/simulation', admin)).status, 401);
+});
 
 test('actual departure and stop estimates persist and agree across roles without clock-based stop progress', async (t) => {
     const { request, login, restart } = await fixture(t);

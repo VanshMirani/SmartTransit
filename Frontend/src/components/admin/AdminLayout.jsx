@@ -1,4 +1,4 @@
-import { AlertTriangle, Bell, BusFront, ChevronDown, ClipboardList, FileBarChart, Gauge, LayoutDashboard, LogOut, MapPinned, Menu, Route, Search, Settings, Users, X, } from "lucide-react";
+import { AlertTriangle, Bell, BusFront, ChevronDown, ClipboardList, FileBarChart, FlaskConical, Gauge, LayoutDashboard, LogOut, MapPinned, Menu, Route, Search, Settings, Users, X, } from "lucide-react";
 import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
@@ -6,6 +6,7 @@ import { useCommunications } from "../../communications/CommunicationsContext";
 const links = [
     { to: "/admin", end: true, icon: LayoutDashboard, label: "Overview" },
     { to: "/admin/live", end: false, icon: Gauge, label: "Live operations" },
+    { to: "/admin/simulator", end: false, icon: FlaskConical, label: "GPS simulator" },
     { to: "/admin/buses", end: false, icon: BusFront, label: "Buses" },
     { to: "/admin/routes", end: false, icon: Route, label: "Routes" },
     { to: "/admin/stops", end: false, icon: MapPinned, label: "Stops" },

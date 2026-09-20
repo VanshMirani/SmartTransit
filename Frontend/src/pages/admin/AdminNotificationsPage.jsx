@@ -36,6 +36,7 @@ export function AdminNotificationsPage() {
     const visibleCampaigns = useMemo(() => campaigns.filter((campaign) => historyStatus === "all" || campaign.status === historyStatus), [campaigns, historyStatus]);
     const submit = async (event) => {
         event.preventDefault();
+        if (submitting) return;
         const scheduledForField = event.currentTarget.elements.namedItem("scheduledFor");
         const submittedForm = {
             ...form,
@@ -79,11 +80,11 @@ export function AdminNotificationsPage() {
             setForm(blankForm);
             setErrors({});
         }
-        catch {
+        catch (error) {
             setFeedback({
                 type: "error",
-                title: "Delivery failed",
-                message: "The notification could not be queued. Please retry.",
+                title: "Publication not confirmed",
+                message: error.message || "Keep these details unchanged and retry safely.",
             });
         }
         finally {
@@ -211,13 +212,13 @@ export function AdminNotificationsPage() {
         <div className="admin-panel-title notification-history-heading">
           <div>
             <h2>Notification history</h2>
-            <p>Delivery status for recent announcements</p>
+            <p>In-app publication history</p>
           </div>
           <label className="admin-filter">
             <span className="sr-only">Filter delivery status</span>
             <select value={historyStatus} onChange={(event) => setHistoryStatus(event.target.value)} aria-label="Filter notification delivery status">
               <option value="all">All delivery states</option>
-              <option value="delivered">Delivered</option>
+              <option value="delivered">Published</option>
               <option value="scheduled">Scheduled</option>
               <option value="failed">Failed</option>
             </select>
@@ -252,7 +253,7 @@ export function AdminNotificationsPage() {
                     : item.status === "saved" ? "Saved; acknowledgement unconfirmed" : "Retry required"}
                 </strong>
               </div>
-              <AdminStatusBadge status={item.status}/>
+              <AdminStatusBadge status={item.status} label={item.status === 'delivered' ? 'Published' : undefined}/>
             </article>))}
         </div>
       </section>
