@@ -4,14 +4,14 @@ import { useAuth } from "../../auth/AuthContext";
 import { useCommunications } from "../../communications/CommunicationsContext";
 import { AssignmentPendingState, BusOverviewCard, ErrorState, LoadingCards, NotificationCard, PageHeading, } from "../../components/student/StudentUI";
 import { useStudentData } from "../../hooks/useStudentData";
-import { currentDisplayDate } from "../../utils/dateLabels";
+import { currentDisplayDate, currentGreeting, stopTimeLabel, stopTimeSource } from "../../utils/dateLabels";
 export function StudentDashboardPage() {
     const { user } = useAuth();
     const { notifications } = useCommunications();
     const { data, loading, error, retry } = useStudentData({ pollIntervalMs: 30000 });
     if (loading)
         return (<>
-        <PageHeading title={`Good morning, ${user?.name.split(" ")[0] ?? "Student"}`} description="Here’s your commute at a glance."/>
+        <PageHeading title={`${currentGreeting()}, ${user?.name.split(" ")[0] ?? "Student"}`} description="Here’s your commute at a glance."/>
         <LoadingCards count={4}/>
       </>);
     if (error || !data)
@@ -19,12 +19,13 @@ export function StudentDashboardPage() {
     const assignmentPending = data.assignmentStatus === "unassigned" || !data.route?.code || !data.route?.stops?.length;
     if (assignmentPending)
         return (<div className="student-dashboard">
-      <PageHeading eyebrow={currentDisplayDate()} title={`Good morning, ${user?.name.split(" ")[0] ?? "Student"}`} description="Your student account is waiting for admin approval and route assignment."/>
+      <PageHeading eyebrow={currentDisplayDate()} title={`${currentGreeting()}, ${user?.name.split(" ")[0] ?? "Student"}`} description={data.approvalStatus === "approved" ? "Your account is approved. Transport staff still need to assign your commute." : "Your student account is waiting for admin approval and route assignment."}/>
       <AssignmentPendingState status={data.approvalStatus} action={<Link className="button button--secondary" to="/student/help">
             Contact transport support <ArrowRight />
           </Link>}/>
     </div>);
     const tripActive = data.bus.tripActive === true;
+    const returnTrip = data.route.direction === "return";
     const selectedStop = data.route.stops.find((stop) => stop.id === data.route.selectedStopId) ?? data.route.stops[0];
     const currentStop = tripActive
         ? data.route.stops.find((stop) => stop.id === data.route.currentStopId) ??
@@ -42,7 +43,7 @@ export function StudentDashboardPage() {
     const busPassedPickup = tripActive && selectedStop.status === "completed";
     const displayStopStatus = (stop) => tripActive ? stop.status : stop.id === selectedStop.id ? "current" : "upcoming";
     return (<div className="student-dashboard">
-      <PageHeading eyebrow={currentDisplayDate()} title={`Good morning, ${user?.name.split(" ")[0]} 👋`} description={tripActive ? busPassedPickup ? "Your bus has passed your pickup stop and is continuing toward campus." : "Your bus is active and moving toward your stop." : "Your route is assigned. Live tracking starts when the driver begins the trip."} action={<Link className="button button--primary desktop-action" to="/student/track">
+      <PageHeading eyebrow={currentDisplayDate()} title={`${currentGreeting()}, ${user?.name.split(" ")[0]} 👋`} description={tripActive ? busPassedPickup ? returnTrip ? "Your bus has passed your drop-off stop and is continuing its return journey." : "Your bus has passed your pickup stop and is continuing toward campus." : "Your trip has started. Check tracking for the latest accepted bus location." : "Your route is assigned. Live tracking starts when the driver begins the trip."} action={<Link className="button button--primary desktop-action" to="/student/track">
             <Navigation /> {tripActive ? "Track live" : "View tracking"}
           </Link>}/>
       <div className="dashboard-grid">
@@ -55,7 +56,7 @@ export function StudentDashboardPage() {
                   <Route />
                 </span>
                 <span>
-                  <small>{tripActive ? "Trip progress" : "Scheduled pickup"}</small>
+                  <small>{tripActive ? "Trip progress" : returnTrip ? "Scheduled drop-off" : "Scheduled pickup"}</small>
                   <h2>{tripActive ? `Next stop: ${currentStop.name}` : `Your stop: ${selectedStop.name}`}</h2>
                 </span>
               </div>
@@ -70,7 +71,7 @@ export function StudentDashboardPage() {
                 return (<div key={stop.id} className={`compact-route__stop compact-route__stop--${stopStatus}`}>
                   <span>{tripActive && stopStatus === "completed" ? "✓" : ""}</span>
                   <small>{stop.name}</small>
-                  <time>{tripActive ? stop.eta ?? stop.scheduledTime : stop.scheduledTime}</time>
+                  <time>{stopTimeLabel(stop, tripActive)}</time>
                 </div>);
             })}
             </div>
@@ -103,8 +104,8 @@ export function StudentDashboardPage() {
             <div>
               <Clock3 />
               <span>
-                <small>Scheduled pickup</small>
-                <strong>{selectedStop.scheduledTime}</strong>
+                <small>{tripActive ? stopTimeSource(selectedStop) : returnTrip ? "Scheduled drop-off" : "Scheduled pickup"}</small>
+                <strong>{stopTimeLabel(selectedStop, tripActive)}</strong>
               </span>
             </div>
             <div>
@@ -125,10 +126,10 @@ export function StudentDashboardPage() {
           <section className="traffic-note">
             <AlertTriangle />
             <div>
-              <strong>{tripActive ? "Traffic update" : "Trip status"}</strong>
+              <strong>Trip status</strong>
               <p>
                 {tripActive
-            ? busPassedPickup ? `Bus has passed your pickup stop and is now near ${currentStop.name}.` : `Moderate traffic near ${currentStop.name}. ETA already includes the delay.`
+            ? busPassedPickup ? `The recorded trip progress shows your ${returnTrip ? "drop-off" : "pickup"} stop has been passed. Check the map for the last accepted location and timestamp.` : "ETA is approximate and depends on recent GPS and speed. It does not include live traffic conditions."
             : "Driver phone GPS will become visible here after the trip is started."}
               </p>
             </div>

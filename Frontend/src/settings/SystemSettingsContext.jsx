@@ -2,6 +2,7 @@
 import { createContext, useContext, useMemo, useState, } from "react";
 import { defaultStaffRoute } from "../services/indusRoutes";
 import { formatDateTime, minutesAgo } from "../utils/dateLabels";
+import { backendConfig } from '../services/apiClient';
 const initialSettings = {
     gpsUpdateSeconds: 30,
     staleGpsMinutes: 5,
@@ -86,14 +87,20 @@ const initialAuditLog = [
 ];
 const SettingsContext = createContext(null);
 export function SystemSettingsProvider({ children }) {
-    const [settings, setSettings] = useState(initialSettings);
-    const [permissions, setPermissions] = useState(initialPermissions);
-    const [auditLog, setAuditLog] = useState(initialAuditLog);
+    const [settings, setSettings] = useState(backendConfig.enabled ? {
+        gpsUpdateSeconds: 10, staleGpsMinutes: 'backend', showStaleWarnings: true,
+        emailCriticalAlerts: false, pushServiceAlerts: false, dailySummary: false,
+    } : initialSettings);
+    const [permissions, setPermissions] = useState(backendConfig.enabled ? {
+        ...initialPermissions, admin: { ...initialPermissions.admin, manageSystem: false },
+    } : initialPermissions);
+    const [auditLog, setAuditLog] = useState(backendConfig.enabled ? [] : initialAuditLog);
     const value = useMemo(() => ({
         settings,
         permissions,
         auditLog,
         saveSettings: async (nextSettings, nextPermissions) => {
+            if (backendConfig.enabled) throw new Error('System configuration is managed on the server.');
             await new Promise((resolve) => window.setTimeout(resolve, 500));
             setSettings(nextSettings);
             setPermissions(nextPermissions);

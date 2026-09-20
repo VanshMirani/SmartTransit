@@ -40,6 +40,7 @@ export function summarizeRoutes(records) {
             routeCode: record.routeCode,
             routeName: record.routeName,
             trips: 0,
+            measuredTrips: 0,
             onTimeTrips: 0,
             delayedTrips: 0,
             averageDelayMinutes: 0,
@@ -49,14 +50,15 @@ export function summarizeRoutes(records) {
         const delayedMinutes = current.averageDelayMinutes * current.delayedTrips +
             record.averageDelayMinutes * record.delayedTrips;
         current.trips += record.trips;
+        current.measuredTrips += record.measuredTrips ?? record.trips;
         current.onTimeTrips += record.onTimeTrips;
         current.delayedTrips += record.delayedTrips;
         current.studentJourneys += record.studentJourneys;
         current.averageDelayMinutes = current.delayedTrips
             ? delayedMinutes / current.delayedTrips
             : 0;
-        current.onTimeRate = current.trips
-            ? (current.onTimeTrips / current.trips) * 100
+        current.onTimeRate = current.measuredTrips
+            ? (current.onTimeTrips / current.measuredTrips) * 100
             : 0;
         byRoute.set(record.routeCode, current);
     });

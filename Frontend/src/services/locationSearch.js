@@ -18,8 +18,12 @@ export const normalizeSearchText = (value) => String(value ?? "")
     .trim();
 
 export const coordinatesFromStop = (stop) => {
-    const lat = Number(stop?.lat ?? stop?.coordinates?.[0]);
-    const lng = Number(stop?.lng ?? stop?.coordinates?.[1]);
+    const latitude = stop?.lat ?? stop?.coordinates?.[0];
+    const longitude = stop?.lng ?? stop?.coordinates?.[1];
+    if (latitude == null || longitude == null || String(latitude).trim() === '' || String(longitude).trim() === '')
+        return null;
+    const lat = Number(latitude);
+    const lng = Number(longitude);
     if (!Number.isFinite(lat) || lat < -90 || lat > 90)
         return null;
     if (!Number.isFinite(lng) || lng < -180 || lng > 180)
@@ -192,11 +196,20 @@ export function coordinatesFromText(value) {
     const text = String(value ?? "").trim();
     if (!text)
         return null;
+    // A place's pin is more specific than the surrounding map viewport.
+    const pin = coordinatePairFromMatch(text.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/));
+    if (pin) return pin;
+    try {
+        const url = new URL(text);
+        for (const key of ['query', 'q', 'll']) {
+            const pair = coordinatePairFromMatch(url.searchParams.get(key)?.trim().match(/^(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)$/));
+            if (pair) return pair;
+        }
+    } catch { /* Plain coordinate text is also supported. */ }
     const patterns = [
         /@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/,
         /[?&](?:q|query|ll)=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/,
-        /!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/,
-        /\b(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\b/,
+        /^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/,
     ];
     for (const pattern of patterns) {
         const coordinates = coordinatePairFromMatch(text.match(pattern));

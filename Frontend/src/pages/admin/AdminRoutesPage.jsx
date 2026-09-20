@@ -1,5 +1,6 @@
 import { ArrowDown, ArrowLeft, ArrowUp, BusFront, MapPin, Pencil, Plus, Route, Save, Search, ToggleLeft, ToggleRight, Trash2, UserRound, Users, X, } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { CircleMarker, MapContainer, Polyline, Popup, } from "react-leaflet";
 import { useMapEvents } from "react-leaflet";
 import { useAdminData } from "../../admin/AdminDataContext";
@@ -36,9 +37,11 @@ const emptyRoute = () => ({
 const isCampusStop = (stop) => /indus university/i.test(String(stop?.name ?? ""));
 export function AdminRoutesPage() {
     const { routes, records, upsertRoute, toggleRoute } = useAdminData();
-    const [selectedId, setSelectedId] = useState(routes[0]?.id ?? "");
+    const [searchParams] = useSearchParams();
+    const requestedRoute = routes.find((route) => route.code === searchParams.get('editRoute'));
+    const [selectedId, setSelectedId] = useState(requestedRoute?.id ?? routes[0]?.id ?? "");
     const [query, setQuery] = useState("");
-    const [editing, setEditing] = useState(null);
+    const [editing, setEditing] = useState(() => requestedRoute ? prepareRouteForEdit(requestedRoute) : null);
     const [errors, setErrors] = useState({});
     const [feedback, setFeedback] = useState(null);
     const [saving, setSaving] = useState(false);

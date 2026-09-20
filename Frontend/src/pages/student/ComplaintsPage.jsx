@@ -4,8 +4,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { useCommunications } from "../../communications/CommunicationsContext";
 import { ComplaintStatusBadge, PageHeading, } from "../../components/student/StudentUI";
 import { useStudentData } from "../../hooks/useStudentData";
-import { studentTransitData } from "../../services/mockData";
-const fallbackAssignedService = `${studentTransitData.bus.number} / Route ${studentTransitData.route.code}`;
+const fallbackAssignedService = "Pending route assignment";
 const blankForm = {
     category: "",
     subject: "",
@@ -16,7 +15,7 @@ export function ComplaintsPage() {
     const { user } = useAuth();
     const { data } = useStudentData();
     const { complaints, createComplaint } = useCommunications();
-    const transit = data ?? studentTransitData;
+    const transit = data ?? { assignmentStatus: "unassigned", route: {}, bus: {} };
     const assignmentPending = transit.assignmentStatus === "unassigned" || !transit.route?.code || !transit.route?.stops?.length;
     const assignedService = assignmentPending ? "Pending route assignment" : `${transit.bus.number} / Route ${transit.route.code}`;
     const routeOnlyService = assignmentPending ? "" : `Route ${transit.route.code} only`;

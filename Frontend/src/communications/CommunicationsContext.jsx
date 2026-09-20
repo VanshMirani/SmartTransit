@@ -13,32 +13,35 @@ const findRouteFromService = (service) => indusRoutes.find((route) => service.in
 export function CommunicationsProvider({ children }) {
     const { user } = useAuth();
     const userId = user?.id;
-    const [notifications, setNotifications] = useState(initialStudentNotifications);
-    const [campaigns, setCampaigns] = useState(initialNotificationCampaigns);
-    const [complaints, setComplaints] = useState(initialComplaintCases);
+    const [notifications, setNotifications] = useState(backendConfig.enabled ? [] : initialStudentNotifications);
+    const [campaigns, setCampaigns] = useState(backendConfig.enabled ? [] : initialNotificationCampaigns);
+    const [complaints, setComplaints] = useState(backendConfig.enabled ? [] : initialComplaintCases);
     useEffect(() => {
         if (!backendConfig.enabled) {
             return;
         }
         if (!userId) {
-            setNotifications(initialStudentNotifications);
-            setCampaigns(initialNotificationCampaigns);
-            setComplaints(initialComplaintCases);
+            setNotifications([]);
+            setCampaigns([]);
+            setComplaints([]);
             return;
         }
         let cancelled = false;
-        apiRequest("/communications/bootstrap")
+        const load = () => apiRequest("/communications/bootstrap")
             .then((data) => {
             if (cancelled) {
                 return;
             }
-            setNotifications(data.notifications ?? initialStudentNotifications);
-            setCampaigns(data.campaigns ?? initialNotificationCampaigns);
-            setComplaints(data.complaints ?? initialComplaintCases);
+            setNotifications(data.notifications ?? []);
+            setCampaigns(data.campaigns ?? []);
+            setComplaints(data.complaints ?? []);
         })
             .catch(() => undefined);
+        void load();
+        const timer = window.setInterval(load, 15000);
         return () => {
             cancelled = true;
+            window.clearInterval(timer);
         };
     }, [userId]);
     const value = useMemo(() => ({
@@ -89,7 +92,10 @@ export function CommunicationsProvider({ children }) {
             }
             return campaign;
         },
-        markAllNotificationsRead: () => setNotifications((items) => items.map((item) => ({ ...item, unread: false }))),
+        markAllNotificationsRead: async () => {
+            if (backendConfig.enabled) await apiRequest('/student/notifications/read', { method: 'POST' });
+            setNotifications((items) => items.map((item) => ({ ...item, unread: false })));
+        },
         createComplaint: async (input) => {
             if (backendConfig.enabled) {
                 const complaint = await apiRequest("/student/complaints", { method: "POST", body: input });

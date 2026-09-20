@@ -1,12 +1,12 @@
 import { AlertTriangle, BusFront, Clock3, Gauge, MapPin, Radio, Route, Search, Users, } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { CircleMarker, MapContainer, Marker, Polyline, Popup, } from "react-leaflet";
 import L from "leaflet";
 import { useAdminData } from "../../admin/AdminDataContext";
 import { AdminModal, AdminPageHeading, AdminStatusBadge, } from "../../components/admin/AdminUI";
 import { CampusMapMarker, MapFitBounds, SmartTileLayer, StopNameTooltip } from "../../components/maps/SmartTransitMap";
-import { indusRoutes } from "../../services/indusRoutes";
-import { minutesAgo, relativeTimeLabel } from "../../utils/dateLabels";
+import { indusRoutes, routeForTripDirection } from "../../services/indusRoutes";
+import { formatEventTime } from "../../utils/dateLabels";
 const liveIcon = (status, selected) => L.divIcon({
     className: `admin-live-marker admin-live-marker--${status} ${selected ? "admin-live-marker--selected" : ""}`,
     html: "<span>BUS</span>",
@@ -15,7 +15,7 @@ const liveIcon = (status, selected) => L.divIcon({
 });
 const isCampusStop = (stop) => /indus university/i.test(String(stop?.name ?? ""));
 export function AdminLiveOperationsPage() {
-    const { fleet, routes, refreshData } = useAdminData();
+    const { fleet, routes } = useAdminData();
     const [selectedId, setSelectedId] = useState("");
     const [query, setQuery] = useState("");
     const [status, setStatus] = useState("all");
@@ -27,19 +27,12 @@ export function AdminLiveOperationsPage() {
     const selected = fleet.find((bus) => bus.id === selectedId) ??
         visible[0] ??
         fleet[0];
-    const fallbackRoute = routes[0] ?? indusRoutes[0];
-    const route = routes.find((item) => item.code === selected?.route) ??
-        fallbackRoute;
+    const assignedRoute = routes.find((item) => item.code === selected?.route);
+    const route = assignedRoute ? routeForTripDirection(assignedRoute, selected?.direction) : { code: "", stops: [] };
     const mapRoute = indusRoutes.find((item) => item.code === route.code) ?? indusRoutes[0];
     const emergencyBus = fleet.find((bus) => bus.tripActive && bus.status === "stale-gps");
-    const emergencyRoute = routes.find((item) => item.code === emergencyBus?.route) ?? fallbackRoute;
-    const emergencyLocation = emergencyRoute?.stops?.at(-2)?.name ?? emergencyRoute?.startPoint ?? "the assigned route";
-    const emergencyAge = emergencyBus?.gpsUpdated ?? emergencyBus?.gpsUpdatedAt ?? relativeTimeLabel(minutesAgo(2));
-    useEffect(() => {
-        refreshData?.();
-        const timer = window.setInterval(() => refreshData?.(), 15000);
-        return () => window.clearInterval(timer);
-    }, [refreshData]);
+    const emergencyLocation = emergencyBus?.lastLocationAt && emergencyBus.coordinates ? emergencyBus.coordinates.join(", ") : "Location unavailable";
+    const emergencyAge = formatEventTime(emergencyBus?.lastLocationAt);
     if (!selected) {
         return (<div>
       <AdminPageHeading eyebrow="Real-time monitoring" title="Live operations" description="Monitor active buses, service health and emergencies from one view." actions={<span className="admin-last-updated">
@@ -54,14 +47,14 @@ export function AdminLiveOperationsPage() {
     }
     return (<div>
       <AdminPageHeading eyebrow="Real-time monitoring" title="Live operations" description="Monitor active buses, service health and emergencies from one view." actions={<span className="admin-last-updated">
-            <Radio /> {fleet.some((bus) => bus.tripActive) ? "GPS feed live" : "Waiting for active trips"}
+            <Radio /> {fleet.some((bus) => bus.tripActive && bus.gpsStatus === "live") ? "Recent GPS available" : fleet.some((bus) => bus.tripActive) ? "Waiting for driver GPS" : "Waiting for active trips"}
           </span>}/>
       {emergencyBus && <div className="admin-emergency-banner">
         <AlertTriangle />
         <div>
           <strong>GPS attention required</strong>
           <span>
-            Bus {emergencyBus.number} · Route {emergencyBus.route} · Near {emergencyLocation} · Last update {emergencyAge}
+            Bus {emergencyBus.number} · Route {emergencyBus.route} · {emergencyLocation} · Last update {emergencyAge}
           </span>
         </div>
         <button onClick={() => setShowEmergency(true)}>View status</button>
@@ -125,7 +118,7 @@ export function AdminLiveOperationsPage() {
                   </Popup>
                 </CircleMarker>))}
             {fleet
-            .filter((bus) => bus.tripActive)
+            .filter((bus) => bus.tripActive && bus.lastLocationAt && bus.coordinates)
             .map((bus) => (<Marker key={bus.id} position={bus.coordinates} icon={liveIcon(bus.status, bus.id === selected.id)} eventHandlers={{ click: () => setSelectedId(bus.id) }}>
                   <StopNameTooltip active={bus.id === selected.id} permanent={bus.id === selected.id}>
                     {bus.number}
@@ -136,7 +129,7 @@ export function AdminLiveOperationsPage() {
                 </Marker>))}
           </MapContainer>
           <div className="live-map-updated">
-            <i /> Last fleet update: {selected.gpsUpdatedAt ?? selected.gpsUpdated ?? relativeTimeLabel(new Date().toISOString())}
+            <i /> Last GPS fix: {formatEventTime(selected.lastLocationAt)}
           </div>
         </section>
         <aside className="live-bus-detail">
@@ -197,6 +190,7 @@ export function AdminLiveOperationsPage() {
                 {selected.tripActive ? "Active route" : "Assigned route"}
               </small>
               <strong>{route.name}</strong>
+              {selected.tripActive && <small>Started {formatEventTime(selected.startedAt)} · Arrival plan {formatEventTime(selected.departureEstimateAt)}</small>}
             </span>
           </div>
           <div className="live-detail-route">
@@ -226,7 +220,7 @@ export function AdminLiveOperationsPage() {
             </div>
             <div>
               <dt>Last known location</dt>
-              <dd>Near {emergencyLocation}, Ahmedabad</dd>
+              <dd>{emergencyLocation}, Ahmedabad</dd>
             </div>
             <div>
               <dt>Details</dt>

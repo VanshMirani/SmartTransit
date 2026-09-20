@@ -67,13 +67,14 @@ export function createMongoDataStore() {
             return clone(existing.data);
         }
 
+        if (process.env.NODE_ENV === 'production' || documentId === 'production')
+            throw new Error('Production database is not initialized. Provision reviewed transport data and an administrator before starting the service.');
         const data = createSeedData();
         const now = new Date();
         await appState.updateOne({ _id: documentId }, {
-            $setOnInsert: { createdAt: now },
-            $set: { data, updatedAt: now },
+            $setOnInsert: { createdAt: now, data, updatedAt: now, revision: 0 },
         }, { upsert: true });
-        return clone(data);
+        return clone((await appState.findOne({ _id: documentId })).data);
     }
 
     async function saveState(data) {
@@ -98,10 +99,20 @@ export function createMongoDataStore() {
         },
         async update(mutator) {
             return runSerialized(async () => {
-                const data = await loadState();
-                const result = await mutator(data);
-                await saveState(data);
-                return clone(result);
+                await loadState();
+                const appState = await collection();
+                // Mutators only change the state document. Retry if another process commits first.
+                for (let attempt = 0; attempt < 8; attempt += 1) {
+                    const snapshot = await appState.findOne({ _id: documentId });
+                    const data = clone(snapshot.data);
+                    const result = await mutator(data);
+                    const saved = await appState.updateOne({
+                        _id: documentId,
+                        revision: snapshot.revision === undefined ? { $exists: false } : snapshot.revision,
+                    }, { $set: { data, updatedAt: new Date() }, $inc: { revision: 1 } });
+                    if (saved.modifiedCount === 1) return clone(result);
+                }
+                throw new Error('Transport data changed concurrently. Please retry the same request.');
             });
         },
         async reset() {

@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from "react-router-dom";
+import { backendConfig } from './services/apiClient';
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { StudentEntryRedirect } from "./auth/StudentEntryRedirect";
 import { StudentLayout } from "./components/student/StudentLayout";
@@ -43,6 +44,8 @@ import { AdminSettingsPage } from "./pages/admin/AdminSettingsPage";
 import { AdminSystemStatesPage } from "./pages/admin/AdminSystemStatesPage";
 import { AdminGlobalSearchPage } from "./pages/admin/AdminGlobalSearchPage";
 export default function App() {
+    if (backendConfig.configurationError)
+        return <main className="placeholder"><section className="placeholder__card" role="alert"><h1>Transport service unavailable</h1><p>{backendConfig.configurationError}</p></section></main>;
     return (<Routes>
       <Route path="/" element={<HomePage />}/>
       <Route path="/track" element={<StudentEntryRedirect to="/student/track"/>}/>

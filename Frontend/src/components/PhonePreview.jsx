@@ -30,6 +30,6 @@ export function PhonePreview() {
         </div>
         <div className="phone__nav"><span>Home</span><span>Track</span><span>Routes</span><span>Alerts</span></div>
       </div>
-      <div className="live-pill"><span /> Live now</div>
+      <div className="live-pill"><span /> App preview</div>
     </div>);
 }

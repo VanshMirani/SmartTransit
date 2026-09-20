@@ -1,5 +1,4 @@
 import { loadEnvFile } from "../env.js";
-import { createSmartTransitStore } from "../store.js";
 import { getMissingMailSettings } from "../emailService.js";
 
 loadEnvFile();
@@ -32,8 +31,5 @@ if (missing.length) {
     process.exit(1);
 }
 
-const store = await createSmartTransitStore();
-await store.close?.();
-
-console.log("Production configuration looks ready.");
-console.log(`Storage: ${store.description}`);
+console.log("Required configuration is present. No database connection or mutation was performed.");
+console.log("This check does not verify deployment, database contents, email delivery or phone GPS.");

@@ -1,4 +1,5 @@
 import { AlertCircle, BellRing, BusFront, Clock3, MapPin, RefreshCw, Users, } from "lucide-react";
+import { formatEventTime } from "../../utils/dateLabels";
 export function PageHeading({ eyebrow, title, description, action, }) {
     return (<header className="app-page-heading">
       <div>
@@ -64,7 +65,9 @@ export function AssignmentPendingState({ action, status = "pending", }) {
 
 export function BusOverviewCard({ bus, routeName, stopName, eta, tripActive = false, }) {
     const available = bus.capacity - bus.occupiedSeats;
-    const gpsLabel = tripActive ? `GPS updated ${bus.gpsUpdatedAt}` : `GPS ${bus.gpsUpdatedAt}`;
+    const gpsLive = tripActive && bus.gpsStatus === "live" && Boolean(bus.lastLocationAt);
+    const gpsLabel = bus.lastLocationAt ? `Last GPS fix ${formatEventTime(bus.lastLocationAt)}` : tripActive ? "GPS waiting for driver phone" : "GPS not sharing";
+    const statusLabel = !tripActive ? "Not started" : gpsLive ? "Trip active" : bus.lastLocationAt ? "GPS stale" : "Waiting for GPS";
     return (<article className="assigned-bus-card">
       <div className="assigned-bus-card__top">
         <span className="app-icon">
@@ -75,15 +78,15 @@ export function BusOverviewCard({ bus, routeName, stopName, eta, tripActive = fa
           <h2>{bus.registration}</h2>
           <p>{routeName}</p>
         </div>
-        <span className={`app-badge app-badge--${bus.status}`}>
-          {bus.status.replace("-", " ")}
+        <span className={`app-badge app-badge--${gpsLive ? "on-time" : tripActive ? "delayed" : "stopped"}`}>
+          {statusLabel}
         </span>
       </div>
       <div className="assigned-bus-card__stats">
         <div>
           <Clock3 />
           <span>
-            <small>{tripActive ? `ETA to ${stopName}` : "Scheduled pickup"}</small>
+            <small>{tripActive ? `ETA to ${stopName}` : bus.direction === "return" ? "Scheduled drop-off" : "Scheduled pickup"}</small>
             <strong>{eta}</strong>
           </span>
         </div>
@@ -98,7 +101,7 @@ export function BusOverviewCard({ bus, routeName, stopName, eta, tripActive = fa
         </div>
       </div>
       <div className="assigned-bus-card__updates">
-        <span>
+        <span data-gps-live={gpsLive}>
           <i /> {gpsLabel}
         </span>
         <span>Seats updated {bus.seatsUpdatedAt}</span>
@@ -112,7 +115,7 @@ const notifIcons = {
     general: BellRing,
 };
 export function NotificationCard({ notification, }) {
-    const Icon = notifIcons[notification.type];
+    const Icon = notifIcons[notification.type] ?? BellRing;
     const label = notification.type === "route-change"
         ? "Route change"
         : notification.type === "general"

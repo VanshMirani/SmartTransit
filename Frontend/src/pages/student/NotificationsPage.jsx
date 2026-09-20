@@ -7,11 +7,13 @@ export function NotificationsPage() {
     const [filter, setFilter] = useState("all");
     const [readFeedback, setReadFeedback] = useState(false);
     const filtered = useMemo(() => notifications.filter((notification) => filter === "all" || notification.type === filter), [filter, notifications]);
-    const markRead = () => {
-        markAllNotificationsRead();
-        setReadFeedback(true);
+    const [readError, setReadError] = useState('');
+    const markRead = async () => {
+        try { await markAllNotificationsRead(); setReadFeedback(true); setReadError(''); }
+        catch { setReadError('Unable to save read status. Please retry.'); }
     };
     return (<div>
+      {readError && <p role="alert" className="field-error">{readError}</p>}
       <PageHeading eyebrow="Stay informed" title="Notifications" description={`${unreadCount} unread update${unreadCount === 1 ? "" : "s"} about your transport service.`} action={<button className="button button--secondary desktop-action" onClick={markRead} disabled={!unreadCount}>
             <CheckCheck /> Mark all read
           </button>}/>

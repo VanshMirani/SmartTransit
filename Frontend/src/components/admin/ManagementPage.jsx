@@ -1,6 +1,6 @@
 import { ArrowDownAZ, ChevronLeft, ChevronRight, Eye, Filter, Pencil, Plus, Search, ToggleLeft, ToggleRight, } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAdminData } from "../../admin/AdminDataContext";
 import { AdminFeedback, AdminModal, AdminPageHeading, AdminStatusBadge, } from "./AdminUI";
 import { isInstituteEmail, normalizeEmail, validatePassword } from "../../utils/registrationValidation";
@@ -167,6 +167,7 @@ function normalizeRecord(record) {
 export function ManagementPage({ kind }) {
     const config = labels[kind];
     const [searchParams] = useSearchParams();
+    const navigate = useNavigate();
     const { records, routes, upsertRecord, toggleRecord } = useAdminData();
     const [query, setQuery] = useState(() => searchParams.get("search") ?? "");
     const [filter, setFilter] = useState("all");
@@ -193,6 +194,7 @@ export function ManagementPage({ kind }) {
     const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
     const visible = filtered.slice((page - 1) * pageSize, page * pageSize);
     const openAdd = () => {
+        if (kind === 'stops') { navigate('/admin/routes'); return; }
         setEditing(prepareEditableRecord(emptyRecord(kind), kind, routes));
         setErrors({});
     };
@@ -339,14 +341,15 @@ export function ManagementPage({ kind }) {
                         <Eye />
                       </button>
                       <button onClick={() => {
+                if (kind === 'stops') { navigate(`/admin/routes?editRoute=${encodeURIComponent(item.routeCode?.split(',')[0]?.trim() ?? '')}`); return; }
                 setEditing(prepareEditableRecord(item, kind, routes));
                 setErrors({});
             }} aria-label={`Edit ${item.name}`}>
                         <Pencil />
                       </button>
-                      <button onClick={() => setConfirming(item)} aria-label={`${recordStatusAction(kind, item.status)} ${item.name}`}>
+                      {kind !== 'stops' && <button onClick={() => setConfirming(item)} aria-label={`${recordStatusAction(kind, item.status)} ${item.name}`}>
                         {item.status === "active" ? (<ToggleRight />) : (<ToggleLeft />)}
-                      </button>
+                      </button>}
                     </div>
                   </td>
                 </tr>))}

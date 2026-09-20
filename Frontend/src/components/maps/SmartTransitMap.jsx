@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Marker, Popup, TileLayer, Tooltip, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -29,7 +29,16 @@ function isCoordinatePair(position) {
 }
 
 export function SmartTileLayer() {
-    return <TileLayer attribution={tileAttribution()} url={tileUrl()} detectRetina maxNativeZoom={19} maxZoom={20}/>;
+    const layer = useRef(null);
+    const [failed, setFailed] = useState(false);
+    const events = useMemo(() => ({ tileerror: () => setFailed(true) }), []);
+    return <>
+      <TileLayer ref={layer} eventHandlers={events} attribution={tileAttribution()} url={tileUrl()} detectRetina maxNativeZoom={19} maxZoom={20}/>
+      {failed && <div className="map-tile-warning" role="alert">
+        <span>Some map imagery could not load. Location updates are separate.</span>
+        <button type="button" onClick={() => { setFailed(false); layer.current?.redraw(); }}>Retry map</button>
+      </div>}
+    </>;
 }
 
 export function MapAutoCenter({ position, zoom = 13, enabled = true, trigger = "" }) {
@@ -41,6 +50,10 @@ export function MapAutoCenter({ position, zoom = 13, enabled = true, trigger = "
         if (!enabled || !Number.isFinite(latitude) || !Number.isFinite(longitude))
             return;
         map.flyTo([latitude, longitude], zoom, { duration: 0.45 });
+        return () => {
+            // React Leaflet may remove the parent map before this effect cleans up.
+            if (map.getPane('mapPane')) map.stop();
+        };
     }, [enabled, latitude, longitude, map, trigger, zoom]);
 
     return null;
@@ -75,10 +88,11 @@ export function MapFitBounds({ points, enabled = true, padding = defaultBoundsPa
         if (!enabled || !validPoints.length)
             return;
         if (validPoints.length === 1) {
-            map.setView(validPoints[0], Math.max(map.getZoom(), 13));
+            map.setView(validPoints[0], Math.max(map.getZoom(), 13), { animate: false });
             return;
         }
-        map.fitBounds(L.latLngBounds(validPoints), { padding, maxZoom: 15 });
+        // Automatic fits must not leave a zoom callback running after navigation.
+        map.fitBounds(L.latLngBounds(validPoints), { padding, maxZoom: 15, animate: false });
     }, [enabled, map, padding, trigger, validPoints]);
 
     return null;

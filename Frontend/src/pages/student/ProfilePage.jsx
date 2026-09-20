@@ -1,35 +1,51 @@
 import { Bell, BusFront, CheckCircle2, ChevronRight, LockKeyhole, Mail, MapPin, Moon, Phone, Save, ShieldCheck, UserRound, } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { apiRequest, backendConfig } from "../../services/apiClient";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import { ErrorState, LoadingCards, PageHeading } from "../../components/student/StudentUI";
 import { useStudentData } from "../../hooks/useStudentData";
-import { studentTransitData } from "../../services/mockData";
+
 export function ProfilePage() {
     const { user } = useAuth();
     const { data, loading, error, retry } = useStudentData();
     const studentCode = user?.enrollment ?? user?.email?.split("@")[0]?.toUpperCase() ?? "Assigned by transport office";
-    const phone = user?.phone ? `+91 ${user.phone}` : "+91 98765 43210";
+    const phone = user?.phone ? `+91 ${user.phone}` : "Not provided";
     const [saved, setSaved] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [saveError, setSaveError] = useState('');
     const [prefs, setPrefs] = useState({
         delay: true,
         route: true,
         general: true,
     });
-    const save = (event) => {
+    useEffect(() => {
+        if (!backendConfig.enabled) return;
+        let cancelled = false;
+        apiRequest('/student/preferences').then((value) => { if (!cancelled) setPrefs(value); })
+            .catch(() => { if (!cancelled) setSaveError('Preferences could not be loaded. Retry after reconnecting.'); });
+        return () => { cancelled = true; };
+    }, []);
+    const save = async (event) => {
         event.preventDefault();
-        setSaved(true);
-        window.setTimeout(() => setSaved(false), 2500);
+        if (saving) return;
+        setSaving(true); setSaved(false); setSaveError('');
+        try {
+            if (backendConfig.enabled) await apiRequest('/student/preferences', { method: 'PATCH', body: prefs });
+            setSaved(true);
+        } catch { setSaveError('Preferences were not saved. Please retry.'); }
+        finally { setSaving(false); }
     };
     if (loading)
         return <><PageHeading title="Profile & preferences"/><LoadingCards count={2}/></>;
     if (error)
         return <ErrorState message={error} retry={retry}/>;
-    const { bus, route } = data ?? studentTransitData;
+    const { bus, route } = data ?? { route: {}, bus: {} };
     const assignmentPending = data?.assignmentStatus === "unassigned" || !route?.code || !route?.stops?.length;
     const selectedStop = assignmentPending ? null : route.stops.find((stop) => stop.id === route.selectedStopId) ?? route.stops[0];
     return (<div>
       <PageHeading eyebrow="Your account" title="Profile & preferences" description="Manage your personal details and commute notifications."/>
+      {saveError && <p role="alert">{saveError}</p>}
       {saved && (<div className="app-alert app-alert--success">
           <CheckCircle2 />
           <div>
@@ -98,7 +114,7 @@ export function ProfilePage() {
             <div className="commute-row">
               <MapPin />
               <span>
-                <small>Pickup stop</small>
+                <small>{route?.direction === 'return' ? 'Drop-off stop' : 'Pickup stop'}</small>
                 <strong>{assignmentPending ? "To be assigned by transport office" : `${selectedStop.name} · ${selectedStop.scheduledTime}`}</strong>
               </span>
               <ChevronRight />
@@ -117,8 +133,8 @@ export function ProfilePage() {
             <Toggle label="Delay alerts" checked={prefs.delay} onChange={(checked) => setPrefs({ ...prefs, delay: checked })}/>
             <Toggle label="Route changes" checked={prefs.route} onChange={(checked) => setPrefs({ ...prefs, route: checked })}/>
             <Toggle label="General announcements" checked={prefs.general} onChange={(checked) => setPrefs({ ...prefs, general: checked })}/>
-            <button className="button button--primary profile-save">
-              <Save /> Save preferences
+            <button className="button button--primary profile-save" disabled={saving}>
+              <Save /> {saving ? 'Saving...' : 'Save preferences'}
             </button>
           </section>
           <section className="profile-card profile-links">

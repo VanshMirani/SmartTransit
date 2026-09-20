@@ -36,7 +36,7 @@ const links = [
 export function AdminLayout() {
     const [open, setOpen] = useState(false);
     const [globalQuery, setGlobalQuery] = useState("");
-    const { user, logout } = useAuth();
+    const { user, logout, sessionError } = useAuth();
     const { campaigns, complaints } = useCommunications();
     const scheduledCount = campaigns.filter((item) => item.status === "scheduled").length;
     const openComplaintCount = complaints.filter((item) => item.status !== "resolved").length;
@@ -95,7 +95,7 @@ export function AdminLayout() {
           </form>
           <div className="admin-topbar__actions">
             <span className="admin-updated">
-              <i /> Data live
+              <i /> {sessionError ? 'Reconnecting' : 'Auto refresh'}
             </span>
             <NavLink to="/admin/notifications" aria-label="Notifications">
               <Bell />

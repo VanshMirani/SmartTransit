@@ -4,7 +4,7 @@ import { useAdminData } from "../../admin/AdminDataContext";
 import { useCommunications } from "../../communications/CommunicationsContext";
 import { AdminFeedback, AdminPageHeading, AdminStatusBadge, } from "../../components/admin/AdminUI";
 import { defaultStudentRoute } from "../../services/indusRoutes";
-import { formatTime, relativeTimeLabel } from "../../utils/dateLabels";
+import { formatTime, relativeTimeLabel, formatEventTime } from "../../utils/dateLabels";
 const typeLabels = {
     delay: "Delay",
     "route-change": "Route Change",
@@ -73,8 +73,8 @@ export function AdminNotificationsPage() {
                 type: "success",
                 title: campaign.status === "scheduled"
                     ? "Notification scheduled"
-                    : "Notification sent",
-                message: `${campaign.id} will reach ${campaign.recipientCount} ${campaign.audience === "all" ? "students" : `${campaign.routeCode} students`}.`,
+                    : "Notification published",
+                message: `${campaign.id} is ${campaign.status === "scheduled" ? "scheduled to appear" : "available"} in student dashboards. This does not confirm email, phone delivery or that students have read it.`,
             });
             setForm(blankForm);
             setErrors({});
@@ -163,7 +163,7 @@ export function AdminNotificationsPage() {
             </label>
           </fieldset>
           {form.deliveryMode === "scheduled" && (<label className="admin-form-field">
-              <span>Schedule date and time *</span>
+              <span>Schedule date and time (India) *</span>
               <input type="datetime-local" name="scheduledFor" value={form.scheduledFor} onChange={(event) => setForm({ ...form, scheduledFor: event.target.value })} aria-invalid={Boolean(errors.scheduledFor)}/>
               {errors.scheduledFor && <small>{errors.scheduledFor}</small>}
             </label>)}
@@ -230,26 +230,26 @@ export function AdminNotificationsPage() {
               </span>
               <div className="notification-history-copy">
                 <small>
-                  {item.id} · {typeLabels[item.type]}
+                  {item.id} · {typeLabels[item.type] ?? item.type}
                 </small>
                 <strong>{item.title}</strong>
                 <span>
                   {item.audience === "all"
                 ? "All students"
-                : `Route ${item.routeCode}`}{" "}
+                 : item.audience === "admin" ? "Transport administrator" : `Route ${item.routeCode}`}{" "}
                   · by {item.createdBy}
                 </span>
               </div>
               <div className="notification-history-delivery">
                 <span>
-                  <Clock3 /> {item.scheduledFor || item.createdAt}
+                  <Clock3 /> {formatEventTime(item.scheduledFor || item.createdAt)}
                 </span>
                 <strong>
                   {item.status === "delivered"
-                ? `${item.deliveredCount}/${item.recipientCount} delivered`
+                ? `Published for ${item.recipientCount} students`
                 : item.status === "scheduled"
                     ? `${item.recipientCount} recipients`
-                    : "Retry required"}
+                    : item.status === "saved" ? "Saved; acknowledgement unconfirmed" : "Retry required"}
                 </strong>
               </div>
               <AdminStatusBadge status={item.status}/>

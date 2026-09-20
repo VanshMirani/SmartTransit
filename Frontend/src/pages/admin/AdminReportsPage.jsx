@@ -3,7 +3,9 @@ import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, } from "recharts";
 import { AdminFeedback, AdminPageHeading, } from "../../components/admin/AdminUI";
 import { useCommunications } from "../../communications/CommunicationsContext";
-import { reportRouteOptions, routeReportRecords, summarizeRoutes, } from "../../services/reportData";
+import { summarizeRoutes } from "../../services/reportData";
+import { recordedReports, transportDate } from "../../services/recordedReports";
+import { useAdminData } from "../../admin/AdminDataContext";
 import { downloadCsv, downloadSimplePdf } from "../../utils/reportExport";
 const reportTabs = [
     { value: "overview", label: "Overview" },
@@ -13,37 +15,22 @@ const reportTabs = [
     { value: "on-time", label: "On-time performance" },
 ];
 const formatDate = (value) => new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short" }).format(new Date(`${value}T12:00:00`));
-const complaintDate = (value) => {
-    const match = value.match(/^(\d{1,2})\s+([A-Za-z]{3})(?:\s+(\d{4}))?/);
-    if (!match)
-        return "2026-08-21";
-    const month = [
-        "Jan",
-        "Feb",
-        "Mar",
-        "Apr",
-        "May",
-        "Jun",
-        "Jul",
-        "Aug",
-        "Sep",
-        "Oct",
-        "Nov",
-        "Dec",
-    ].indexOf(match[2]);
-    return `${match[3] ?? "2026"}-${String(month + 1).padStart(2, "0")}-${match[1].padStart(2, "0")}`;
-};
+const complaintDate = transportDate;
+const daysAgo = (days) => transportDate(Date.now() - days * 86400000);
 export function AdminReportsPage() {
     const { complaints } = useCommunications();
+    const { history, routes } = useAdminData();
+    const routeReportRecords = useMemo(() => recordedReports(history), [history]);
+    const reportRouteOptions = [{ value: "all", label: "All routes" }, ...routes.map((route) => ({ value: route.code, label: route.code }))];
     const [view, setView] = useState("overview");
     const [routeFilter, setRouteFilter] = useState("all");
     const [dateRange, setDateRange] = useState("7-days");
-    const [fromDate, setFromDate] = useState("2026-08-15");
-    const [toDate, setToDate] = useState("2026-08-21");
+    const [fromDate, setFromDate] = useState(() => daysAgo(6));
+    const [toDate, setToDate] = useState(() => transportDate());
     const [feedback, setFeedback] = useState(null);
     const filteredRecords = useMemo(() => routeReportRecords.filter((record) => record.date >= fromDate &&
         record.date <= toDate &&
-        (routeFilter === "all" || record.routeCode === routeFilter)), [fromDate, routeFilter, toDate]);
+        (routeFilter === "all" || record.routeCode === routeFilter)), [fromDate, routeFilter, toDate, routeReportRecords]);
     const routeSummaries = useMemo(() => summarizeRoutes(filteredRecords), [filteredRecords]);
     const filteredComplaints = useMemo(() => complaints.filter((complaint) => complaintDate(complaint.createdAt) >= fromDate &&
         complaintDate(complaint.createdAt) <= toDate &&
@@ -74,12 +61,13 @@ export function AdminReportsPage() {
     }, [filteredRecords]);
     const metrics = useMemo(() => {
         const trips = filteredRecords.reduce((sum, record) => sum + record.trips, 0);
+        const measuredTrips = filteredRecords.reduce((sum, record) => sum + record.measuredTrips, 0);
         const onTimeTrips = filteredRecords.reduce((sum, record) => sum + record.onTimeTrips, 0);
         const delays = filteredRecords.reduce((sum, record) => sum + record.delayedTrips, 0);
         const delayMinutes = filteredRecords.reduce((sum, record) => sum + record.delayedTrips * record.averageDelayMinutes, 0);
         return {
-            trips,
-            onTimeRate: trips ? (onTimeTrips / trips) * 100 : 0,
+            trips, measuredTrips,
+            onTimeRate: measuredTrips ? (onTimeTrips / measuredTrips) * 100 : 0,
             delays,
             averageDelay: delays ? delayMinutes / delays : 0,
             usage: filteredRecords.reduce((sum, record) => sum + record.studentJourneys, 0),
@@ -92,12 +80,12 @@ export function AdminReportsPage() {
     const setPreset = (value) => {
         setDateRange(value);
         if (value === "7-days") {
-            setFromDate("2026-08-15");
-            setToDate("2026-08-21");
+            setFromDate(daysAgo(6));
+            setToDate(transportDate());
         }
         if (value === "14-days") {
-            setFromDate("2026-08-08");
-            setToDate("2026-08-21");
+            setFromDate(daysAgo(13));
+            setToDate(transportDate());
         }
     };
     const exportRows = () => {
@@ -133,14 +121,14 @@ export function AdminReportsPage() {
                 "On-time rate",
                 "Delayed trips",
                 "Average delay",
-                "Student journeys",
+                "Boardings",
             ],
             rows: routeSummaries.map((route) => [
                 route.routeCode,
                 route.trips,
-                `${route.onTimeRate.toFixed(1)}%`,
+                route.measuredTrips ? `${route.onTimeRate.toFixed(1)}%` : "Unavailable",
                 route.delayedTrips,
-                `${route.averageDelayMinutes.toFixed(1)} min`,
+                route.measuredTrips ? `${route.averageDelayMinutes.toFixed(1)} min` : "Unavailable",
                 route.studentJourneys,
             ]),
         };
@@ -242,7 +230,7 @@ export function AdminReportsPage() {
           </span>
           <div>
             <small>On-time rate</small>
-            <strong>{metrics.onTimeRate.toFixed(1)}%</strong>
+            <strong>{metrics.measuredTrips ? `${metrics.onTimeRate.toFixed(1)}%` : "Unavailable"}</strong>
             <em>of completed trips</em>
           </div>
         </article>
@@ -252,8 +240,8 @@ export function AdminReportsPage() {
           </span>
           <div>
             <small>Delays</small>
-            <strong>{metrics.delays}</strong>
-            <em>{metrics.averageDelay.toFixed(1)} min average</em>
+            <strong>{metrics.measuredTrips ? metrics.delays : "Unavailable"}</strong>
+            <em>{metrics.measuredTrips ? `${metrics.averageDelay.toFixed(1)} min average` : "No dated arrival targets"}</em>
           </div>
         </article>
         <article>
@@ -263,7 +251,7 @@ export function AdminReportsPage() {
           <div>
             <small>Route usage</small>
             <strong>{metrics.usage.toLocaleString("en-IN")}</strong>
-            <em>student journeys</em>
+            <em>recorded boardings</em>
           </div>
         </article>
         <article>
@@ -295,8 +283,8 @@ export function AdminReportsPage() {
                   <Tooltip />
                   <Legend />
                   <Line type="monotone" dataKey="trips" name="Trips" stroke="#0b948f" strokeWidth={3}/>
-                  <Line type="monotone" dataKey="delayed" name="Delayed" stroke="#d48a1f" strokeWidth={2}/>
-                  <Line type="monotone" dataKey="onTimeRate" name="On-time %" stroke="#244f73" strokeWidth={2}/>
+                  {metrics.measuredTrips > 0 && <Line type="monotone" dataKey="delayed" name="Delayed" stroke="#d48a1f" strokeWidth={2}/>}
+                  {metrics.measuredTrips > 0 && <Line type="monotone" dataKey="onTimeRate" name="On-time %" stroke="#244f73" strokeWidth={2}/>}
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -305,7 +293,7 @@ export function AdminReportsPage() {
             <div className="admin-panel-title">
               <div>
                 <h2>Student route usage</h2>
-                <p>Journeys recorded each day</p>
+                <p>Conductor boardings recorded each day</p>
               </div>
             </div>
             <div className="report-chart" aria-label="Student route usage chart">
@@ -315,7 +303,7 @@ export function AdminReportsPage() {
                   <XAxis dataKey="label" tick={{ fontSize: 11 }}/>
                   <YAxis tick={{ fontSize: 11 }}/>
                   <Tooltip />
-                  <Bar dataKey="usage" name="Student journeys" fill="#16a6a1" radius={[5, 5, 0, 0]}/>
+                  <Bar dataKey="usage" name="Boardings" fill="#16a6a1" radius={[5, 5, 0, 0]}/>
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -413,7 +401,7 @@ function ReportTable({ view, records, complaints, }) {
             </table>
           </div>) : (<div className="report-table-empty">
             <TrendingUp />
-            <span>No delayed trips in this period.</span>
+            <span>No measured delay records in this period.</span>
           </div>)}
       </section>);
     }
@@ -438,7 +426,7 @@ function ReportTable({ view, records, complaints, }) {
                 <th>On-time</th>
                 <th>Delayed</th>
                 <th>Average delay</th>
-                <th>Student journeys</th>
+                <th>Boardings</th>
               </tr>
             </thead>
             <tbody>
@@ -449,10 +437,10 @@ function ReportTable({ view, records, complaints, }) {
                   </td>
                   <td>{route.trips}</td>
                   <td>
-                    <strong>{route.onTimeRate.toFixed(1)}%</strong>
+                    <strong>{route.measuredTrips ? `${route.onTimeRate.toFixed(1)}%` : "Unavailable"}</strong>
                   </td>
-                  <td>{route.delayedTrips}</td>
-                  <td>{route.averageDelayMinutes.toFixed(1)} min</td>
+                  <td>{route.measuredTrips ? route.delayedTrips : "Unavailable"}</td>
+                  <td>{route.measuredTrips ? `${route.averageDelayMinutes.toFixed(1)} min` : "Unavailable"}</td>
                   <td>{route.studentJourneys.toLocaleString("en-IN")}</td>
                 </tr>))}
             </tbody>

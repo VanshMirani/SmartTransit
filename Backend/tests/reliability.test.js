@@ -1,0 +1,346 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { createApiServer } from '../apiServer.js';
+import { createDataStore } from '../dataStore.js';
+import { hashPassword } from '../passwords.js';
+import { createMongoDataStore } from '../mongoDataStore.js';
+
+async function fixture(t, options = {}) {
+    const directory = await mkdtemp(path.join(tmpdir(), 'smarttransit-regression-'));
+    const filename = path.join(directory, 'db.json');
+    const useMongo = process.env.QA_MONGO_URI?.startsWith('mongodb://127.0.0.1:');
+    if (useMongo) {
+        process.env.SMARTTRANSIT_MONGODB_URI = process.env.QA_MONGO_URI;
+        process.env.SMARTTRANSIT_MONGODB_DB = 'smarttransit_qa';
+        process.env.SMARTTRANSIT_MONGODB_STATE_ID = path.basename(directory);
+    }
+    let store = useMongo ? createMongoDataStore() : createDataStore(filename);
+    await store.ready?.();
+    let server = createApiServer(store, options);
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    t.after(async () => { await new Promise((resolve) => server.close(resolve)); await store.close?.(); });
+    const request = async (route, token, body, method = body ? 'POST' : 'GET') => {
+        const response = await fetch(`http://127.0.0.1:${server.address().port}/api${route}`, {
+            method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+            body: body ? JSON.stringify(body) : undefined,
+        });
+        return { status: response.status, data: await response.json() };
+    };
+    const login = async (role) => (await request('/auth/login', null, {
+        email: role === 'student' ? 'student@iite.indusuni.ac.in' : `${role}@transport.indusuni.ac.in`,
+        password: `${role[0].toUpperCase()}${role.slice(1)}@123`,
+    })).data.token;
+    const restart = async () => {
+        await new Promise((resolve) => server.close(resolve));
+        await store.close?.();
+        store = useMongo ? createMongoDataStore() : createDataStore(filename);
+        await store.ready?.();
+        server = createApiServer(store, options);
+        await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+        return store;
+    };
+    return { request, login, store, filename, restart };
+}
+
+test('actual departure and stop estimates persist and agree across roles without clock-based stop progress', async (t) => {
+    const { request, login, restart } = await fixture(t);
+    const driver = await login('driver'), conductor = await login('conductor'), student = await login('student'), admin = await login('admin');
+    const before = (await request('/driver/trips/current', driver)).data;
+    const id = before.activeStaffTrip.id;
+    assert.equal(before.operationalStops[0].departureEstimateAt, null);
+    const startBound = Date.now();
+    const started = (await request(`/driver/trips/${id}/start`, driver, { startedAt: '2000-01-01T00:00:00Z' })).data;
+    const startedAt = started.activeStaffTrip.startedAt;
+    assert.ok(Date.parse(startedAt) >= startBound && Date.parse(startedAt) <= Date.now());
+    assert.equal(started.operationalStops[0].departureEstimateAt, startedAt);
+    const plan = started.operationalStops.map((stop) => stop.departureEstimateAt);
+    assert.ok(Date.parse(plan.at(-1)) > Date.parse(startedAt));
+    assert.deepEqual(started.operationalStops.map((stop) => stop.scheduledTime), before.operationalStops.map((stop) => stop.scheduledTime));
+    const reopenedStore = await restart();
+    const staff = (await request('/conductor/trips/current', conductor)).data;
+    const transit = (await request('/student/transit', student)).data;
+    const fleet = (await request('/admin/bootstrap', admin)).data.fleetVehicles.find((bus) => bus.route === started.activeStaffTrip.routeCode);
+    assert.equal(transit.route.startedAt, startedAt);
+    assert.equal(fleet.startedAt, startedAt);
+    assert.equal(fleet.departureEstimateAt, plan.at(-1));
+    assert.deepEqual(staff.operationalStops.map((stop) => stop.departureEstimateAt), plan);
+    assert.deepEqual(transit.route.stops.map((stop) => stop.departureEstimateAt), plan);
+    const first = before.operationalStops[0];
+    const location = await request(`/driver/trips/${id}/location`, driver, { latitude: first.coordinates[0], longitude: first.coordinates[1], accuracy: 10, speedKmh: 24, timestamp: new Date().toISOString() });
+    assert.equal(location.status, 201);
+    const live = (await request('/student/transit', student)).data;
+    assert.ok(live.route.stops[1].estimatedArrivalAt);
+    assert.equal(live.route.stops[1].departureEstimateAt, plan[1]);
+    await reopenedStore.update((data) => {
+        data.operations.routeTrips[started.activeStaffTrip.routeCode].activeStaffTrip.startedAt = new Date(Date.now() - 3 * 3600000).toISOString();
+        data.operations.liveLocations[id].updatedAt = new Date(Date.now() - 5 * 60000).toISOString();
+        return true;
+    });
+    const stale = (await request('/student/transit', student)).data;
+    assert.equal(stale.route.currentStopId, first.id);
+    assert.equal(stale.route.stops.filter((stop) => stop.status === 'completed').length, 0);
+    assert.equal(stale.route.stops[1].estimatedArrivalAt, undefined);
+    assert.equal(stale.route.stops[1].eta, 'ETA unavailable');
+    await request(`/driver/trips/${id}/end`, driver, {});
+    const prepared = (await request('/driver/trips/current/direction', driver, { direction: 'return' })).data;
+    assert.notEqual(prepared.activeStaffTrip.id, id);
+    assert.equal(prepared.operationalStops[0].departureEstimateAt, null);
+    const returned = (await request(`/driver/trips/${prepared.activeStaffTrip.id}/start`, driver, {})).data;
+    assert.equal(returned.operationalStops[0].departureEstimateAt, returned.activeStaffTrip.startedAt);
+    assert.equal(Date.parse(returned.operationalStops[1].departureEstimateAt) - Date.parse(returned.activeStaffTrip.startedAt), 5 * 60000);
+});
+
+test('seat updates are atomic, idempotent and authoritative, including a lost-response retry', async (t) => {
+    const { request, login, store } = await fixture(t);
+    const driver = await login('driver'), conductor = await login('conductor');
+    const initial = (await request('/driver/trips/current', driver)).data;
+    const trip = initial.activeStaffTrip.id;
+    await request(`/driver/trips/${trip}/start`, driver, {});
+    const stopId = initial.operationalStops[0].id;
+    const seat = (body) => request(`/conductor/trips/${trip}/seat-updates`, conductor, body);
+    assert.equal((await seat({ id: 'initial', stopId, boarded: 30, deboarded: 0 })).data.update.occupiedSeats, 30);
+    const input = { id: 'retry-safe', stopId, boarded: 5, deboarded: 2, occupiedSeats: 1, availableSeats: 49, timestamp: '08:15 AM' };
+    const results = await Promise.all([seat(input), seat(input), seat(input)]);
+    for (const result of results) {
+        assert.equal(result.status, 201);
+        assert.equal(result.data.update.occupiedSeats, 33);
+        assert.equal(result.data.update.availableSeats, 17);
+        assert.ok(Number.isFinite(Date.parse(result.data.update.timestamp)));
+    }
+    assert.equal((await store.get()).operations.seatUpdates.filter((item) => item.id === input.id).length, 1);
+    assert.equal((await seat({ ...input, boarded: 6 })).status, 400);
+    for (const boarded of [-1, 1.5, '3', null, true, 'no'])
+        assert.equal((await seat({ stopId, boarded, deboarded: 0 })).status, 400);
+    assert.equal((await seat({ stopId: 'wrong', boarded: 0, deboarded: 0 })).status, 400);
+    assert.equal((await seat({ stopId, boarded: 0, deboarded: 34 })).status, 400);
+    assert.equal((await seat({ id: 'zero', stopId, boarded: 0, deboarded: 0 })).data.update.occupiedSeats, 33);
+    assert.equal((await seat({ id: 'full', stopId, boarded: 17, deboarded: 0 })).data.update.availableSeats, 0);
+    assert.equal((await seat({ stopId, boarded: 1, deboarded: 0 })).status, 400);
+    assert.equal((await seat({ id: 'empty', stopId, boarded: 0, deboarded: 50 })).data.update.availableSeats, 50);
+    await Promise.all(Array.from({ length: 5 }, (_, index) => seat({ id: `concurrent-${index}`, stopId, boarded: 1, deboarded: 0 })));
+    const beforeRead = (await store.get()).operations.seatUpdates[0];
+    const refreshed = (await request('/conductor/trips/current', conductor)).data;
+    assert.equal(refreshed.activeStaffTrip.occupiedSeats, 5);
+    assert.equal(refreshed.seatUpdates[0].timestamp, beforeRead.timestamp);
+});
+
+test('signup rejects expired, reused and brute-forced OTPs and cannot self-approve or provision staff', async (t) => {
+    const mailbox = {};
+    const { request, login, store } = await fixture(t, { otpEmailSender: async ({ to, otp }) => { mailbox[to] = otp; } });
+    const body = (email) => ({ email, fullName: 'Isolated Applicant', phone: '9000000001', password: 'Applicant@123', otp: mailbox[email], role: 'admin', status: 'active' });
+    assert.equal((await request('/auth/signup-otp', null, { email: 'not-an-email' })).status, 400);
+    assert.equal((await request('/auth/signup-otp', null, { email: 'student@iite.indusuni.ac.in' })).status, 409);
+    const expired = 'expired.qa@iite.indusuni.ac.in';
+    assert.equal((await request('/auth/signup-otp', null, { email: expired })).status, 200);
+    await store.update((data) => { data.signupOtps[expired].expiresAt = new Date(0).toISOString(); return true; });
+    assert.equal((await request('/auth/register/student', null, body(expired))).status, 400);
+    const wrong = 'wrong.qa@iite.indusuni.ac.in';
+    await request('/auth/signup-otp', null, { email: wrong });
+    for (let index = 0; index < 5; index += 1)
+        assert.equal((await request('/auth/register/student', null, { ...body(wrong), otp: mailbox[wrong] === '000000' ? '111111' : '000000' })).status, 400);
+    assert.equal((await request('/auth/register/student', null, body(wrong))).status, 400);
+    const valid = 'pending.qa@iite.indusuni.ac.in';
+    const sent = await request('/auth/signup-otp', null, { email: valid });
+    assert.equal(sent.data.otp, undefined);
+    const created = await request('/auth/register/student', null, body(valid));
+    assert.equal(created.status, 201);
+    assert.equal(created.data.user.role, 'student');
+    assert.equal(created.data.user.status, 'pending');
+    assert.equal((await request('/auth/register/student', null, body(valid))).status, 400);
+    assert.deepEqual((await request('/student/transit', created.data.token)).data.route.stops, []);
+    assert.equal((await request('/admin/bootstrap', created.data.token)).status, 403);
+    assert.equal((await request(`/admin/students/${created.data.user.id}`, created.data.token, { status: 'active' }, 'PUT')).status, 403);
+    for (const role of ['student', 'driver', 'conductor'])
+        assert.equal((await request('/admin/drivers/forged', await login(role), { name: 'Forbidden staff' }, 'PUT')).status, 403);
+});
+
+test('trip transitions preserve separate journeys and reject cross-assignment writes', async (t) => {
+    const { request, login, store } = await fixture(t);
+    const driver = await login('driver'), conductor = await login('conductor');
+    const trip = (await request('/driver/trips/current', driver)).data.activeStaffTrip.id;
+    assert.equal((await request(`/driver/trips/${trip}/start`, driver, {})).status, 200);
+    assert.equal((await request(`/driver/trips/${trip}/start`, driver, {})).status, 400);
+    assert.equal((await request('/driver/trips/current/direction', driver, { direction: 'return' })).status, 400);
+    await store.update((data) => { data.users.push({ id: 'unassigned', name: 'Unassigned Staff', role: 'driver', status: 'active', email: 'unassigned@transport.indusuni.ac.in', passwordHash: hashPassword('Private@123') }); return true; });
+    const stranger = (await request('/auth/login', null, { email: 'unassigned@transport.indusuni.ac.in', password: 'Private@123' })).data.token;
+    const location = { latitude: 23.04, longitude: 72.5, accuracy: 10, timestamp: new Date().toISOString() };
+    assert.equal((await request(`/driver/trips/${trip}/location`, stranger, location)).status, 400);
+    assert.equal((await request(`/driver/trips/${trip}/end`, stranger, {})).status, 400);
+    assert.equal((await request(`/driver/trips/${trip}/start`, stranger, {})).status, 400);
+    assert.equal((await request('/driver/trips/current/direction', stranger, { direction: 'return' })).status, 400);
+    assert.equal((await request(`/driver/trips/${trip}/end`, driver, {})).status, 200);
+    assert.equal((await request(`/driver/trips/${trip}/end`, driver, {})).status, 400);
+    const next = (await request('/driver/trips/current/direction', driver, { direction: 'return' })).data;
+    assert.notEqual(next.activeStaffTrip.id, trip);
+    const started = (await request(`/driver/trips/${next.activeStaffTrip.id}/start`, driver, {})).data;
+    assert.equal(started.activeStaffTrip.occupiedSeats, 0);
+    assert.equal(started.liveLocation, null);
+    assert.match(started.operationalStops[0].name, /Indus/);
+    assert.equal((await request(`/conductor/trips/${trip}/seat-updates`, conductor, { boarded: 1, deboarded: 0 })).status, 400);
+    assert.equal((await store.get()).operations.tripHistory[0].id, trip);
+});
+
+test('emergency retries save once and never attach the next stop as phone GPS', async (t) => {
+    const { request, login, store } = await fixture(t);
+    const driver = await login('driver');
+    const tripId = (await request('/driver/trips/current', driver)).data.activeStaffTrip.id;
+    await request(`/driver/trips/${tripId}/start`, driver, {});
+    const report = { id: 'emergency-retry', type: 'Breakdown', note: 'QA only', tripId, coordinates: [23, 72], location: 'Fake current location' };
+    for (let i = 0; i < 2; i += 1) {
+        const result = await request('/staff/emergencies', driver, report);
+        assert.equal(result.status, 201);
+        assert.equal(result.data.status, 'saved');
+        assert.equal(result.data.coordinates, null);
+        assert.equal(result.data.acknowledgedAt, null);
+    }
+    assert.equal((await store.get()).operations.emergencies.length, 1);
+    assert.equal((await request('/staff/emergencies', driver, { ...report, note: 'changed' })).status, 400);
+    assert.equal((await request('/staff/emergencies', driver, { ...report, id: 'wrong', tripId: 'other' })).status, 400);
+    assert.equal((await request('/staff/emergencies', driver, { ...report, id: {}, note: 'QA' })).status, 400);
+    assert.equal((await request('/staff/emergencies', driver, { ...report, id: 'long-note', note: 'x'.repeat(241) })).status, 400);
+});
+
+test('removing managed staff assignments cannot restore access through old template or user route fields', async (t) => {
+    const { request, login } = await fixture(t);
+    const admin = await login('admin'), driver = await login('driver'), conductor = await login('conductor');
+    const current = (await request('/driver/trips/current', driver)).data;
+    const tripId = current.activeStaffTrip.id;
+    const route = (await request('/admin/bootstrap', admin)).data.routes.find((item) => item.code === current.activeStaffTrip.routeCode);
+    assert.equal((await request(`/admin/routes/${route.id}`, admin, { ...route, driverId: '', conductorId: '' }, 'PUT')).status, 200);
+    assert.equal((await request('/driver/trips/current', driver)).data.activeStaffTrip, null);
+    assert.equal((await request('/conductor/trips/current', conductor)).data.activeStaffTrip, null);
+    assert.equal((await request(`/driver/trips/${tripId}/start`, driver, {})).status, 400);
+    assert.equal((await request('/staff/emergencies', conductor, { id: 'not-assigned', tripId, type: 'Other', note: 'QA' })).status, 400);
+    const student = await login('student');
+    const transit = (await request('/student/transit', student)).data;
+    assert.equal(JSON.stringify(transit).includes('Imran Hussain'), false);
+    assert.equal(JSON.stringify(transit).includes('Rahul Patel'), false);
+});
+
+test('GPS rejects weak, missing, old, future and out-of-order fixes', async (t) => {
+    const { request, login, store } = await fixture(t);
+    const driver = await login('driver');
+    const tripId = (await request('/driver/trips/current', driver)).data.activeStaffTrip.id;
+    await request(`/driver/trips/${tripId}/start`, driver, {});
+    const base = { latitude: 23.04, longitude: 72.5, accuracy: 10, timestamp: new Date(Date.now() - 1000).toISOString() };
+    const send = (body) => request(`/driver/trips/${tripId}/location`, driver, body);
+    for (const override of [{ accuracy: 900 }, { timestamp: '' }, { timestamp: new Date(Date.now() - 60000).toISOString() }, { timestamp: new Date(Date.now() + 60000).toISOString() }, { latitude: null }])
+        assert.equal((await send({ ...base, ...override })).status, 400);
+    const accepted = await send(base);
+    assert.equal(accepted.status, 201);
+    assert.equal(accepted.data.location.updatedAt, base.timestamp);
+    assert.ok(accepted.data.location.acceptedAt);
+    assert.equal((await send({ ...base, timestamp: new Date(Date.now() - 2000).toISOString() })).status, 400);
+    assert.equal((await store.get()).operations.liveLocations[tripId].updatedAt, base.timestamp);
+});
+
+test('logout, expiry, rejection, password reset and OTP limits are enforced by the server', async (t) => {
+    let otp;
+    const { request, login, store } = await fixture(t, { passwordResetEmailSender: async (mail) => { otp = mail.otp; } });
+    let student = await login('student');
+    await request('/auth/logout', student, {});
+    assert.equal((await request('/auth/session', student)).status, 401);
+    student = await login('student');
+    await store.update((data) => { data.sessions[student].expiresAt = new Date(0).toISOString(); return true; });
+    assert.equal((await request('/auth/session', student)).status, 401);
+    student = await login('student');
+    await request('/auth/password-reset', null, { email: 'student@iite.indusuni.ac.in' });
+    assert.equal((await request('/auth/password-reset/confirm', null, { email: 'student@iite.indusuni.ac.in', otp, password: 'Changed@123' })).status, 200);
+    assert.equal((await request('/auth/session', student)).status, 401);
+    assert.equal((await request('/auth/password-reset/confirm', null, { email: 'student@iite.indusuni.ac.in', otp, password: 'Changed@123' })).status, 400);
+    await request('/auth/password-reset', null, { email: 'student@iite.indusuni.ac.in' });
+    for (let i = 0; i < 5; i += 1) await request('/auth/password-reset/confirm', null, { email: 'student@iite.indusuni.ac.in', otp: 'not-valid', password: 'Changed@123' });
+    assert.equal((await request('/auth/password-reset/confirm', null, { email: 'student@iite.indusuni.ac.in', otp, password: 'Changed@123' })).status, 400);
+});
+
+test('approval, complaints, assignment, sessions and trip counts survive a backend restart', async (t) => {
+    const { request, login, store, restart } = await fixture(t);
+    const admin = await login('admin'), student = await login('student'), driver = await login('driver'), conductor = await login('conductor');
+    const record = (await request('/admin/bootstrap', admin)).data.records.students.find((item) => item.contact === 'student@iite.indusuni.ac.in');
+    assert.ok(record);
+    assert.equal((await request(`/admin/students/${record.id}`, admin, { ...record, status: 'pending' }, 'PUT')).status, 200);
+    assert.equal((await request('/student/transit', student)).data.route.stops.length, 0);
+    assert.equal((await request(`/admin/students/${record.id}`, admin, { ...record, status: 'active' }, 'PUT')).status, 200);
+    const complaint = (await request('/student/complaints', student, { category: 'Service', subject: 'QA persisted request', description: 'Isolated QA', relatedService: record.routeCode })).data;
+    assert.equal((await request(`/admin/complaints/${complaint.id}`, admin, { status: 'resolved', resolution: 'QA resolution', internalNote: 'Private staff note' }, 'PATCH')).status, 200);
+    const current = (await request('/driver/trips/current', driver)).data;
+    const tripId = current.activeStaffTrip.id;
+    const start = await request(`/driver/trips/${tripId}/start`, driver, {});
+    assert.equal(start.data.routeTrips, undefined);
+    assert.equal(start.data.liveLocations, undefined);
+    await request(`/conductor/trips/${tripId}/seat-updates`, conductor, { id: 'persist-seats', stopId: current.operationalStops[0].id, boarded: 3, deboarded: 0 });
+    await restart();
+    assert.equal((await request('/auth/session', student)).status, 200);
+    const transit = (await request('/student/transit', student)).data;
+    assert.equal(transit.approvalStatus, 'approved');
+    assert.equal(transit.bus.occupiedSeats, 3);
+    assert.equal(transit.route.code, current.activeStaffTrip.routeCode);
+    const saved = (await request('/student/complaints', student)).data.find((item) => item.id === complaint.id);
+    assert.equal(saved.status, 'resolved');
+    assert.equal(saved.internalNotes, undefined);
+    assert.equal((await request(`/admin/students/${record.id}`, admin, { ...record, status: 'rejected' }, 'PUT')).status, 200);
+    assert.equal((await request('/auth/session', student)).status, 403);
+    void store;
+});
+
+test('scheduled in-app notifications publish once when due, and read status is private and persistent', async (t) => {
+    const { request, login, store } = await fixture(t);
+    const admin = await login('admin'), student = await login('student');
+    const body = { title: 'QA schedule', message: 'Isolated notice', audience: 'all', type: 'delay', deliveryMode: 'scheduled', scheduledFor: new Date(Date.now() + 60000).toISOString() };
+    const saved = (await request('/admin/notifications', admin, body)).data;
+    assert.equal(saved.status, 'scheduled');
+    assert.equal((await request('/communications/bootstrap', student)).data.notifications.some((item) => item.id === saved.id), false);
+    await store.update((data) => { data.communications.campaigns.find((item) => item.id === saved.id).scheduledFor = new Date(0).toISOString(); return true; });
+    for (let index = 0; index < 2; index += 1)
+        assert.equal((await request('/communications/bootstrap', student)).data.notifications.filter((item) => item.id === saved.id).length, 1);
+    await request('/student/notifications/read', student, {});
+    assert.equal((await request('/communications/bootstrap', student)).data.notifications.find((item) => item.id === saved.id).unread, false);
+    assert.equal((await request('/admin/notifications', admin, { ...body, scheduledFor: 'invalid' })).status, 400);
+});
+
+test('administrator-confirmed coordinates persist across roles and invalid coordinates are rejected', async (t) => {
+    const { request, login } = await fixture(t);
+    const admin = await login('admin'), driver = await login('driver');
+    const route = (await request('/admin/bootstrap', admin)).data.routes.find((item) => item.code === 'IU-R4');
+    route.stops[0].coordinates = [23.051, 72.551];
+    assert.equal((await request(`/admin/routes/${route.id}`, admin, route, 'PUT')).status, 200);
+    const actual = (await request('/driver/trips/current', driver)).data.operationalStops[0];
+    assert.deepEqual(actual.coordinates, [23.051, 72.551]);
+    route.stops[0].coordinates = [null, 72];
+    assert.equal((await request(`/admin/routes/${route.id}`, admin, route, 'PUT')).status, 400);
+    assert.equal((await request('/admin/stops/not-a-route-stop', admin, { name: 'Ignored stop' }, 'PUT')).status, 400);
+});
+
+test('student notification preferences save on the server, filter notices, and survive restart', async (t) => {
+    const { request, login, restart } = await fixture(t);
+    const student = await login('student'), driver = await login('driver');
+    const prefs = { delay: false, route: true, general: true };
+    assert.equal((await request('/student/preferences', driver, prefs, 'PATCH')).status, 403);
+    assert.equal((await request('/student/preferences', student, { ...prefs, delay: 'no' }, 'PATCH')).status, 400);
+    assert.equal((await request('/student/preferences', student, prefs, 'PATCH')).status, 200);
+    await restart();
+    assert.deepEqual((await request('/student/preferences', student)).data, prefs);
+    assert.equal((await request('/communications/bootstrap', student)).data.notifications.some((item) => item.type === 'delay'), false);
+});
+
+test('JSON storage serializes concurrent writes, rolls back failed mutations and survives reopening', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'smarttransit-storage-'));
+    const filename = path.join(directory, 'db.json');
+    const store = createDataStore(filename);
+    await Promise.all(Array.from({ length: 12 }, () => store.update(async (data) => {
+        const count = data.qaCount ?? 0;
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        data.qaCount = count + 1;
+        return data.qaCount;
+    })));
+    await assert.rejects(store.update((data) => { data.qaCount = 99; throw new Error('failed'); }));
+    assert.equal((await createDataStore(filename).get()).qaCount, 12);
+    assert.equal(JSON.parse(await readFile(filename, 'utf8')).qaCount, 12);
+    const bad = path.join(directory, 'corrupt.json');
+    await writeFile(bad, 'invalid json');
+    await assert.rejects(createDataStore(bad).get());
+    assert.equal(await readFile(bad, 'utf8'), 'invalid json');
+});

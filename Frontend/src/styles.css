@@ -55,7 +55,7 @@ a {
 button {
   font: inherit;
 }
-svg {
+.lucide {
   width: 1.25em;
   height: 1.25em;
   stroke-width: 2;
@@ -2410,7 +2410,11 @@ svg {
 .assigned-bus-card__updates i {
   width: 6px;
   height: 6px;
+  flex-shrink: 0;
   border-radius: 50%;
+  background: var(--gray-500);
+}
+.assigned-bus-card__updates [data-gps-live="true"] i {
   background: #2ab67a;
 }
 .progress-card,
@@ -2682,13 +2686,37 @@ svg {
 .map-toolbar {
   position: absolute;
   z-index: 500;
-  inset: 14px 14px auto;
+  inset: 14px 14px auto 54px;
   display: flex;
   justify-content: space-between;
   pointer-events: none;
 }
 .map-toolbar > * {
   pointer-events: auto;
+}
+.map-tile-warning {
+  position: absolute;
+  z-index: 600;
+  bottom: 28px;
+  left: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
+  background: #fff3d8;
+  color: #684309;
+  border-radius: 6px;
+  font-size: 0.8rem;
+}
+.map-tile-warning button {
+  min-height: 44px;
+  padding: 0 12px;
+  background: white;
+  color: inherit;
+  border: 1px solid currentColor;
+  border-radius: 6px;
 }
 .map-toolbar button {
   width: 44px;
@@ -7445,6 +7473,7 @@ svg {
   font-size: 0.65rem;
 }
 .admin-table-scroll {
+  position: relative;
   max-width: 100%;
   overflow: auto;
 }
@@ -10808,3 +10837,18 @@ svg {
     padding: 24px 16px;
   }
 }
+
+.connection-warning {
+  position: sticky;
+  top: 0;
+  z-index: 2000;
+  padding: 12px 20px;
+  background: #fff3cd;
+  color: #664d03;
+  border-bottom: 1px solid #e0bc63;
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.staff-history-card > p { padding: 20px; }
+.staff-history-card article small, .staff-history-card article strong { overflow-wrap: anywhere; }

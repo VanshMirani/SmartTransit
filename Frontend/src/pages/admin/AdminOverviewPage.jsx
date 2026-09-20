@@ -7,7 +7,7 @@ import { AdminPageHeading, AdminStatusBadge, } from "../../components/admin/Admi
 import { CampusMapMarker, MapFitBounds, SmartTileLayer } from "../../components/maps/SmartTransitMap";
 import { useCommunications } from "../../communications/CommunicationsContext";
 import { INDUS_CAMPUS, indusRoutes } from "../../services/indusRoutes";
-import { formatTime, minutesAgo, relativeTimeLabel } from "../../utils/dateLabels";
+import { formatEventTime } from "../../utils/dateLabels";
 const fleetIcon = (status) => L.divIcon({
     className: `admin-fleet-marker admin-fleet-marker--${status}`,
     html: "<span>▣</span>",
@@ -16,9 +16,10 @@ const fleetIcon = (status) => L.divIcon({
 });
 export function AdminOverviewPage() {
     const { complaints } = useCommunications();
-    const { fleet, activity, records } = useAdminData();
+    const { fleet, activity, records, routes } = useAdminData();
     const openComplaints = complaints.filter((item) => item.status !== "resolved");
     const activeFleet = fleet.filter((item) => item.tripActive);
+    const locatedFleet = activeFleet.filter((item) => item.lastLocationAt && item.coordinates);
     const occupancy = activeFleet.map((item) => Math.round((item.occupancy / item.capacity) * 100));
     const averageOccupancy = occupancy.length
         ? Math.round(occupancy.reduce((sum, value) => sum + value, 0) / occupancy.length)
@@ -27,16 +28,15 @@ export function AdminOverviewPage() {
     const totalStudentCount = studentRecords.length;
     const activeStudentCount = studentRecords.filter((item) => item.status === "active").length;
     const pendingStudentCount = studentRecords.filter((item) => item.status === "pending").length;
-    const routeName = (code) => indusRoutes.find((route) => route.code === code)?.name ?? code;
+    const routeName = (code) => routes.find((route) => route.code === code)?.name ?? code;
     const delayedBus = fleet.find((item) => item.status === "delayed");
     const staleBus = fleet.find((item) => item.status === "stale-gps");
     const stoppedBus = fleet.find((item) => item.status === "stopped");
     const hour = new Date().getHours();
     const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
-    const lastChangedAt = formatTime(minutesAgo(35));
     return (<div>
       <AdminPageHeading eyebrow="Operations command center" title={`${greeting}, Admin Operator`} description="Here’s what’s happening across Indus University transport today." actions={<span className="admin-last-updated">
-            <Radio /> Updated {relativeTimeLabel(new Date().toISOString())}
+            <Radio /> Refreshes every 15 seconds
           </span>}/>
       <section className="admin-kpi-grid">
         <article>
@@ -46,7 +46,7 @@ export function AdminOverviewPage() {
           <div>
             <small>Active trips</small>
             <strong>{activeFleet.length}</strong>
-            <em>All live</em>
+            <em>{activeFleet.filter((bus) => bus.gpsStatus === "live").length} with recent GPS</em>
           </div>
         </article>
         <article>
@@ -88,21 +88,21 @@ export function AdminOverviewPage() {
           <div className="admin-panel-title">
             <div>
               <h2>Live fleet map</h2>
-              <p>{activeFleet.length} buses visible across active routes</p>
+              <p>{locatedFleet.length} buses with recorded positions across active routes</p>
             </div>
             <Link to="/admin/live">
               Open live operations <ArrowRight />
             </Link>
           </div>
           <MapContainer center={indusRoutes[3].mapCenter} zoom={11} scrollWheelZoom={false} className="admin-overview-map">
-            <MapFitBounds points={[INDUS_CAMPUS.coordinates, ...activeFleet.map((bus) => bus.coordinates)]} trigger={activeFleet.map((bus) => `${bus.id}-${bus.lastLocationAt ?? bus.gpsUpdatedAt ?? ""}`).join("|")}/>
+            <MapFitBounds points={[INDUS_CAMPUS.coordinates, ...locatedFleet.map((bus) => bus.coordinates)]} trigger={activeFleet.map((bus) => `${bus.id}-${bus.lastLocationAt ?? bus.gpsUpdatedAt ?? ""}`).join("|")}/>
             <SmartTileLayer />
             <CampusMapMarker position={INDUS_CAMPUS.coordinates} address={INDUS_CAMPUS.address}/>
-            {activeFleet.map((bus) => (<Marker key={bus.id} position={bus.coordinates} icon={fleetIcon(bus.status)}>
+            {locatedFleet.map((bus) => (<Marker key={bus.id} position={bus.coordinates} icon={fleetIcon(bus.status)}>
                 <Popup>
                   {bus.number} · {bus.route}
                   <br />
-                  {bus.status.replace("-", " ")}
+                  {bus.status.replace("-", " ")} · GPS {formatEventTime(bus.lastLocationAt)}
                 </Popup>
               </Marker>))}
           </MapContainer>
@@ -154,8 +154,8 @@ export function AdminOverviewPage() {
             </span>
             <div>
               <strong>Route {stoppedBus.route}</strong>
-              <p>Scheduled service inactive today</p>
-              <small>Last changed {lastChangedAt}</small>
+              <p>No active trip</p>
+              <small>Waiting for a driver to start the service</small>
             </div>
             <AdminStatusBadge status="stopped"/>
           </article>}
@@ -212,7 +212,7 @@ export function AdminOverviewPage() {
             {activity.map((item, index) => (<div key={item}>
                 <span>{index + 1}</span>
                 <p>{item}</p>
-                <time>{relativeTimeLabel(minutesAgo(index * 4 + 2))}</time>
+                <time>Recorded event</time>
               </div>))}
           </div>
         </section>

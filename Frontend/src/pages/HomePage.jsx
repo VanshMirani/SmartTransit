@@ -11,7 +11,7 @@ const heroMetrics = [
 ];
 const features = [
     { icon: LocateFixed, title: 'Live location', text: 'Follow your assigned college bus on an active route map with fresh GPS context.' },
-    { icon: Clock3, title: 'Accurate ETA', text: 'Know when your bus is expected at your selected stop before leaving home.' },
+    { icon: Clock3, title: 'Estimated arrival', text: 'Know when your bus is expected at your selected stop before leaving home.' },
     { icon: Users, title: 'Seat availability', text: 'Check available seats as conductors update boarding and deboarding details.' },
     { icon: BellRing, title: 'Instant alerts', text: 'Receive important delay, cancellation and route-change updates in one place.' },
 ];
@@ -22,7 +22,7 @@ const roleCards = [
     { icon: LayoutDashboard, title: 'Operator dashboard', text: 'Routes, buses, staff, students, assignments, reports, complaints and settings.' },
 ];
 const readinessItems = [
-    { icon: ServerCog, title: 'Backend-ready APIs', text: 'Frontend calls are centralized, so the real backend can connect without rewriting screens.' },
+    { icon: ServerCog, title: 'Shared transport records', text: 'Approved users see the bus, route and passenger updates recorded by transport staff.' },
     { icon: MailCheck, title: 'Real email OTP', text: 'Student signup now verifies email ownership before the account is created.' },
     { icon: MonitorCheck, title: 'Responsive experience', text: 'Student and staff screens work on mobile, while operator screens stay efficient on desktop.' },
     { icon: ShieldCheck, title: 'Role protection', text: 'Students, drivers, conductors and admins only see the pages meant for their role.' },
@@ -117,7 +117,7 @@ export function HomePage() {
         </section>
 
         <section className="help section" id="help">
-          <div className="container help__card"><div className="help__icon"><MessageCircleQuestion /></div><div><span className="section-kicker">We’re here to help</span><h2>Need support with your commute?</h2><p>Visit the help center or contact the Indus University transport office.</p></div><div className="help__actions"><Link className="button button--primary" to="/help">Open help center</Link><a className="button button--secondary" href="mailto:transport@indusuni.ac.in"><HeartHandshake /> Contact us</a></div></div>
+          <div className="container help__card"><div className="help__icon"><MessageCircleQuestion /></div><div><span className="section-kicker">We’re here to help</span><h2>Need support with your commute?</h2><p>Visit the help center or contact the Indus University transport office.</p></div><div className="help__actions"><Link className="button button--primary" to="/help">Open help center</Link><a className="button button--secondary" href="mailto:info@indusuni.ac.in"><HeartHandshake /> Contact us</a></div></div>
         </section>
       </main>
       <Footer />

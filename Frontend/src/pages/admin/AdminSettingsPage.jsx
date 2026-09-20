@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { AdminFeedback, AdminPageHeading, } from "../../components/admin/AdminUI";
 import { useSystemSettings } from "../../settings/SystemSettingsContext";
+import { backendConfig } from '../../services/apiClient';
 const tabs = [
     { value: "general", label: "System settings" },
     { value: "permissions", label: "Roles & permissions" },
@@ -39,7 +40,7 @@ const permissions = [
     { key: "manageCommunications", label: "Notifications & complaints" },
     { key: "manageSystem", label: "System settings" },
 ];
-const lockedPermission = (role, permission) => (role === "admin" && permission === "manageSystem") ||
+const lockedPermission = (role, permission) => backendConfig.enabled || (role === "admin" && permission === "manageSystem") ||
     (role === "driver" && permission === "updateSeats") ||
     (role === "student" && permission === "manageSystem");
 export function AdminSettingsPage() {
@@ -99,10 +100,11 @@ export function AdminSettingsPage() {
         }
     };
     return (<div>
-      <AdminPageHeading eyebrow="System administration" title="Settings, access & audit" description="Control tracking freshness, alerts, permissions and privacy safeguards." actions={(tab === "general" || tab === "permissions") && (<button className="button admin-primary-button" disabled={saving} onClick={handleSave}>
+      <AdminPageHeading eyebrow="System administration" title="Settings, access & audit" description="Review tracking, access and privacy safeguards." actions={(tab === "general" || tab === "permissions") && (<button className="button admin-primary-button" disabled={saving || backendConfig.enabled} onClick={handleSave}>
               <Save /> {saving ? "Saving…" : "Save changes"}
             </button>)}/>
       {feedback && (<AdminFeedback {...feedback} dismiss={() => setFeedback(null)}/>)}
+      {backendConfig.enabled && (tab === 'general' || tab === 'permissions') && <p role="status">These settings are read-only. Access rules and tracking configuration are managed by the backend. Phone, email alerts and daily summaries are not connected here.</p>}
 
       <nav className="settings-tabs" aria-label="Settings sections">
         {tabs.map((item) => (<button key={item.value} aria-pressed={tab === item.value} onClick={() => setTab(item.value)}>
@@ -121,16 +123,18 @@ export function AdminSettingsPage() {
             </div>
             <label className="admin-form-field" htmlFor="gps-interval">
               <span>GPS update interval</span>
-              <select id="gps-interval" value={draft.gpsUpdateSeconds} onChange={(event) => updateSetting("gpsUpdateSeconds", Number(event.target.value))}>
+              <select id="gps-interval" disabled={backendConfig.enabled} value={draft.gpsUpdateSeconds} onChange={(event) => updateSetting("gpsUpdateSeconds", Number(event.target.value))}>
+                {backendConfig.enabled && <option value={10}>At least 10 seconds between attempts</option>}
                 <option value={15}>15 seconds</option>
                 <option value={30}>30 seconds</option>
                 <option value={60}>60 seconds</option>
               </select>
-              <small>How often an active driver device submits location.</small>
+              <small>Requires a fresh phone position and an active trip.</small>
             </label>
             <label className="admin-form-field" htmlFor="stale-threshold">
               <span>Stale GPS threshold</span>
-              <select id="stale-threshold" value={draft.staleGpsMinutes} onChange={(event) => updateSetting("staleGpsMinutes", Number(event.target.value))}>
+              <select id="stale-threshold" disabled={backendConfig.enabled} value={draft.staleGpsMinutes} onChange={(event) => updateSetting("staleGpsMinutes", Number(event.target.value))}>
+                {backendConfig.enabled && <option value="backend">Managed by server configuration</option>}
                 <option value={3}>3 minutes</option>
                 <option value={5}>5 minutes</option>
                 <option value={10}>10 minutes</option>
@@ -188,8 +192,7 @@ export function AdminSettingsPage() {
             <div>
               <h2>Role permission matrix</h2>
               <p>
-                Changes apply to future protected-route and service
-                authorization.
+                Access is enforced by the backend for each role and assignment.
               </p>
             </div>
             <Users />
@@ -364,8 +367,8 @@ export function AdminSettingsPage() {
               <li>
                 <strong>Auditability</strong>
                 <span>
-                  Settings and operator actions create timestamped audit
-                  records.
+                  Trips, passenger updates and complaints keep event timestamps.
+                  A complete administrative audit trail is not available here.
                 </span>
               </li>
             </ul>
@@ -419,7 +422,7 @@ export function AdminSettingsPage() {
                 </article>))}
             </div>) : (<div className="report-table-empty">
               <Search />
-              <span>No audit events match the current filters.</span>
+              <span>{backendConfig.enabled ? 'A complete administrative audit log is not connected.' : 'No audit events match the current filters.'}</span>
             </div>)}
         </section>)}
     </div>);
@@ -430,7 +433,7 @@ function SettingToggle({ label, detail, checked, onChange, }) {
         <strong>{label}</strong>
         <small>{detail}</small>
       </span>
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)}/>
+      <input type="checkbox" disabled={backendConfig.enabled} checked={checked} onChange={(event) => onChange(event.target.checked)}/>
       <i />
     </label>);
 }

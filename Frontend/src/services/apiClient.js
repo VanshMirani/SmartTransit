@@ -1,11 +1,8 @@
-const rawBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() ?? "";
-
-export const backendConfig = {
-    baseUrl: rawBaseUrl.replace(/\/$/, ""),
-    enabled: import.meta.env.VITE_USE_BACKEND === "true" && Boolean(rawBaseUrl),
-};
+import { resolveBackendConfiguration } from './backendConfiguration.js';
+export const backendConfig = resolveBackendConfiguration(import.meta.env);
 
 const TOKEN_KEY = "smarttransit.authToken";
+let mutationVersion = 0;
 
 export class ApiError extends Error {
     constructor(message, status, details) {
@@ -46,19 +43,35 @@ async function parseResponse(response) {
         return JSON.parse(text);
     }
     catch {
-        return text;
+        throw new ApiError('The transport service returned an invalid response. Please retry or contact the administrator.', 502);
     }
 }
 
-export async function apiRequest(path, { method = "GET", body, headers = {}, signal } = {}) {
+export async function apiRequest(path, options = {}) {
+    try {
+        const data = await request(path, options);
+        window.dispatchEvent(new CustomEvent('smarttransit:connection', { detail: { path, failed: false } }));
+        return data;
+    } catch (error) {
+        if ((!options.method || options.method === 'GET') && !options.signal?.aborted && (!error.status || error.status >= 500))
+            window.dispatchEvent(new CustomEvent('smarttransit:connection', { detail: { path, failed: true } }));
+        throw error;
+    }
+}
+
+async function request(path, { method = "GET", body, headers = {}, signal } = {}) {
     if (!backendConfig.enabled) {
         throw new ApiError("Backend API is not enabled.", 0);
     }
+    if (backendConfig.configurationError)
+        throw new ApiError(backendConfig.configurationError, 0);
 
     const token = getBackendToken();
+    if (method !== 'GET') mutationVersion += 1;
+    const version = mutationVersion;
     const response = await fetch(endpoint(path), {
         method,
-        signal,
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
         headers: {
             Accept: "application/json",
             ...(body ? { "Content-Type": "application/json" } : {}),
@@ -68,6 +81,10 @@ export async function apiRequest(path, { method = "GET", body, headers = {}, sig
         body: body ? JSON.stringify(body) : undefined,
     });
     const data = await parseResponse(response);
+    if (path !== '/auth/logout' && token && token !== getBackendToken())
+        throw new ApiError('Session changed during the request.', 409);
+    if (method === 'GET' && version !== mutationVersion)
+        return apiRequest(path, { method, body, headers, signal });
 
     if (!response.ok) {
         const message = typeof data === "object" && data?.message
@@ -76,5 +93,6 @@ export async function apiRequest(path, { method = "GET", body, headers = {}, sig
         throw new ApiError(message, response.status, data);
     }
 
+    if (method !== 'GET') mutationVersion += 1;
     return data;
 }

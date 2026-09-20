@@ -4,26 +4,33 @@ import { adminActivity, fleetVehicles, initialAdminRecords, initialRoutes } from
 const AdminDataContext = createContext(null);
 const adminRefreshIntervalMs = 15000;
 function applyAdminBootstrap(data, setters) {
-    setters.setRecords(data.records ?? initialAdminRecords);
-    setters.setRoutes(data.routes ?? initialRoutes);
-    setters.setFleet(data.fleetVehicles ?? fleetVehicles);
-    setters.setActivity(data.adminActivity ?? adminActivity);
+    if (!data?.records || !Array.isArray(data.routes)) throw new Error('Invalid admin data response.');
+    setters.setRecords(data.records);
+    setters.setRoutes(data.routes);
+    setters.setFleet(data.fleetVehicles ?? []);
+    setters.setActivity(data.adminActivity ?? []);
+    setters.setHistory(data.tripHistory ?? []);
+    setters.setLoadError('');
 }
 function nextRecordStatus(status) {
     return status === 'active' ? 'inactive' : 'active';
 }
 
 export function AdminDataProvider({ children }) {
-    const [records, setRecords] = useState(initialAdminRecords);
-    const [routes, setRoutes] = useState(initialRoutes);
-    const [fleet, setFleet] = useState(fleetVehicles);
-    const [activity, setActivity] = useState(adminActivity);
+    const [records, setRecords] = useState(backendConfig.enabled ? null : initialAdminRecords);
+    const [routes, setRoutes] = useState(backendConfig.enabled ? [] : initialRoutes);
+    const [fleet, setFleet] = useState(backendConfig.enabled ? [] : fleetVehicles);
+    const [activity, setActivity] = useState(backendConfig.enabled ? [] : adminActivity);
+    const [history, setHistory] = useState([]);
+    const [loadError, setLoadError] = useState('');
     const refreshData = useCallback(async () => {
         if (!backendConfig.enabled)
             return null;
-        const data = await apiRequest('/admin/bootstrap');
-        applyAdminBootstrap(data, { setRecords, setRoutes, setFleet, setActivity });
-        return data;
+        try {
+            const data = await apiRequest('/admin/bootstrap');
+            applyAdminBootstrap(data, { setRecords, setRoutes, setFleet, setActivity, setHistory, setLoadError });
+            return data;
+        } catch (error) { setLoadError(error.message); return null; }
     }, []);
     useEffect(() => {
         if (!backendConfig.enabled)
@@ -32,8 +39,8 @@ export function AdminDataProvider({ children }) {
         const load = () => apiRequest('/admin/bootstrap').then((data) => {
             if (cancelled)
                 return;
-            applyAdminBootstrap(data, { setRecords, setRoutes, setFleet, setActivity });
-        }).catch(() => undefined);
+            applyAdminBootstrap(data, { setRecords, setRoutes, setFleet, setActivity, setHistory, setLoadError });
+        }).catch((error) => { if (!cancelled) setLoadError(error.message); });
         void load();
         const timer = window.setInterval(() => void load(), adminRefreshIntervalMs);
         return () => {
@@ -42,7 +49,7 @@ export function AdminDataProvider({ children }) {
         };
     }, []);
     const value = useMemo(() => ({
-        records, routes, fleet, activity, refreshData,
+        records, routes, fleet, activity, refreshData, history, loadError,
         upsertRecord: async (kind, record) => {
             if (backendConfig.enabled) {
                 const saved = await apiRequest(`/admin/${kind}/${record.id}`, { method: 'PUT', body: record });
@@ -93,8 +100,8 @@ export function AdminDataProvider({ children }) {
             setRoutes((current) => current.map((item) => item.id === id ? patched : item));
             return patched;
         },
-    }), [activity, fleet, records, refreshData, routes]);
-    return <AdminDataContext.Provider value={value}>{children}</AdminDataContext.Provider>;
+    }), [activity, fleet, records, refreshData, routes, history, loadError]);
+    return <AdminDataContext.Provider value={value}>{loadError && <div className="connection-warning" role="alert">Unable to refresh transport data. {loadError}</div>}{records ? children : <main className="placeholder"><section className="placeholder__card"><h1>Loading transport records</h1><button className="button button--primary" onClick={refreshData}>Retry</button></section></main>}</AdminDataContext.Provider>;
 }
 // eslint-disable-next-line react-refresh/only-export-components
 export function useAdminData() {

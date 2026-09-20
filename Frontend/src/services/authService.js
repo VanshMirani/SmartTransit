@@ -13,12 +13,12 @@ export const demoAccounts = {
 };
 const SESSION_KEY = 'smarttransit.session';
 const REGISTERED_STUDENTS_KEY = 'smarttransit.registeredStudents';
-const localDemoPasswords = {
+const localDemoPasswords = import.meta.env.DEV ? {
     student: import.meta.env.VITE_DEMO_STUDENT_PASSWORD ?? '',
     driver: import.meta.env.VITE_DEMO_DRIVER_PASSWORD ?? '',
     conductor: import.meta.env.VITE_DEMO_CONDUCTOR_PASSWORD ?? '',
     admin: import.meta.env.VITE_DEMO_ADMIN_PASSWORD ?? '',
-};
+} : {};
 export const roleHome = {
     student: '/student',
     driver: '/driver',
@@ -41,6 +41,8 @@ function publicUser(account) {
 }
 function publicBackendUser(payload, fallbackRole = "student") {
     const account = payload?.user ?? payload;
+    if (!account?.id || !account?.email || !['student', 'driver', 'conductor', 'admin'].includes(account.role))
+        throw new Error('The transport service returned an invalid account response.');
     return {
         id: account.id,
         name: account.name ?? account.fullName,
@@ -123,16 +125,20 @@ export const authService = {
                     otp: input.otp,
                 },
             });
-            saveBackendToken(payload?.token ?? payload?.accessToken);
-            return publicBackendUser(payload, "student");
+            const user = publicBackendUser(payload, "student");
+            return user;
         }
 
         await wait(700);
         throw new Error("Student signup requires backend OTP verification.");
     },
-    logout() {
+    async logout() {
+        const revocation = backendConfig.enabled && hasBackendToken()
+            ? apiRequest('/auth/logout', { method: 'POST' })
+            : Promise.resolve();
         clearBackendToken();
         sessionStorage.removeItem(SESSION_KEY);
+        await revocation;
     },
     getSession() {
         if (backendConfig.enabled && !hasBackendToken()) {
@@ -158,9 +164,15 @@ export const authService = {
             sessionStorage.setItem(SESSION_KEY, JSON.stringify(user));
             return user;
         }
-        catch {
-            this.logout();
-            return null;
+        catch (error) {
+            if (error.status === 409 && !hasBackendToken())
+                return null;
+            if (error.status === 401 || error.status === 403) {
+                clearBackendToken();
+                sessionStorage.removeItem(SESSION_KEY);
+                return null;
+            }
+            throw error;
         }
     },
     async requestPasswordReset(email) {

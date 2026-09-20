@@ -842,7 +842,7 @@ test("driver dashboard recovers existing named driver accounts with stale route 
     }
 });
 
-test("assigned driver route ignores stale active trips and incomplete managed route records", async () => {
+test("incomplete managed staff assignment fails closed rather than restoring template permissions", async () => {
     const app = await startTestServer();
     try {
         await app.store.update((data) => {
@@ -883,24 +883,16 @@ test("assigned driver route ignores stale active trips and incomplete managed ro
         });
         assert.equal(driverTrip.status, 200);
         const driverData = await json(driverTrip);
-        assert.equal(driverData.tripStatus, "not-started");
-        assert.equal(driverData.activeStaffTrip.routeCode, "IU-R6");
-        assert.equal(driverData.activeStaffTrip.busNumber, "6999");
-        assert.equal(driverData.activeStaffTrip.distance, "30.6 km");
-        assert.equal(driverData.activeStaffTrip.driver.name, "Bhavesh Rana");
-        assert.notEqual(driverData.activeStaffTrip.busNumber, "9468");
+        assert.equal(driverData.tripStatus, "unassigned");
+        assert.equal(driverData.activeStaffTrip, null);
+        assert.deepEqual(driverData.operationalStops, []);
 
         const returnTrip = await fetch(`${app.baseUrl}/driver/trips/current/direction`, {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` },
             body: JSON.stringify({ direction: "return" }),
         });
-        assert.equal(returnTrip.status, 200);
-        const returnData = await json(returnTrip);
-        assert.equal(returnData.activeStaffTrip.routeCode, "IU-R6");
-        assert.equal(returnData.activeStaffTrip.busNumber, "6999");
-        assert.equal(returnData.activeStaffTrip.direction, "return");
-        assert.equal(returnData.operationalStops[0].name, "Indus University");
+        assert.equal(returnTrip.status, 400);
     }
     finally {
         await app.close();
@@ -1715,7 +1707,7 @@ test("admin can load management bootstrap data", async () => {
     }
 });
 
-test("admin bootstrap marks approved students without pickup stops as pending", async () => {
+test("admin bootstrap separates approval from missing transport assignment", async () => {
     const app = await startTestServer();
     try {
         await app.store.update((data) => {
@@ -1766,12 +1758,12 @@ test("admin bootstrap marks approved students without pickup stops as pending", 
         assert.ok(legacyStop.stopId);
         assert.equal(legacyStop.assignment, "IU-R4 - Shilaj Circle");
 
-        assert.equal(needsStop.status, "pending");
+        assert.equal(needsStop.status, "active");
         assert.equal(needsStop.routeCode, "IU-R4");
         assert.equal(needsStop.stopId, "");
         assert.equal(needsStop.assignment, "IU-R4 - Pending stop assignment");
 
-        assert.equal(unassigned.status, "pending");
+        assert.equal(unassigned.status, "active");
         assert.equal(unassigned.routeCode, "");
         assert.equal(unassigned.stopId, "");
         assert.equal(unassigned.assignment, "Unassigned");

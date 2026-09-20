@@ -18,6 +18,7 @@ export default [
     rules: {
       ...js.configs.recommended.rules,
       'react/jsx-uses-vars': 'error',
+      'react/jsx-no-undef': 'error',
       ...reactHooks.configs.recommended.rules,
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }]
     }

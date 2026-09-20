@@ -99,7 +99,7 @@ export function SignupPage() {
     };
     if (registeredName) {
         return (<main className="simple-auth signup-page">
-        <Brand />
+        <BrandLogo className="auth-page-logo"/>
         <section className="auth-card signup-card auth-success" aria-live="polite">
           <span>
             <CheckCircle2 />

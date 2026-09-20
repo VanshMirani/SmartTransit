@@ -12,7 +12,7 @@ const mainLinks = [
 ];
 export function StudentLayout() {
     const [menuOpen, setMenuOpen] = useState(false);
-    const { user, logout } = useAuth();
+    const { user, logout, sessionError } = useAuth();
     const { unreadCount } = useCommunications();
     const navigate = useNavigate();
     const signOut = () => {
@@ -67,7 +67,7 @@ export function StudentLayout() {
           </div>
           <div className="student-topbar__actions">
             <span className="sync-status">
-              <i /> Online
+              <i /> {sessionError ? 'Reconnecting' : 'Auto refresh'}
             </span>
             <NavLink to="/student/alerts" aria-label="Notifications">
               <Bell />

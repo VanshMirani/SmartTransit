@@ -1,5 +1,6 @@
 import { AlertTriangle, BusFront, Clock3, MapPin, Navigation, RefreshCw, Signal, SignalZero, WifiOff, } from "lucide-react";
 import { useState } from "react";
+import { formatEventTime, stopTimeLabel, stopTimeSource } from "../../utils/dateLabels";
 import { CircleMarker, MapContainer, Marker, Polyline, Popup, } from "react-leaflet";
 import L from "leaflet";
 import { AssignmentPendingState, ErrorState, LoadingCards, PageHeading, } from "../../components/student/StudentUI";
@@ -29,7 +30,7 @@ export function LiveTrackingPage() {
     const { data, loading, error, retry } = useStudentData({ pollIntervalMs: 15000 });
     const [previewState, setPreviewState] = useState("live");
     const [recenterToken, setRecenterToken] = useState(0);
-    const showDemoControls = import.meta.env.VITE_SHOW_DEMO_CONTROLS === "true";
+    const showDemoControls = import.meta.env.DEV && import.meta.env.VITE_SHOW_DEMO_CONTROLS === "true";
     if (loading)
         return (<>
         <PageHeading title="Live tracking" description="Locating your assigned bus…"/>
@@ -49,10 +50,10 @@ export function LiveTrackingPage() {
         selectedStop;
     const selectedStopEta = selectedStop.status === "completed" ? "Departed" : selectedStop.eta ?? "—";
     const nextStopDistance = currentStop.distanceFromBus ?? data.bus.distanceToNextStop ?? data.bus.remainingDistance;
-    const nextStopDistanceText = nextStopDistance && nextStopDistance !== "Waiting for GPS"
+    const nextStopDistanceText = nextStopDistance && /\d/.test(nextStopDistance)
         ? `${nextStopDistance} away`
         : "Distance updates after GPS sync";
-    const busPosition = data.bus.coordinates ?? selectedStop.coordinates;
+    const busPosition = data.bus.lastLocationAt ? data.bus.coordinates : null;
     const routePoints = data.route.stops.map((stop) => stop.coordinates);
     const mapCenter = data.route.mapCenter ?? routePoints[0];
     const state = showDemoControls ? previewState : trackingStateForBus(data.bus);
@@ -67,7 +68,7 @@ export function LiveTrackingPage() {
           <h2>No active trip right now</h2>
           <p>
             Your assigned bus is not currently on a live trip. The next
-            scheduled service is tomorrow at {selectedStop.scheduledTime}.
+            scheduled pickup time is {selectedStop.scheduledTime}. Confirm the service date with transport staff.
           </p>
           <button className="button button--secondary" onClick={() => showDemoControls ? setPreviewState("live") : retry()}>
             <RefreshCw /> Refresh status
@@ -113,7 +114,7 @@ export function LiveTrackingPage() {
           </div>
           <MapContainer center={mapCenter} zoom={12} scrollWheelZoom={false} className="leaflet-map">
             <MapFitBounds points={[...routePoints, busPosition]} enabled={recenterToken === 0} trigger={`${data.route.code}-${data.bus.lastLocationAt ?? data.bus.gpsUpdatedAt ?? ""}`}/>
-            <MapAutoCenter position={busPosition} zoom={14} enabled={recenterToken > 0} trigger={`${recenterToken}-${data.bus.lastLocationAt ?? data.bus.gpsUpdatedAt ?? ""}`}/>
+            <MapAutoCenter position={busPosition ?? mapCenter} zoom={14} enabled={Boolean(busPosition) && recenterToken > 0} trigger={`${recenterToken}-${data.bus.lastLocationAt ?? data.bus.gpsUpdatedAt ?? ""}`}/>
             <SmartTileLayer />
             <Polyline positions={routePoints} pathOptions={{ color: "#0b948f", weight: 5, opacity: 0.86 }}/>
             {data.route.stops.map((stop) => isCampusStop(stop) ? (<CampusMapMarker key={stop.id} position={stop.coordinates}/>) : stop.id === selectedStop.id ? (<Marker key={stop.id} position={stop.coordinates} icon={selectedIcon}>
@@ -130,15 +131,15 @@ export function LiveTrackingPage() {
                   </StopNameTooltip>
                   <Popup>{stop.name}</Popup>
                 </CircleMarker>))}
-            <Marker position={busPosition} icon={busIcon}>
+            {busPosition && <Marker position={busPosition} icon={busIcon}>
               <Popup>
                 Bus {data.bus.number} · {data.bus.speed} km/h
               </Popup>
-            </Marker>
+            </Marker>}
           </MapContainer>
           <div className="map-updated">
             <i /> Last GPS update:{" "}
-            {state === "live" ? data.bus.gpsUpdatedAt : data.bus.gpsUpdatedAt ?? "Waiting for driver phone"}
+            {data.bus.lastLocationAt ? formatEventTime(data.bus.lastLocationAt) : "Waiting for driver phone"}
           </div>
         </section>
         <aside className="tracking-details">
@@ -152,10 +153,10 @@ export function LiveTrackingPage() {
                 <strong>{data.bus.registration}</strong>
               </span>
             </div>
-            <span className="app-badge app-badge--on-time">On time</span>
+            <span className="app-badge">{state === "live" ? "GPS available" : "Awaiting GPS update"}</span>
           </section>
           <section className="tracking-eta">
-            <small>Arriving at your stop</small>
+            <small>Estimated arrival at your stop</small>
             <strong>{selectedStopEta}</strong>
             <span>
               <MapPin /> {selectedStop.name}
@@ -172,8 +173,8 @@ export function LiveTrackingPage() {
             <div>
               <Clock3 />
               <span>
-                <small>Expected</small>
-                <strong>{selectedStop.scheduledTime}</strong>
+                <small>{stopTimeSource(selectedStop)}</small>
+                <strong>{stopTimeLabel(selectedStop)}</strong>
               </span>
             </div>
           </div>
