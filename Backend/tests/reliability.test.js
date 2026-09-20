@@ -7,6 +7,7 @@ import { createApiServer } from '../apiServer.js';
 import { createDataStore } from '../dataStore.js';
 import { hashPassword } from '../passwords.js';
 import { createMongoDataStore } from '../mongoDataStore.js';
+import { cleanRouteForSave, prepareRouteForEdit, updateStopCoordinates } from '../../Frontend/src/admin/routeDrafts.js';
 
 async function fixture(t, options = {}) {
     const directory = await mkdtemp(path.join(tmpdir(), 'smarttransit-regression-'));
@@ -586,6 +587,30 @@ test('administrator-confirmed coordinates persist across roles and invalid coord
     route.stops[0].coordinates = [null, 72];
     assert.equal((await request(`/admin/routes/${route.id}`, admin, route, 'PUT')).status, 400);
     assert.equal((await request('/admin/stops/not-a-route-stop', admin, { name: 'Ignored stop' }, 'PUT')).status, 400);
+});
+
+test('map-edited existing stops save after trip completion and survive refresh and restart for every role', async (t) => {
+    const { request, login, restart } = await fixture(t);
+    const admin = await login('admin'), driver = await login('driver'), conductor = await login('conductor'), student = await login('student');
+    const route = (await request('/admin/bootstrap', admin)).data.routes.find((item) => item.code === 'IU-R4');
+    const trip = (await request('/driver/trips/current', driver)).data.activeStaffTrip;
+    const point = [23.061234, 72.512345];
+    const draft = updateStopCoordinates(prepareRouteForEdit(route), route.stops[1].id, { lat: point[0], lng: point[1] });
+    const payload = cleanRouteForSave(draft);
+    assert.equal((await request(`/driver/trips/${trip.id}/start`, driver, {})).status, 200);
+    const blocked = await request(`/admin/routes/${route.id}`, admin, payload, 'PUT');
+    assert.equal(blocked.status, 400);
+    assert.match(blocked.data.message, /End the active trip/);
+    assert.deepEqual((await request('/admin/bootstrap', admin)).data.routes.find((item) => item.id === route.id).stops[1].coordinates, route.stops[1].coordinates);
+    assert.equal((await request(`/driver/trips/${trip.id}/end`, driver, {})).status, 200);
+    assert.equal((await request(`/admin/routes/${route.id}`, admin, payload, 'PUT')).status, 200);
+    await restart();
+    const saved = (await request('/admin/bootstrap', admin)).data.routes.find((item) => item.id === route.id);
+    assert.deepEqual(saved.stops[1].coordinates, point);
+    assert.equal(saved.stops[1].coordinateSource, 'admin');
+    for (const [role, token] of [['driver', driver], ['conductor', conductor]])
+        assert.deepEqual((await request(`/${role}/trips/current`, token)).data.operationalStops.find((stop) => stop.id === route.stops[1].id).coordinates, point);
+    assert.deepEqual((await request('/student/transit', student)).data.route.stops.find((stop) => stop.id === route.stops[1].id).coordinates, point);
 });
 
 test('student notification preferences save on the server, filter notices, and survive restart', async (t) => {

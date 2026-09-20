@@ -2,6 +2,29 @@
 
 Date: 5 September 2026 (Asia/Kolkata)
 
+## Existing Route Pin Save Follow-Up (20 September 2026)
+
+User report: editing an existing route's stop locations on the map and saving appears to do nothing. The exact affected production route/trip was not identified, so no existing production coordinates or trip state were changed.
+
+Confirmed medium-severity findings:
+
+- `AdminRoutesPage.save()` retained the editor after a failed request, but `AdminFeedback` existed only outside the editor. Reproduction: start a disposable assigned trip, edit its route pin, then save. The backend correctly rejects the edit with `End the active trip before editing or deactivating this route.` but the reason was hidden. The editor now displays server/network and validation errors beside the Save controls, retaining the entered values. The feedback dismiss button explicitly has `type="button"` to avoid accidental form submission.
+- `RouteEditor` always initialized its map target to an unsaved new-stop draft, including when editing existing routes. A map click could therefore leave every saved stop unchanged. Existing routes now select their first existing stop by default and expose an explicit stop selector above the map. Selected stop buttons expose pressed state, selection focuses that pin, coordinate updates preserve other draft fields, and moving the first pin no longer recreates the whole map.
+
+The backend active-trip restriction is intentionally unchanged. Finish the real journey through its assigned driver before changing that route; do not end a genuine journey solely for this test. The UI warning uses the latest fleet state, while the server still validates at save time. Unsaved values are retained while the editor remains open, not across a page reload or cancellation. Success is shown only after server acceptance, without claiming other dashboards already fetched the changes.
+
+Verification:
+
+- `npm run check`: lint, **105 automated tests**, and production build passed.
+- Temporary local MongoDB: **25 tests passed**, plus independent-adapter concurrent writes, exact reopening and empty-production fail-closed checks.
+- New API regression uses the actual map-draft payload helper: a save during an active trip is rejected without changing coordinates; after completing the disposable trip, the same payload saves; reopening the backend/storage preserves the admin-confirmed pin; Student, Driver, Conductor and Admin responses agree.
+- New frontend regressions cover default selection, correct selected-stop payload, unchanged neighbouring stops, invalid-coordinate rejection, and offline rendering of retained inputs with visible save error/active-trip warning. The renderer mocks map/router bindings only and does not access a browser, tiles or hosted API. Its initial CommonJS module-mocking failure was corrected before the successful full check.
+- Browser security access remains unavailable. No browser walkthrough, map-click interaction test or new visual screenshot is claimed, and no alternate access mechanism was used to bypass the restriction.
+
+Files: `Frontend/src/pages/admin/AdminRoutesPage.jsx`, `Frontend/src/components/admin/AdminUI.jsx`, new `Frontend/src/admin/routeDrafts.js`, two new frontend test files, `Backend/tests/reliability.test.js`, and this report. No new dependency, environment variable, backend runtime change or data migration is required.
+
+Manual check after release: Admin > Routes > Edit route; select the stop under **Stop to update on map**; click its correct pickup point; Save route; refresh and reopen the route to confirm the pin. If the route has an active trip, the save must explain the restriction rather than silently succeeding. Preserve any current unsaved work before refreshing to load the update.
+
 ## Submission Audit Follow-Up (20 September 2026)
 
 Scope: the user authorized a submission review, fixes in the existing project, an optional faculty GPS simulator, and temporary live records with exact cleanup. They subsequently explicitly confirmed **Publish and test temporary records**, keeping real users, trips and alert history untouched. No reset/cleanup seed command was run. The unrelated pre-existing `DEPLOYMENT.md` edit and earlier screenshot folders are preserved.

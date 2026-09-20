@@ -4,7 +4,7 @@ export function AdminPageHeading({ eyebrow, title, description, actions }) {
     return <header className="admin-page-heading"><div>{eyebrow && <span>{eyebrow}</span>}<h1>{title}</h1>{description && <p>{description}</p>}</div>{actions && <div className="admin-page-heading__actions">{actions}</div>}</header>;
 }
 export function AdminFeedback({ type, title, message, dismiss }) {
-    return <div className={`admin-feedback admin-feedback--${type}`} role={type === 'error' ? 'alert' : 'status'}>{type === 'success' ? <CheckCircle2 /> : <AlertCircle />}<div><strong>{title}</strong><span>{message}</span></div><button onClick={dismiss} aria-label="Dismiss message"><X /></button></div>;
+    return <div className={`admin-feedback admin-feedback--${type}`} role={type === 'error' ? 'alert' : 'status'}>{type === 'success' ? <CheckCircle2 /> : <AlertCircle />}<div><strong>{title}</strong><span>{message}</span></div><button type="button" onClick={dismiss} aria-label="Dismiss message"><X /></button></div>;
 }
 export function AdminModal({ title, description, children, close, footer }) {
     const ref = useRef(null);
