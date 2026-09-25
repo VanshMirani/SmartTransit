@@ -74,7 +74,7 @@ try {
     previewServer = await preview({ ...config, preview: { host: '127.0.0.1', port: 0, strictPort: true } });
     staticMiddleware = previewServer.middlewares;
     console.log(`Local staging: ${base}\nStorage: disposable MongoDB\nFrontend: production build; test-only local TLS certificate`);
-    await run('Backend/scripts/qa-browser.js', {
+    await run(process.env.QA_PERFORMANCE_ONLY ? 'Backend/scripts/qa-performance.js' : 'Backend/scripts/qa-browser.js', {
         QA_BASE_URL: base, QA_API_URL: apiUrl, QA_DATA_DIR: directory,
         QA_RUN_NAME: process.env.QA_RUN_NAME || '2026-09-20-staging',
     });

@@ -66,9 +66,9 @@ export function AdminSimulatorPage() {
     const running = scenario?.status === 'running';
     const start = () => command('POST', { routeId, direction, speedKmh, playbackRate });
     return <div className="simulation-page">
-      <AdminPageHeading eyebrow="Faculty demonstration" title="GPS simulator" description="Isolated simulation. No real bus location, passenger record or notification is changed." />
+      <AdminPageHeading eyebrow="Route simulation" title="GPS simulator" description="Isolated simulation. No real bus location, passenger record or notification is changed." />
       <div className="simulation-notice" role="status"><FlaskConical /><span><strong>SIMULATION ONLY</strong> Movement follows the configured stop lines, not roads. Arrival times use approximate distance and speed; traffic is not included.</span></div>
-      {!backendConfig.enabled && <p role="alert">The simulator requires the connected backend.</p>}
+      {!backendConfig.enabled && <p role="alert">The simulator needs a connection to the transport service.</p>}
       {error && <AdminFeedback type="error" title="Simulator connection interrupted" message={`${error} The displayed position is the last received simulation update.`} dismiss={() => setError('')} />}
       <form className="simulation-controls" onSubmit={(event) => { event.preventDefault(); void start(); }}>
         <label className="admin-form-field"><span>Route</span><select value={routeId} disabled={Boolean(active) || pending} onChange={(event) => setRouteId(event.target.value)}>{routes.map((item) => <option key={item.id} value={item.id}>{item.code} - {item.name}</option>)}</select></label>

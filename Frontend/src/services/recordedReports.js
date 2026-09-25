@@ -20,3 +20,19 @@ export function recordedReports(history) {
         };
     });
 }
+
+export function dailyPerformance(records) {
+    const days = new Map();
+    for (const record of records) {
+        const day = days.get(record.date) ?? { date: record.date, trips: 0, measuredTrips: 0, delayed: 0, onTime: 0, usage: 0 };
+        day.trips += record.trips;
+        day.measuredTrips += record.measuredTrips;
+        day.delayed += record.delayedTrips;
+        day.onTime += record.onTimeTrips;
+        day.usage += record.studentJourneys;
+        days.set(record.date, day);
+    }
+    return [...days.values()].sort((a, b) => a.date.localeCompare(b.date)).map((day) => ({
+        ...day, onTimeRate: day.measuredTrips ? Math.round(day.onTime / day.measuredTrips * 1000) / 10 : null,
+    }));
+}

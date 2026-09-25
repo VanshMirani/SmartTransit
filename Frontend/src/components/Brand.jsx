@@ -8,5 +8,5 @@ export function Brand({ light = false }) {
 }
 
 export function BrandLogo({ className = "" }) {
-    return (<img className={`brand-logo ${className}`.trim()} src="/brand/smarttransit-indus-logo.jpeg" alt="SmartTransit logo with Indus University branding" decoding="async"/>);
+    return (<img className={`brand-logo ${className}`.trim()} src="/brand/smarttransit-indus-logo.jpeg" width={1254} height={1254} alt="SmartTransit logo with Indus University branding" decoding="async"/>);
 }

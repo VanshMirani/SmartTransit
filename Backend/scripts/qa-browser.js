@@ -19,7 +19,8 @@ const output = path.resolve('docs/qa', runName);
 await mkdir(output, { recursive: true });
 const results = [], errors = [], limitations = [], consoleIssues = [], networkIssues = [];
 const accessibility = [];
-const widths = process.env.QA_FULL_MATRIX ? [320, 360, 390, 430, 768, 1024, 1440] : null;
+const widths = process.env.QA_WIDTHS ? process.env.QA_WIDTHS.split(',').map(Number) : process.env.QA_FULL_MATRIX ? [320, 360, 390, 430, 768, 1024, 1440] : null;
+if (widths?.some((width) => !Number.isInteger(width) || width < 320 || width > 2560)) throw new Error('QA_WIDTHS must contain supported CSS widths.');
 let scenario = 'setup';
 const contexts = [];
 const check = async (name, action) => {
@@ -108,6 +109,15 @@ async function snapshot(page, filename) {
     await page.screenshot({ path: path.join(output, filename), fullPage: true });
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 2);
     assert.equal(overflow, false, `Page overflow at ${page.url()}`);
+    assert.doesNotMatch(await page.locator('main').innerText(), /backend[ -]ready|frontend[ -]only|coming soon|lorem ipsum|under development/i,
+        `Unfinished copy at ${page.url()}`);
+    if (new URL(page.url()).pathname === '/conductor' && await page.locator('.conductor-trip-card').count()) {
+        assert.doesNotMatch(await page.locator('.staff-page-heading .staff-status').innerText(), /not-started/);
+    }
+    for (const icon of await page.locator('.staff-emergency-link:visible > svg, .staff-logout:visible > svg').all()) {
+        const box = await icon.boundingBox();
+        assert.ok(box?.width >= 20 && box?.height >= 20, 'Compact staff actions must retain visible icons');
+    }
     if (process.env.QA_AXE_PATH && [320, 1440].includes(page.viewportSize().width)) {
         await page.addScriptTag({ path: process.env.QA_AXE_PATH });
         const result = await page.evaluate(async () => {
@@ -121,6 +131,15 @@ async function startTrip(page) {
     await page.goto(`${base}/driver/checklist`);
     await page.locator('.checklist-item').first().waitFor();
     for (const input of await page.getByRole('checkbox').all()) await input.check();
+    await page.getByRole('button', { name: 'Start trip', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.waitFor();
+    assert.equal(await dialog.evaluate((element) => element.contains(document.activeElement)), true, 'Start confirmation must receive keyboard focus');
+    await page.keyboard.press('Shift+Tab');
+    assert.equal(await dialog.evaluate((element) => element.contains(document.activeElement)), true);
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'detached' });
+    assert.equal(await page.getByRole('button', { name: 'Start trip', exact: true }).evaluate((element) => element === document.activeElement), true);
     await page.getByRole('button', { name: 'Start trip', exact: true }).click();
     await page.getByRole('button', { name: 'Confirm & start' }).click();
     await page.waitForURL('**/driver/trip');
@@ -139,9 +158,34 @@ try {
                     const nextStop = await publicPage.locator('.phone .next-stop').boundingBox();
                     const navigation = await publicPage.locator('.phone__nav').boundingBox();
                     assert.ok(nextStop.y + nextStop.height <= navigation.y + 1, 'Phone navigation must not cover the next stop');
+                    const message = await publicPage.locator('.hero__message').boundingBox();
+                    for (const action of await publicPage.locator('.hero__actions a').all()) {
+                        const button = await action.boundingBox();
+                        assert.ok(button.x >= message.x - 1 && button.x + button.width <= message.x + message.width + 1,
+                            'Homepage actions must stay inside the text column, away from the preview');
+                    }
+                    if (width <= 900) {
+                        assert.equal(await publicPage.getByRole('button', { name: 'Open navigation', exact: true }).isVisible(), true);
+                        assert.equal(await publicPage.locator('.public-nav').isVisible(), false);
+                    } else {
+                        const logo = await publicPage.locator('.site-header .brand').boundingBox();
+                        const nav = await publicPage.locator('.public-nav').boundingBox();
+                        assert.ok(logo.x + logo.width + 8 <= nav.x, 'Brand and desktop navigation must not overlap');
+                    }
                 }
             }
         }
+    });
+    await check('Logo reserves its layout space before or without its image loading', async () => {
+        await publicPage.setViewportSize({ width: 390, height: 900 });
+        await publicPage.route('**/brand/smarttransit-indus-logo.jpeg', (route) => route.abort());
+        await publicPage.goto(`${base}/login`);
+        const image = publicPage.locator('.auth-mobile-brand .brand-logo');
+        const box = await image.boundingBox();
+        assert.ok(box?.height >= box?.width * 0.95, 'Square branding must reserve space before the JPEG loads');
+        await publicPage.unroute('**/brand/smarttransit-indus-logo.jpeg');
+        await publicPage.reload();
+        await snapshot(publicPage, 'logo-space-restored.png');
     });
     await check('Public support is accessible without login, and homepage makes no fake live claim', async () => {
         await publicPage.goto(base);
@@ -150,7 +194,8 @@ try {
         assert.match(await preview.innerText(), /App preview/);
         assert.equal(await preview.locator('.live-pill').count(), 0, 'A floating badge must not overlap the preview heading');
         assert.doesNotMatch(await preview.innerText(), /Live now|9468|Aarav|17 \/ 50|8 min/);
-        assert.doesNotMatch(await publicPage.locator('main').innerText(), /Ready to present|Backend-ready APIs|Accurate ETA/);
+        assert.doesNotMatch(await publicPage.locator('main').innerText(), /Ready to present|Backend[ -]ready|frontend[ -]only|coming soon|lorem ipsum|Accurate ETA|stops already mapped/i);
+        assert.equal(await publicPage.locator('h1').innerText(), 'SmartTransit');
         if (base.startsWith('https:')) {
             const resources = await publicPage.evaluate(() => performance.getEntriesByType('resource').map((entry) => entry.name));
             assert.equal(resources.some((url) => /\/assets\/(maps|charts)-.*\.js/.test(url)), false, 'Public homepage must not download dashboard maps/charts');
@@ -224,6 +269,32 @@ try {
             await page.setViewportSize({ width: 1440, height: 1000 });
         }
     });
+    await check('Staff assignment loading, unassigned, failed refresh and recovery are distinct', async () => {
+        for (const [role, page] of [['driver', driver], ['conductor', conductor]]) {
+            let release;
+            const gate = new Promise((resolve) => { release = resolve; });
+            let failRefresh = false;
+            await page.route(`**/${role}/trips/current`, async (route) => {
+                await gate;
+                return route.fulfill({ status: failRefresh ? 503 : 200, contentType: 'application/json', body: JSON.stringify(failRefresh
+                    ? { message: 'Assignment service temporarily unavailable.' }
+                    : { activeStaffTrip: null, tripStatus: 'unassigned', operationalStops: [] }) });
+            });
+            await page.goto(`${base}/${role}`);
+            await page.getByRole('heading', { name: 'Loading your assignment', exact: true }).waitFor();
+            assert.equal(await page.getByRole('heading', { name: 'Assigned trip unavailable' }).count(), 0);
+            release();
+            await page.getByRole('heading', { name: 'Awaiting transport assignment', exact: true }).waitFor();
+            failRefresh = true;
+            await page.getByRole('button', { name: 'Refresh assignment', exact: true }).click();
+            await page.getByRole('heading', { name: 'Unable to load assignment', exact: true }).waitFor();
+            await page.getByRole('alert').getByText('Assignment service temporarily unavailable.').waitFor();
+            await snapshot(page, `${role}-assignment-recovery.png`);
+            await page.unroute(`**/${role}/trips/current`);
+            await page.getByRole('button', { name: 'Refresh assignment', exact: true }).click();
+            await page.locator(role === 'driver' ? '.staff-assignment-card' : '.conductor-trip-card').waitFor();
+        }
+    });
     if (base.startsWith('https:')) {
         await check('A failed dashboard download offers recovery and reload restores the page', async () => {
             const page = await pageFor('student');
@@ -239,6 +310,43 @@ try {
         });
     }
     if (!process.env.QA_PAGES_ONLY) {
+    await check('Admin bus create, search, filters, sort, edit conflict, cancel and delete are persisted', async () => {
+        await admin.goto(`${base}/admin/buses`);
+        await admin.getByRole('button', { name: 'Add bus', exact: true }).click();
+        await admin.getByLabel('Bus number *', { exact: true }).fill('QA 9001');
+        await admin.getByLabel('Registration number *', { exact: true }).fill('GJ-QA-9001');
+        await admin.getByLabel('Model *', { exact: true }).fill('QA vehicle');
+        await admin.getByLabel('Capacity *', { exact: true }).fill('50 seats');
+        await admin.getByRole('button', { name: 'Save bus', exact: true }).click();
+        await admin.getByText('QA 9001 was saved successfully.').waitFor();
+        await admin.getByLabel('Search buses', { exact: true }).fill('QA 9001');
+        const record = (await api(admin, '/admin/bootstrap')).data.records.buses.find((item) => item.name === 'QA 9001');
+        assert.ok(record);
+        await admin.getByLabel('Filter buses by status').selectOption('inactive');
+        await admin.getByText('No matching buses', { exact: true }).waitFor();
+        await admin.getByLabel('Filter buses by status').selectOption('all');
+        await admin.locator('.admin-sort').click();
+        await admin.getByRole('button', { name: 'View QA 9001', exact: true }).click();
+        await admin.getByRole('dialog').getByText('GJ-QA-9001', { exact: true }).waitFor();
+        await admin.keyboard.press('Escape');
+        await admin.getByRole('button', { name: 'Edit QA 9001', exact: true }).click();
+        await admin.getByLabel('Model *', { exact: true }).fill('QA stale edit');
+        const otherAdmin = await pageFor('admin');
+        assert.equal((await api(otherAdmin, `/admin/buses/${record.id}`, { ...record, detail: 'QA saved by second admin' }, 'PUT')).ok, true);
+        await admin.getByRole('button', { name: 'Save bus', exact: true }).click();
+        await admin.getByRole('dialog').getByText(/changed since you opened it/).waitFor();
+        assert.equal(await admin.getByLabel('Model *', { exact: true }).inputValue(), 'QA stale edit');
+        await snapshot(admin, 'admin-edit-conflict.png');
+        await admin.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click();
+        await admin.reload();
+        await admin.getByLabel('Search buses', { exact: true }).fill('QA 9001');
+        await admin.getByText('QA saved by second admin', { exact: true }).waitFor();
+        await admin.getByRole('button', { name: 'Delete QA 9001', exact: true }).click();
+        await admin.getByRole('dialog').getByRole('button', { name: 'Delete record', exact: true }).click();
+        await admin.getByText('QA 9001 was removed.', { exact: true }).waitFor();
+        assert.equal((await api(otherAdmin, '/admin/bootstrap')).data.records.buses.some((item) => item.id === record.id), false);
+        await otherAdmin.context().close();
+    });
     let trip, route;
     await check('Both emergency forms reject failed submissions without inventing a location', async () => {
         for (const [role, page] of [['driver', driver], ['conductor', conductor]]) {
@@ -302,15 +410,25 @@ try {
         await driver.waitForFunction(() => window.__qaWatcherCount() > 0);
         await driver.locator('.driver-stop small').first().waitFor();
         assert.deepEqual(await driver.locator('.driver-stop small').allTextContents(),
-            starting.operationalStops.slice(1, 5).map((stop) => `${stopTimeSource(stop)} · ${stopTimeLabel(stop)}`));
+            starting.operationalStops.slice(0, 4).map((stop) => `${stopTimeSource(stop)} · ${stopTimeLabel(stop)}`));
+        assert.equal(await driver.locator('.driver-stop strong').first().innerText(), starting.operationalStops[0].name);
         const locationSaved = driver.waitForResponse((response) => response.url().endsWith('/location') && response.request().method() === 'POST');
         await driver.evaluate((point) => window.__qaEmitGps(point), route[0].coordinates);
         const afterGps = await (await locationSaved).json();
         await driver.getByText('GPS Active', { exact: true }).waitFor();
         assert.deepEqual(afterGps.operationalStops.map((stop) => stop.departureEstimateAt),
             starting.operationalStops.map((stop) => stop.departureEstimateAt));
+        const nextIndex = afterGps.operationalStops.findIndex((stop) => stop.id === afterGps.activeStaffTrip.nextStopId);
+        assert.ok(nextIndex >= 0);
         assert.deepEqual(await driver.locator('.driver-stop small').allTextContents(),
-            afterGps.operationalStops.slice(1, 5).map((stop) => `${stopTimeSource(stop)} · ${stopTimeLabel(stop)}`));
+            afterGps.operationalStops.slice(nextIndex, nextIndex + 4).map((stop) => `${stopTimeSource(stop)} · ${stopTimeLabel(stop)}`));
+        await driver.setViewportSize({ width: 390, height: 844 });
+        await driver.getByText(`Last GPS update: ${formatEventTime(afterGps.location.updatedAt)}`, { exact: true }).waitFor();
+        const freshness = await driver.locator('.driver-gps-freshness').boundingBox();
+        const mobileMap = await driver.locator('.driver-route-map').boundingBox();
+        assert.ok(freshness.y < mobileMap.y, 'Last GPS time must appear above the mobile map and not require scrolling past it');
+        await snapshot(driver, 'driver-active-mobile-gps.png');
+        await driver.setViewportSize({ width: 1440, height: 1000 });
         await conductor.goto(`${base}/conductor/trip`);
         const increase = conductor.getByRole('button', { name: 'Increase Boarded students' });
         await increase.waitFor();
@@ -435,6 +553,10 @@ try {
         await login(student, 'student');
     });
     await check('Trip completion then distinct return journey clears GPS and occupancy', async () => {
+        await driver.getByRole('button', { name: 'End trip', exact: true }).click();
+        assert.equal(await driver.getByRole('dialog').evaluate((element) => element.contains(document.activeElement)), true);
+        await driver.keyboard.press('Escape');
+        await driver.getByRole('dialog').waitFor({ state: 'detached' });
         await driver.getByRole('button', { name: 'End trip', exact: true }).click();
         await driver.getByRole('button', { name: 'Confirm end trip' }).click();
         await driver.waitForURL('**/driver');
@@ -578,7 +700,43 @@ try {
         await student.getByRole('checkbox', { name: 'Delay alerts' }).waitFor();
         assert.equal((await api(student, '/student/preferences')).data.delay, false);
     });
+    await check('Reports export persisted totals and complaints without private notes', async () => {
+        await admin.goto(`${base}/admin/reports`);
+        await admin.getByRole('heading', { name: 'Reports & performance' }).waitFor();
+        for (const format of ['CSV', 'PDF']) {
+            const downloading = admin.waitForEvent('download');
+            await admin.getByRole('button', { name: `Export ${format}`, exact: true }).click();
+            const download = await downloading;
+            const bytes = await readFile(await download.path());
+            assert.ok(bytes.length > 100);
+            assert.ok(download.suggestedFilename().endsWith(`.${format.toLowerCase()}`));
+            assert.doesNotMatch(bytes.toString(), /passwordHash|sessionToken|Private staff note/);
+        }
+        await admin.getByRole('button', { name: 'Complaints', exact: true }).click();
+        const downloading = admin.waitForEvent('download');
+        await admin.getByRole('button', { name: 'Export CSV', exact: true }).click();
+        const csv = await readFile(await (await downloading).path(), 'utf8');
+        assert.ok(csv.includes('resolved'));
+        assert.doesNotMatch(csv, /internalNotes|student@|QA transport request/);
+        await admin.setViewportSize({ width: 320, height: 900 });
+        const reportTable = admin.getByRole('region', { name: 'Complaint report table' });
+        await reportTable.focus();
+        assert.equal(await reportTable.evaluate((element) => element === document.activeElement), true);
+        await reportTable.press('ArrowRight');
+        await snapshot(admin, 'reports-export.png');
+    });
     }
+    await check('Landscape layouts and 200 percent text enlargement retain accessible controls', async () => {
+        for (const [role, page] of [['student', student], ['driver', driver], ['conductor', conductor], ['admin', admin]]) {
+            await page.setViewportSize({ width: 844, height: 390 });
+            await page.goto(`${base}/${role}`);
+            await snapshot(page, `${role}-landscape.png`);
+            await page.setViewportSize({ width: 768, height: 900 });
+            await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+            await snapshot(page, `${role}-text-200.png`);
+            await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
+        }
+    });
     await check('All role routes at desktop and mobile widths', async () => {
         const pages = {
             student: [student, ['', 'track', 'routes', 'alerts', 'complaints', 'profile', 'help']],
@@ -624,6 +782,11 @@ try {
         for (const [role, page] of [['student', student], ['driver', driver], ['conductor', conductor], ['admin', admin]]) {
             await page.setViewportSize({ width: 390, height: 900 });
             await page.goto(`${base}/${role}`);
+            if (role === 'driver') {
+                const mobile = page.getByRole('navigation', { name: 'Mobile Driver navigation', exact: true });
+                assert.equal(await mobile.getByRole('link', { name: 'Trip', exact: true }).getAttribute('href'), '/driver/trip');
+                assert.equal(await mobile.getByRole('link', { name: 'History', exact: true }).getAttribute('href'), '/driver/history');
+            }
             await page.getByRole('button', { name: 'Open navigation', exact: true }).click();
             const nav = page.getByRole('navigation', { name: `${role === 'admin' ? 'Admin' : role[0].toUpperCase() + role.slice(1)} navigation`, exact: true });
             const link = nav.getByRole('link').nth(1);

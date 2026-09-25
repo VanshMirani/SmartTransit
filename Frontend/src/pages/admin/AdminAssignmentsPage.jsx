@@ -9,6 +9,7 @@ function draftFromRoute(route) {
         busId: route.busId ?? "",
         driverId: route.driverId ?? "",
         conductorId: route.conductorId ?? "",
+        ...(route._version ? { _version: route._version } : {}),
     };
 }
 
@@ -46,11 +47,7 @@ export function AdminAssignmentsPage() {
             dirtyIds.current.delete(routeId);
             setDrafts((current) => ({
                 ...current,
-                [saved.id]: {
-                    busId: saved.busId,
-                    driverId: saved.driverId,
-                    conductorId: saved.conductorId,
-                },
+                [saved.id]: draftFromRoute(saved),
             }));
             setFeedback({
                 type: "success",
@@ -62,7 +59,7 @@ export function AdminAssignmentsPage() {
             setFeedback({
                 type: "error",
                 title: "Could not save",
-                message: error instanceof Error ? error.message : "The assignment could not be saved to the backend.",
+                message: error instanceof Error ? error.message : "The assignment could not be saved. Check your connection and retry.",
             });
         }
         finally {

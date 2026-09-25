@@ -104,7 +104,7 @@ export function AdminSettingsPage() {
               <Save /> {saving ? "Saving…" : "Save changes"}
             </button>)}/>
       {feedback && (<AdminFeedback {...feedback} dismiss={() => setFeedback(null)}/>)}
-      {backendConfig.enabled && (tab === 'general' || tab === 'permissions') && <p role="status">These settings are read-only. Access rules and tracking configuration are managed by the backend. Phone, email alerts and daily summaries are not connected here.</p>}
+      {backendConfig.enabled && (tab === 'general' || tab === 'permissions') && <p role="status">Deployment-managed settings are read-only. Contact your system administrator to change tracking rules or permissions. Service notices are in-app only; automated phone alerts, email alerts and daily summaries are unavailable.</p>}
 
       <nav className="settings-tabs" aria-label="Settings sections">
         {tabs.map((item) => (<button key={item.value} aria-pressed={tab === item.value} onClick={() => setTab(item.value)}>
@@ -192,7 +192,7 @@ export function AdminSettingsPage() {
             <div>
               <h2>Role permission matrix</h2>
               <p>
-                Access is enforced by the backend for each role and assignment.
+                Access is restricted to each user's role and transport assignment.
               </p>
             </div>
             <Users />
@@ -422,7 +422,7 @@ export function AdminSettingsPage() {
                 </article>))}
             </div>) : (<div className="report-table-empty">
               <Search />
-              <span>{backendConfig.enabled ? 'A complete administrative audit log is not connected.' : 'No audit events match the current filters.'}</span>
+              <span>{backendConfig.enabled ? 'Administrative audit history is unavailable in this view. Trip, passenger and complaint records remain available in their respective sections.' : 'No audit events match the current filters.'}</span>
             </div>)}
         </section>)}
     </div>);

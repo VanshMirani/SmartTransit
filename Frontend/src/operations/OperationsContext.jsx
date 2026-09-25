@@ -204,7 +204,7 @@ export function DriverOperationsProvider({ children, }) {
             return report;
         },
     }), [activeTrip, stops, tripStatus, checklist, tripLoadError, gpsUpdatedAt, gpsSharingStatus, gpsError, lastGpsLocation, emergency, history, refreshDriverTrip, retryGps]);
-    return (<DriverContext.Provider value={value}>{!activeTrip ? <AssignmentUnavailable error={tripLoadError} retry={refreshDriverTrip} logout={logout}/> : children}</DriverContext.Provider>);
+    return (<DriverContext.Provider value={value}>{!activeTrip ? <AssignmentUnavailable error={tripLoadError} unassigned={tripStatus === 'unassigned'} retry={refreshDriverTrip} logout={logout}/> : children}</DriverContext.Provider>);
 }
 // eslint-disable-next-line react-refresh/only-export-components
 export function useDriverOperations() {
@@ -252,9 +252,14 @@ export function ConductorOperationsProvider({ children, }) {
     const refreshConductorTrip = useCallback(async () => {
         if (!backendConfig.enabled)
             return null;
-        const data = await apiRequest("/conductor/trips/current");
-        applyConductorTripData(data);
-        return data;
+        try {
+            const data = await apiRequest("/conductor/trips/current");
+            applyConductorTripData(data);
+            return data;
+        } catch (reason) {
+            setTripLoadError(reason instanceof Error ? reason.message : 'Unable to load your assigned trip.');
+            return null;
+        }
     }, [applyConductorTripData]);
     useEffect(() => {
         if (!backendConfig.enabled)
@@ -331,11 +336,13 @@ export function ConductorOperationsProvider({ children, }) {
         },
     }), [activeTrip, stops, tripStatus, currentStopId, occupiedSeats, updates, emergency, refreshConductorTrip, tripLoadError]);
     return (<ConductorContext.Provider value={value}>
-      {!activeTrip ? <AssignmentUnavailable error={tripLoadError} retry={refreshConductorTrip} logout={logout}/> : <>{tripLoadError && <div className="connection-warning" role="alert">Connection interrupted. Passenger counts may be out of date.</div>}{children}</>}
+      {!activeTrip ? <AssignmentUnavailable error={tripLoadError} unassigned={tripStatus === 'unassigned'} retry={refreshConductorTrip} logout={logout}/> : <>{tripLoadError && <div className="connection-warning" role="alert">Connection interrupted. Passenger counts may be out of date.</div>}{children}</>}
     </ConductorContext.Provider>);
 }
-function AssignmentUnavailable({ error, retry, logout }) {
-    return <main className="placeholder"><section className="placeholder__card"><h1>Assigned trip unavailable</h1><p>{error || 'Loading your assignment. If no route is assigned, contact the transport office.'}</p><button className="button button--primary" onClick={() => void retry().catch(() => {})}>Refresh assignment</button><button className="button button--secondary" onClick={logout}>Log out</button></section></main>;
+function AssignmentUnavailable({ error, unassigned, retry, logout }) {
+    const [refreshing, setRefreshing] = useState(false);
+    const loading = !error && !unassigned;
+    return <main className="placeholder"><section className="placeholder__card" aria-busy={loading || refreshing}><h1>{loading ? 'Loading your assignment' : error ? 'Unable to load assignment' : 'Awaiting transport assignment'}</h1><p role={error ? 'alert' : 'status'}>{error || (unassigned ? 'Your account is active. Contact the transport office to assign your bus and route.' : 'Checking your bus and route details...')}</p>{!loading && <button className="button button--primary" disabled={refreshing} onClick={async () => { setRefreshing(true); try { await retry(); } finally { setRefreshing(false); } }}>{refreshing ? 'Refreshing...' : 'Refresh assignment'}</button>}<button className="button button--secondary" onClick={logout}>Log out</button></section></main>;
 }
 // eslint-disable-next-line react-refresh/only-export-components
 export function useConductorOperations() {

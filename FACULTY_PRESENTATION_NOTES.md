@@ -1,4 +1,4 @@
-# SmartTransit Faculty Presentation Notes
+# SmartTransit Presentation Notes
 
 ## Short overview
 
@@ -19,55 +19,49 @@ SmartTransit solves this by connecting student-facing transport information with
 - Conductor app: passenger boarding/deboarding updates, current stop selection, seat availability calculation, update history and emergency reporting.
 - Admin dashboard: live fleet map, bus status, delay alerts, occupancy summary, route management, bus/driver/conductor/student management, assignments, notifications, complaints, reports and settings.
 - Responsive UI: works on desktop and mobile screens.
-- Backend-ready setup: the frontend can run in demo mode, or connect to the included local API for login, OTP-based student signup, complaints, notifications, admin data and staff trip actions.
+- Connected transport records: the Node.js API handles authentication, approvals, complaints, notifications, assignments and staff trip operations. Production records persist in MongoDB.
 
-## How to explain backend readiness
+## How It Works
 
-The application is not just static screens. The frontend is separated into service and context layers, so data can come either from local demo data or from an API. A local Node.js API is included for testing. Later, the same frontend can be connected to a real backend database by implementing the documented API endpoints.
+React provides the four dashboards. A Node.js HTTP API checks permissions, account status and assignments. Production uses MongoDB; isolated local tests can use a temporary JSON store. Dashboards fetch current records through polling, not shared browser storage.
 
-Authentication uses role-based login. Student signup verifies ownership of an institute email such as `name@iite.indusuni.ac.in` through OTP, instead of depending on hard-to-maintain enrollment-number formats. After login, the frontend stores a session and sends a bearer token to the backend. Student, admin, driver and conductor screens already call centralized API helpers when backend mode is enabled.
+Student email verification and transport approval are separate steps. Administrators approve students and assign transport, and only administrators provision staff accounts. Opaque server sessions enforce authorization on every protected operation.
+
+Driver location is shared during active trips and includes its recorded update time. ETA is an approximate distance/speed calculation, not a traffic-aware road-navigation service. Stopped, unreliable or missing GPS can make ETA unavailable. The conductor's confirmed count determines available seats: previous occupied + boarded - deboarded, then capacity - occupied. This is not individual attendance or a reservation.
 
 ## Demo flow for faculty
 
 1. Start by showing the public home page and explain that SmartTransit is for Indus University transport.
-2. Login as student and show the assigned bus, route IU-R4, ETA, available seats, notifications and complaint option.
-3. Login as driver and show the assigned bus, route, pre-trip checklist, GPS privacy and emergency option.
-4. Login as conductor and show the seat update screen where boarded/deboarded students are entered.
-5. Login as admin and show the live operations map, all buses, route status, complaints, notifications and management pages.
-6. Mention that the app has been tested for desktop and mobile responsiveness.
+2. Sign in as the student and show the assigned bus, route, recorded update times, seats and complaint option.
+3. In a separate session, sign in as the driver, complete the checklist and start a trip. The recorded departure is the actual start time.
+4. Sign in as the conductor, enter a valid boarding count and confirm that the student/operator views receive it through the API and polling.
+5. Finish the trip, prepare a separate return journey, and demonstrate campus boarding followed by deboarding.
+6. In the operator dashboard, demonstrate approval and assignment, route-stop editing, and complaint resolution using temporary records.
+7. Use **GPS simulator** for a clearly labelled route simulation when necessary. It is private to that administrator session and does not move a real bus or change passenger counts.
+8. Demonstrate mobile navigation, validation and recovery after a failed request.
 
-## Demo accounts
+Use isolated data for all write demonstrations. A saved emergency report is not proof of external notification delivery or that help has arrived.
 
-| Role | Email | Password |
-| --- | --- | --- |
-| Student | student@iite.indusuni.ac.in | Student@123 |
-| Driver | driver@transport.indusuni.ac.in | Driver@123 |
-| Conductor | conductor@transport.indusuni.ac.in | Conductor@123 |
-| Admin | admin@transport.indusuni.ac.in | Admin@123 |
+## Isolated Accounts
+
+Use only the local fixture accounts in [docs/LOGIN_CREDENTIALS.txt](docs/LOGIN_CREDENTIALS.txt). These are not production credentials. Live accounts such as Mahipal are not copied into the isolated environment. Keep private production handover files out of the submission archive.
 
 ## Run commands
 
 ```bash
-npm install
-npm run dev
+node Backend/scripts/qa-server.js
 ```
 
-Use this for frontend demo mode.
-
-```bash
-npm run dev:full
-```
-
-Use this for the complete local setup with frontend and backend together.
-
-```bash
-npm run reset:data
-```
-
-Use this before a presentation to restore the original demo data.
+This starts the complete local app with a fresh temporary database and captured test mail. It does not load deployment environment files or send real emails. Open the displayed URL; set `QA_PORT` to another free port if necessary. Do not reset or clean an existing database before presenting.
 
 ```bash
 npm run check
 ```
 
 Use this to verify linting, tests and production build before presentation.
+
+## Verification Scope
+
+See [the submission review](docs/SUBMISSION_REVIEW_2026-09-25.md) for current browser and database evidence. The OnePlus test confirmed a real phone location reaching the isolated server. Continuous movement, screen-lock/background operation and outage recovery on that phone remain unverified. Most pickup locations still need transport-office confirmation. The simulator does not establish GPS accuracy or stop correctness.
+
+The [production handover record](docs/PRODUCTION_HANDOVER_2026-09-25.md) contains credential-rotation, controlled email and encrypted application-state restore evidence. A passing local build is not unrestricted production certification or official university endorsement.

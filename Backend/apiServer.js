@@ -351,7 +351,7 @@ function sessionExpired(session) {
     if (Number.isFinite(expiresAt))
         return expiresAt <= Date.now();
     const createdAt = Date.parse(session.createdAt ?? "");
-    return Number.isFinite(createdAt) && createdAt + sessionDurationMs() <= Date.now();
+    return !Number.isFinite(createdAt) || createdAt + sessionDurationMs() <= Date.now();
 }
 
 function createOtp() {
@@ -1447,9 +1447,27 @@ function adminDataWithLiveLocations(data) {
     const admin = adminDataWithConsistentAssignments(data);
     return {
         ...admin,
+        records: Object.fromEntries(Object.entries(admin.records).map(([kind, records]) => [kind,
+            records.map((record) => withEditVersion(record, data.admin.records[kind]?.find((item) => item.id === record.id))),
+        ])),
+        routes: admin.routes.map((route) => withEditVersion(route, data.admin.routes.find((item) => item.id === route.id))),
         tripHistory: data.operations.tripHistory ?? [],
         fleetVehicles: admin.fleetVehicles.map((bus) => busWithLiveLocation({ ...data, admin }, bus, bus.route)),
     };
+}
+
+// The edit token describes stored master data, not frequently changing GPS projections.
+function editVersion(record) {
+    return createHash('sha256').update(JSON.stringify(record)).digest('hex');
+}
+
+function withEditVersion(projected, stored = projected) {
+    return { ...projected, _version: editVersion(stored) };
+}
+
+function staleEdit(previous, version) {
+    // Older API clients remain compatible; current admin forms always send their read version.
+    return previous && version !== undefined && version !== editVersion(previous);
 }
 
 function operationsWithLiveLocation(data, sourceOperations = data.operations) {
@@ -2792,7 +2810,9 @@ export function createApiServer(store, options = {}) {
                     const id = adminRecordMatch[2];
                     if (body.id && body.id !== id) return { error: 'Record ID does not match the requested record.' };
                     const previous = data.admin.records[kind].find((item) => item.id === id);
-                    let next = trimAdminRecordStrings({ ...previous, ...body, id });
+                    const { _version, ...changes } = body;
+                    if (staleEdit(previous, _version)) return { error: 'This record changed since you opened it. Cancel and reopen the form to review the latest data before saving.', status: 409 };
+                    let next = trimAdminRecordStrings({ ...previous, ...changes, id });
                     const recordError = validateManagedRecord(data, kind, next, previous);
                     if (recordError) return { error: recordError };
                     if (kind === "students") {
@@ -2815,10 +2835,10 @@ export function createApiServer(store, options = {}) {
                     data.admin.records[kind] = exists
                         ? data.admin.records[kind].map((item) => item.id === id ? next : item)
                         : [next, ...data.admin.records[kind]];
-                    return next;
+                    return withEditVersion(next);
                 });
                 if (updated.error) {
-                    badRequest(response, updated.error);
+                    send(response, updated.status ?? 400, { message: updated.error });
                     return;
                 }
                 send(response, 200, updated);
@@ -2836,7 +2856,9 @@ export function createApiServer(store, options = {}) {
                     const id = routeMatch[1];
                     if (body.id && body.id !== id) return { error: 'Route ID does not match the requested route.' };
                     const previous = data.admin.routes.find((item) => item.id === id);
-                    const next = trimManagedRouteStrings({ ...previous, ...body, id });
+                    const { _version, ...changes } = body;
+                    if (staleEdit(previous, _version)) return { error: 'This route changed since you opened it. Cancel and reopen the form to review the latest data before saving.', status: 409 };
+                    const next = trimManagedRouteStrings({ ...previous, ...changes, id });
                     const routeError = validateManagedRoute(data, next, previous);
                     if (routeError) return { error: routeError };
                     if (Array.isArray(next.stops)) {
@@ -2849,9 +2871,9 @@ export function createApiServer(store, options = {}) {
                         ? data.admin.routes.map((item) => item.id === id ? next : item)
                         : [next, ...data.admin.routes];
                     data.admin.deletedRouteCodes = (data.admin.deletedRouteCodes ?? []).filter((code) => code !== next.code);
-                    return next;
+                    return withEditVersion(next);
                 });
-                if (updated.error) { badRequest(response, updated.error); return; }
+                if (updated.error) { send(response, updated.status ?? 400, { message: updated.error }); return; }
                 send(response, 200, updated);
                 return;
             }

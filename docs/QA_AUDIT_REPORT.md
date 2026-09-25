@@ -1,5 +1,141 @@
 # SmartTransit QA Audit
 
+## Final Submission Pass: 25 September 2026
+
+The [submission review](SUBMISSION_REVIEW_2026-09-25.md) records the latest content/layout fixes, driver route guidance and GPS presentation corrections, and staff loading/unassigned/error states. It supersedes older readiness/test-count wording below for the current local source. Existing theme, navigation, backend integrations and user work were preserved; no production data or deployment was changed in this pass.
+
+Verification includes lint, 138 automated tests, a production build, 29 production-mode local browser scenarios with disposable MongoDB, and a seven-width layout retest. The review links exact results and explicit remaining limitations; no blanket production-readiness claim is made.
+
+## Authorized Handover Follow-Up: 25 September 2026
+
+The owner subsequently authorized the five outstanding handover checks. [Current handover report](PRODUCTION_HANDOVER_2026-09-25.md) supersedes the earlier no-production-access boundary for this narrow follow-up only.
+
+- Encrypted backup of the live application's state and indexes restored successfully into a new disposable MongoDB, with exact comparison after reconnect. No source restore/write was performed by the verifier. Off-device retention and full disaster recovery are still open.
+- The published admin password initially authenticated and stored student/conductor fixture matches were confirmed. The owner then explicitly approved three-account rotation and private local handover. All three old passwords now return 401 and new passwords return 200; 103 stored sessions were revoked, a held old token fails, and final stored comparison has zero published-fixture matches. Emails, roles and transport data stayed intact. Demo-account email recovery remains unresolved.
+- Owner-supplied Electrotherm and Saanvi coordinates on IU-R9 were saved through the live admin API with no active trip; fresh API and MongoDB reads confirm both, with unrelated stops unchanged. [Full list of 159 stop entries](STOP_LOCATION_REVIEW.md); the other 157 physical pickups are not certified.
+- OnePlus Nord CE 4 Lite USB testing was blocked at the authorization prompt. The separately authorized protected HTTPS test subsequently confirmed a real phone fix reaching the isolated server; continuous journeys and background/outage behaviour remain untested. A Gmail request was rejected before sending by the university-domain rule. After exact address confirmation, one authorized university reset-email request returned 200 and the owner confirmed Inbox receipt; their student password was not changed.
+- The earlier handover `npm run check` passed lint, **132 tests** and build; subsequent phone-test additions and submission checks are recorded in their newer reports. No push, merge, deployment, bulk data cleanup, real emergency or production trip transition was performed in this follow-up.
+
+**The exposed fixture-password issue is resolved. Full handover still needs the real-phone test, remaining physical pickup confirmations, a recovery process for demo-address accounts and off-device backup arrangements.**
+
+## Current Audit: 25 September 2026
+
+This section supersedes historical readiness statements below. Scope: the complete-website audit request, safe isolated fixes and evidence-based coverage. Base commit `3a956723adc0194abde3401664e76e60c2235e27`; local branch `codex/coverage-audit-2026-09-25`. Existing user changes in `DEPLOYMENT.md` and older evidence folders were preserved. No push, merge, deployment, production login/write, real mail, real emergency, account reset or hosting change was performed in this round.
+
+Read [coverage and explicit untested matrix](QA_COVERAGE.md) and [prioritized findings with reproduction/fix/retest](QA_FINDINGS.md). The inventory contains 492 source declarations/call sites plus routes, API families, permissions, storage and integrations. There are 48 executed case groups. A page screenshot is not proof that every button/state combination works; each unexecuted individual matrix remains NOT TESTED.
+
+### Release Recommendation
+
+**Suitable for a controlled staging review of these patches, not an unconditional production handover.** Current admin forms are protected against stale overwrites; legacy requests without an edit version retain backward-compatible behavior. Historically exposed production demonstration credentials still require owner confirmation of rotation/revocation. Real-phone journeys, physical stop pins, real controlled mail delivery, hosted backup/restore and university operating procedures are not certified by the local tests.
+
+### What Was Already Working
+
+The baseline passed lint, 118 tests and a production build. Existing emergency confirmation/retry, temporary-outage session handling, approved student access, active-trip assignment enforcement, GPS acceptance/freshness, separate return journey identity, atomic/idempotent seat updates and persistence were retained. Targeted tests and independent browser sessions exercised these workflows again; no browser-only replacement of authentication, approval, GPS or database authority was introduced.
+
+Actual implementation is React/Vite/React Router, Node's built-in HTTP server, scrypt passwords and persisted opaque bearer sessions, not Express/Socket.IO/JWT/bcrypt. Frontend tokens are in sessionStorage; authorization is backend-enforced. Updates use polling (auth/staff/admin about 15 seconds; student about 30 seconds) and refresh after writes. JSON fixtures serialize atomic single-process writes; MongoDB uses a revision-controlled application-state document. Browser-stored bearer-token XSS exposure and storage/rate-limiter scaling limitations remain recorded risks.
+
+### Confirmed Fixes
+
+| Batch | Findings | Change and evidence |
+| --- | --- | --- |
+| Data integrity | F01, high | Versioned current admin forms reject stale route/record saves with 409 inside the storage mutation. Dirty assignment drafts retain their read version. Reproduced before; JSON, MongoDB and two-admin browser conflict tests pass. |
+| Reports | F02-F04, medium | Formula-like CSV text is neutralized; PDF rows paginate instead of disappearing after line40; daily on-time percentages use measured trips consistently. Byte/calculation regressions and browser downloads pass. PDF Unicode limitation remains. |
+| Save and keyboard usability | F05-F06, medium | Errors appear inside management editors and retain values; driver start/end confirmations contain focus, close safely with Escape and return focus. Browser tests pass without redesign. |
+| Responsive/accessibility | F07/F09, medium | Conductor stop rows scroll within their panel, staff icons stay visible and report tables support keyboard scrolling. Six-width/text-enlargement/keyboard and axe checks pass. |
+| Session lifetime | F08, medium | A session with neither valid expiry nor usable creation metadata is rejected rather than remaining valid indefinitely. Normal sessions and legacy bounded sessions remain supported. JSON/Mongo regressions pass. |
+| Hosting routing | F10, medium | Local Vercel rewrite excludes API/assets from SPA fallback. Matcher regression passes. The live frontend still returned API-path HTML during this read-only audit; hosted correction is BLOCKED until an approved deployment test. |
+| Loading stability | F11, low | Logo declares its real intrinsic dimensions without changing displayed CSS size. Blocked-image browser test and before/after local timing samples confirm reserved space and reduced observed movement. |
+
+No migration, new dependency, framework change or new environment variable is required for these patches. No file was deleted merely because it looked unused.
+
+### Local Verification
+
+- Baseline: `npm run check`, exit0; lint,118 tests and build passed.
+- Final: `npm run check`, exit0; lint, **128 tests passed, zero failed/skipped**, production build passed. [Full log](qa/2026-09-25-coverage-release-review/check.log). Main emitted JS330.23kB/97.11kB gzip; protected map/chart bundles remain separate. This is bundle size, not a performance guarantee.
+- Real temporary MongoDB: `QA_MONGO_MODULE=<installed module> node Backend/scripts/qa-mongo.js`, exit0; **33 regression tests** plus ten independent-adapter concurrent increments, exact state reopen and empty-production fail-closed assertions. No Atlas/production URI used.
+- JSON tests cover mutation rollback, persistent state/reopen, auth/OTP/reset/approval, role boundaries, GPS/ETA, trip/count history and retries. Additional same-role staff tests use two genuinely assigned active routes. Eleven management requests against each non-admin role return403.
+- Isolated provider/store failure injection returns errors without false acceptance and permits safe retry. This proves application handling, not actual Brevo or Mongo network-partition behavior.
+- `npm audit --json`: exit0, zero reported advisories in the resolved375-dependency tree. No forced upgrades. Known-pattern scan of56 emitted JS/HTML/JSON files found no private key, credentialed Mongo URL, Brevo key or known fixture-password match; this is not exhaustive secret detection.
+- `check:production` was inspected and run from an empty temporary working directory with nonfunctional placeholder configuration, exit0. It validates settings without connecting to a database or provider. No production secrets printed.
+- Final diff reviewed; unrelated `DEPLOYMENT.md` edit remains untouched. Test assertion updates fetch a newly versioned record before a distinct edit; stale-save rejection is tested separately, not bypassed or weakened.
+- A fresh complete local preview is available at `http://127.0.0.1:5184`, with a new disposable JSON store and captured mail. Installed Chrome verified home-to-login navigation, visible content, no error overlay/page-console errors and backend health200. [Preview evidence](qa/2026-09-25-coverage-release-review/final-local-preview.json). The optional agent-browser CLI was unavailable; existing Playwright was used, not an unverified browser claim.
+
+### Staging Verification
+
+**Production-mode staging here means loopback HTTPS, a built frontend, real disposable MongoDB and captured test mail. It is not a shared hosted staging environment.** The harness does not load the repository `.env`, use real accounts, call an email provider or write production GPS.
+
+Final `qa-staging.js` run exited0: **28 browser scenarios passed**,267 screenshots,40 pages rendered at **320,390,768,1024,1366,1920 CSS pixels** (240 page/width renders). Additional844x390 landscape and200% root-text checks cover all four dashboard homes. This is viewport/text emulation, not real phone/virtual keyboard or actual browser zoom.
+
+Independent Student, Driver, Conductor and Admin contexts exercised signup with captured OTP, pending approval/assignment/access, password reset/session revocation, direct forbidden APIs, outbound start, synthetic phone-GPS upload, cross-role polling, conductor updates, lost-response retry, emergency failure/retry, separate return, complaints/resolution, export downloads, navigation and recovery. Scripted keyboard tests cover public/role menus and trip dialogs. The MongoDB adapter reopened the exact browser-created state after the run.
+
+Evidence: [browser results](qa/2026-09-25-coverage-release-review/browser-results.json), [accessibility results](qa/2026-09-25-coverage-release-review/accessibility.json), [admin conflict](qa/2026-09-25-coverage-release-review/admin-edit-conflict.png), [conductor text reflow](qa/2026-09-25-coverage-release-review/conductor-text-200.png), [mobile logo](qa/2026-09-25-coverage-release-review/logo-space-restored.png), [tracking](qa/2026-09-25-coverage-release-review/student-live-tracking.png), [failed emergency](qa/2026-09-25-coverage-release-review/emergency-failed.png).
+
+There were **zero uncaught page exceptions**. Intentional failure injection records blocked/failed requests and401/403/409/503 responses; expected navigation-aborted map requests also remain in evidence. This is not an assertion that the console is always empty. Normal page-width smoke checks recorded no console issues. **58 axe scans reported zero violations;37 scans contain incomplete checks requiring human review.** Screen-reader speech and full WCAG conformance are NOT TESTED. WCAG2.2AA, WSTG4.2 and applicable ASVS5.0.0 sections were review targets, not certifications.
+
+Intermediate failed runs are retained separately, including hidden-editor feedback, conductor overflow and the report-table accessibility failure. They are not counted as passes.
+
+### Performance Measurements
+
+Fresh Chromium contexts, unthrottled local production build, three samples per page/width before and after the logo fix. Other QA could run concurrently. No Lighthouse score, field Web Vitals or device/load-capacity claim. The observer sums sampled layout shifts; this is not a field CLS percentile. Each public sample fetched six resources and no protected map/chart chunk.
+
+| Page / width | Median DCL before/after, ms | Median FCP before/after, ms | Median LCP before/after, ms | Maximum observed shift before/after |
+| --- | --- | --- | --- | --- |
+| Home390 | 446/366 | 500/432 | 500/432 | 0.1630/0.0328 |
+| Login390 | 366/367 | 404/400 | 416/404 | 0.2247/0.0017 |
+| Home1366 | 390/454 | 448/520 | 464/520 | 0.0057/0.0018 |
+| Login1366 | 404/451 | 444/488 | 444/488 | 0.0194/0.0054 |
+
+The layout reservation is improved; mixed timing changes do not establish a startup speed improvement. Raw [before](qa/2026-09-25-coverage-verified/performance-samples.json) and [after](qa/2026-09-25-coverage-performance-after/performance-samples.json) samples include conditions.
+
+### Live Deployment
+
+Read-only hosting metadata confirmed Vercel deployment `dpl_J3SU349kensWt2tp2JLh857v3fdD` READY and Render deployment `dep-dar66sjl550s73d3gbh0` live at base commit `3a95672`. **None of this round's patches are on the live website.**
+
+Eleven public/unauthenticated GET checks passed expected page/asset/health200 and protected API401 responses: [HTTP evidence](qa/2026-09-25-coverage-live/public-http.json). Public home/login were also inspected in the in-app browser without credentials. An additional GET to the frontend origin `/api/qa-unknown` returned200 HTML, reproduced F10. Existing HTTPS/security headers were observed; CSP is report-only, not enforced protection. Unknown UI paths intentionally remain visual404 pages over SPA HTTP200. Social metadata exists, but actual share-card rendering on external platforms is NOT TESTED.
+
+Production-role workflows were not exercised with real users. No production records were added/deleted, no existing journey changed and no email/emergency was sent. Real production persistence, secrets rotation, provider delivery and physical GPS cannot be inferred from public GETs or deployment status.
+
+### Remaining Gates And Unverified Scope
+
+1. **Owner action required:** confirm rotation/revocation of historically published demo credentials, especially the administrator account accepted in an earlier authorized check. This round did not try those credentials or reset any account. Treat unresolved exposure as a release blocker.
+2. **Approval required:** align Render's configured Node20 with the tested Node24 environment; package minimum/runtime declarations are not a tested deployment pin. Do not upgrade hosting silently. Test the new Vercel rule in an approved preview before production publication.
+3. **Real devices/services:** controlled Brevo inbox delivery; Android/iPhone outdoor journeys, permission revocation, internet loss, screen lock/background/reopen; Atlas backup restore/timeouts and production capacity. Browser geolocation mocks do not prove these.
+4. **Transport validation:** confirm exact stop pins, especially historically duplicated Electrotherm/Saanvi on IU-R9; route/direction-specific roads, support contacts, staff response procedures and approved-but-unassigned operating policy. No coordinates, contacts or policies were invented.
+5. **Known implementation limits:** ETA is qualified stop-geometry/speed estimation, not traffic-aware road routing; return uses reversed configured stops unless independently modelled; full admin actor/time audit trail is absent; PDF renderer does not preserve arbitrary Unicode; legacy edit requests may omit version; CSP is report-only; rate limits are process-local; Mongo state-document growth needs planning.
+6. **Unexecuted matrix:** all master-data forms with long/Unicode/pasted fields; every same-role privacy query shape; stale-delete races; full field allowlists/prototype-pollution permutations; multitab/logout races; long-running watcher/memory/load tests; real Firefox/Safari; screen-reader speech, true zoom/virtual keyboards and social-preview platforms. See coverage for exact statuses. These are not silently marked PASS.
+
+### Changed Files
+
+- Backend behavior: `Backend/apiServer.js` (versioned editing and invalid session lifetime).
+- Frontend behavior: `Frontend/src/admin/assignmentDrafts.js`, `components/admin/ManagementPage.jsx`, `pages/admin/AdminAssignmentsPage.jsx`, `pages/admin/AdminReportsPage.jsx`, `services/recordedReports.js`, `utils/reportExport.js`.
+- Focus/layout: new `Frontend/src/hooks/useDialogFocus.js`, driver checklist/trip pages, `Frontend/src/styles.css`, `components/Brand.jsx`.
+- Routing: `vercel.json`, with a new matcher regression in `Frontend/tests/deploymentRouting.test.js`.
+- Tests/tooling: `Backend/tests/reliability.test.js`; assignment/report/export frontend tests; `Backend/scripts/qa-browser.js`, `qa-public-readonly.js`, `qa-staging.js`; new `qa-inventory.js`, `qa-performance.js`.
+- Documentation: README, BACKEND_INTEGRATION, this report, new QA_COVERAGE and QA_FINDINGS; generated redacted/test-fixture evidence under `docs/qa/2026-09-25-coverage-*`. The pre-existing DEPLOYMENT.md change is not part of these patches.
+
+### Repeat Locally
+
+Run from the existing repository on tested Node24, using its lockfile-installed dependencies. Do not run reset or presentation-cleanup commands.
+
+```sh
+npm run check
+QA_MONGO_MODULE=<installed-mongodb-memory-server-module> node Backend/scripts/qa-mongo.js
+QA_PLAYWRIGHT_MODULE=<installed-playwright-module> QA_MONGO_MODULE=<installed-mongodb-memory-server-module> QA_AXE_PATH=<installed-axe.min.js> QA_WIDTHS=320,390,768,1024,1366,1920 QA_RUN_NAME=<new-evidence-folder> node Backend/scripts/qa-staging.js
+QA_PORT=5184 node Backend/scripts/qa-server.js
+```
+
+The final command starts a separate disposable full local app; fixture credentials in the existing login documentation are for that isolated app only. Do not use live credentials there. The script captures test mail locally; never include its OTP/token contents in evidence. Use a free port if5184 is occupied. Stop that local server with Ctrl+C after review. Add `QA_PERFORMANCE_ONLY=1` to the staging command for the separate public timing run.
+
+### Deployment And Rollback Checklist (Not Executed)
+
+1. Review this branch/diff and unresolved gates; obtain explicit push/preview/deployment approval. Confirm credential exposure is resolved. Back up the intended hosted state through its approved process without resetting records.
+2. Verify `VITE_USE_BACKEND`, `VITE_API_BASE_URL`, `SMARTTRANSIT_STORAGE`, `SMARTTRANSIT_MONGODB_URI`, `SMARTTRANSIT_ALLOWED_ORIGIN` and approved mail/sender settings by name/presence only. No privileged secret belongs in a VITE variable. This patch introduces no new setting.
+3. Test an approved preview using an isolated database and controlled inbox. Verify Vercel config acceptance, real `/api`/missing-asset responses, page deep links, HTTPS/CORS, health and unsigned private401 responses. Repeat version-conflict and all-role workflows there.
+4. Publish compatible backend changes before the matching frontend if approved; no schema migration is needed. Do not remove legacy compatibility without a separate coordinated decision. Confirm both deployed commit IDs, not only build status.
+5. After release, use read-only smoke checks and approved test accounts only. If regression occurs, restore previous frontend/backend application deployments at `3a95672`; do not automatically restore/wipe the database or discard newer operational records. Recheck version compatibility, auth, active trips and counts.
+
+## Historical Evidence (Earlier Requests)
+
 Date: 5 September 2026 (Asia/Kolkata)
 
 Latest review: [25 September 2026 local audit](QA_AUDIT_2026-09-25.md). It supersedes historical readiness statements below and preserves earlier evidence. Production checks for that review were read-only. The owner subsequently approved publishing the audit branch to GitHub, but not merging or deploying it.

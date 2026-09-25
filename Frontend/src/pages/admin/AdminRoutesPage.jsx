@@ -87,7 +87,7 @@ export function AdminRoutesPage() {
             setFeedback({
                 type: "error",
                 title: "Could not save route",
-                message: error instanceof Error ? error.message : "The route could not be saved to the backend.",
+                message: error instanceof Error ? error.message : "The route could not be saved. Check your connection and retry.",
             });
         }
         finally {

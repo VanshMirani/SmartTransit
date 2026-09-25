@@ -47,6 +47,23 @@ async function fixture(t, options = {}) {
     return { request, rawRequest, login, store, filename, restart };
 }
 
+test('stale admin route and record forms cannot overwrite a newer saved edit', async (t) => {
+    const { request, login, store } = await fixture(t);
+    const first = await login('admin'), second = await login('admin');
+    const snapshot = (await request('/admin/bootstrap', first)).data;
+    const original = snapshot.routes[0];
+    const saved = await request(`/admin/routes/${original.id}`, first, { ...original, name: 'QA first administrator' }, 'PUT');
+    assert.equal(saved.status, 200, saved.data.message);
+    const stale = await request(`/admin/routes/${original.id}`, second, { ...original, destination: 'QA stale destination' }, 'PUT');
+    assert.equal(stale.status, 409, 'Stale route must not erase the first administrator edit');
+    assert.match(stale.data.message, /changed.*reopen/i);
+    assert.equal((await store.get()).admin.routes.find((route) => route.id === original.id).name, 'QA first administrator');
+    const bus = snapshot.records.buses[0];
+    assert.equal((await request(`/admin/buses/${bus.id}`, first, { ...bus, detail: 'QA first model' }, 'PUT')).status, 200);
+    assert.equal((await request(`/admin/buses/${bus.id}`, second, { ...bus, detail: 'QA stale model' }, 'PUT')).status, 409);
+    assert.equal((await store.get()).admin.records.buses.find((item) => item.id === bus.id).detail, 'QA first model');
+});
+
 test('complaints validate content and concurrent lost-response retries create one timestamped record', async (t) => {
     const { request, login, store, restart } = await fixture(t);
     const student = await login('student');
@@ -183,8 +200,9 @@ test('route edits and deletion protect assignments, active trips, student stops 
     const duplicate = { ...route, id: 'qa-route', code: 'IU-R999', stops: route.stops };
     assert.equal((await request('/admin/routes/qa-route', admin, duplicate, 'PUT')).status, 400);
     const disposable = { ...duplicate, busId: '', driverId: '', conductorId: '' };
-    assert.equal((await request('/admin/routes/qa-route', admin, disposable, 'PUT')).status, 200);
-    assert.equal((await request('/admin/routes/qa-route', admin, { ...disposable, stops: [route.stops[0], route.stops[0]] }, 'PUT')).status, 400);
+    const created = await request('/admin/routes/qa-route', admin, disposable, 'PUT');
+    assert.equal(created.status, 200);
+    assert.equal((await request('/admin/routes/qa-route', admin, { ...created.data, stops: [route.stops[0], route.stops[0]] }, 'PUT')).status, 400);
     assert.equal((await request('/admin/routes/qa-route', admin, undefined, 'DELETE')).status, 200);
     assert.equal((await request(`/admin/buses/${route.busId}`, admin, undefined, 'DELETE')).status, 400);
     assert.equal((await request(`/driver/trips/${trip.id}/start`, driver, {})).status, 200);
@@ -579,6 +597,98 @@ test('GPS rejects weak, missing, old, future and out-of-order fixes', async (t) 
     assert.equal((await store.get()).operations.liveLocations[tripId].updatedAt, base.timestamp);
 });
 
+test('assigned staff on a second route cannot operate another route or call admin endpoints', async (t) => {
+    const { request, login, store } = await fixture(t);
+    const driver = await login('driver');
+    const first = (await request('/driver/trips/current', driver)).data.activeStaffTrip;
+    const tokens = {};
+    for (const role of ['driver', 'conductor']) {
+        const email = `qa-second-${role}@transport.indusuni.ac.in`;
+        await store.update((data) => {
+            const route = data.admin.routes.find((item) => item.code === 'IU-R2');
+            const record = data.admin.records[`${role}s`].find((item) => item.id === route[`${role}Id`]);
+            const user = { id: `qa-second-${role}`, name: record.name, role, status: 'active', email, passwordHash: hashPassword('LocalOnly@2026!') };
+            record.accountUserId = user.id;
+            record.accountEmail = email;
+            data.users.push(user);
+            return true;
+        });
+        tokens[role] = (await request('/auth/login', null, { email, password: 'LocalOnly@2026!' })).data.token;
+    }
+    const second = (await request('/driver/trips/current', tokens.driver)).data.activeStaffTrip;
+    assert.equal(second.routeCode, 'IU-R2');
+    assert.equal((await request('/conductor/trips/current', tokens.conductor)).data.activeStaffTrip.id, second.id);
+    assert.notEqual(second.id, first.id);
+    assert.equal((await request(`/driver/trips/${first.id}/start`, driver, {})).status, 200);
+    assert.equal((await request(`/driver/trips/${second.id}/start`, tokens.driver, {})).status, 200);
+    const original = structuredClone((await store.get()).operations);
+    for (const action of ['start', 'end', 'location']) {
+        const response = await request(`/driver/trips/${first.id}/${action}`, tokens.driver, { latitude: 23.05, longitude: 72.53, accuracy: 10, timestamp: new Date().toISOString() });
+        assert.equal(response.status, 400, action);
+    }
+    assert.equal((await request(`/conductor/trips/${first.id}/seat-updates`, tokens.conductor, { id: 'qa-wrong-route', stopId: first.nextStopId, boarded: 1, deboarded: 0 })).status, 400);
+    for (const token of Object.values(tokens))
+        assert.equal((await request('/staff/emergencies', token, { id: 'qa-wrong-emergency', tripId: first.id, type: 'Other', note: 'Local fixture only' })).status, 400);
+    assert.deepEqual((await store.get()).operations, original, 'Rejected cross-route requests must not alter either journey');
+    tokens.student = await login('student');
+    const forbidden = [
+        ['/admin/bootstrap', 'GET'], ['/admin/live-locations', 'GET'], ['/admin/simulation', 'POST'],
+        ['/admin/buses/qa-forbidden', 'PUT'], ['/admin/drivers/qa-forbidden', 'PUT'], ['/admin/conductors/qa-forbidden', 'PUT'],
+        ['/admin/students/qa-forbidden/status', 'PATCH'], ['/admin/routes/qa-forbidden', 'PUT'],
+        ['/admin/buses/qa-forbidden', 'DELETE'], ['/admin/notifications', 'POST'], ['/admin/complaints/qa-forbidden', 'PATCH'],
+    ];
+    for (const token of Object.values(tokens)) {
+        for (const [endpoint, method] of forbidden)
+            assert.equal((await request(endpoint, token, method === 'GET' ? undefined : {}, method)).status, 403, `${method} ${endpoint}`);
+    }
+    assert.equal((await request(`/conductor/trips/${second.id}/seat-updates`, tokens.driver, {})).status, 403);
+    assert.equal((await request(`/driver/trips/${second.id}/end`, tokens.conductor, {})).status, 403);
+});
+
+test('email provider failure never reports successful OTP delivery or stores a usable challenge', async (t) => {
+    const unavailable = async () => { throw new Error('Controlled QA mail outage'); };
+    const { request, store } = await fixture(t, { otpEmailSender: unavailable, passwordResetEmailSender: unavailable });
+    const before = await store.get();
+    assert.equal((await request('/auth/signup-otp', null, { email: 'qa-mail@iite.indusuni.ac.in', name: 'QA Mail' })).status, 503);
+    assert.equal((await request('/auth/password-reset', null, { email: 'student@iite.indusuni.ac.in' })).status, 503);
+    const after = await store.get();
+    assert.deepEqual(after.signupOtps, before.signupOtps);
+    assert.deepEqual(after.passwordResetOtps, before.passwordResetOtps);
+});
+
+test('database write failure is unconfirmed, retains stored data, and permits a safe retry', async (t) => {
+    const { request, login, store } = await fixture(t);
+    const driver = await login('driver');
+    const trip = (await request('/driver/trips/current', driver)).data.activeStaffTrip;
+    await request(`/driver/trips/${trip.id}/start`, driver, {});
+    const before = await store.get();
+    const write = t.mock.method(store, 'update', async () => { throw new Error('Controlled QA persistence outage'); });
+    const input = { id: 'qa-database-retry', tripId: trip.id, type: 'Other', note: 'Local fixture only' };
+    const failed = await request('/staff/emergencies', driver, input);
+    assert.equal(failed.status, 500);
+    assert.doesNotMatch(JSON.stringify(failed.data), /Controlled QA|stack|apiServer/);
+    assert.deepEqual(await store.get(), before);
+    write.mock.restore();
+    const accepted = await request('/staff/emergencies', driver, input);
+    assert.equal(accepted.status, 201, accepted.data.message);
+    assert.equal((await request('/staff/emergencies', driver, input)).data.id, accepted.data.id);
+});
+
+test('sessions with missing or malformed lifetime metadata fail closed', async (t) => {
+    const { request, login, store } = await fixture(t);
+    for (const lifetime of [{}, { expiresAt: 'invalid', createdAt: 'invalid' }, { createdAt: new Date(0).toISOString() }]) {
+        const token = await login('student');
+        await store.update((data) => {
+            data.sessions[token] = { userId: data.sessions[token].userId, ...lifetime };
+            return true;
+        });
+        assert.equal((await request('/auth/session', token)).status, 401, 'Unverifiable session lifetime must not grant access indefinitely');
+    }
+    const token = await login('student');
+    await store.update((data) => { delete data.sessions[token].expiresAt; return true; });
+    assert.equal((await request('/auth/session', token)).status, 200, 'Valid creation time retains bounded legacy compatibility');
+});
+
 test('logout, expiry, rejection, password reset and OTP limits are enforced by the server', async (t) => {
     let otp;
     const { request, login, store } = await fixture(t, { passwordResetEmailSender: async (mail) => { otp = mail.otp; } });
@@ -601,10 +711,11 @@ test('logout, expiry, rejection, password reset and OTP limits are enforced by t
 test('approval, complaints, assignment, sessions and trip counts survive a backend restart', async (t) => {
     const { request, login, store, restart } = await fixture(t);
     const admin = await login('admin'), student = await login('student'), driver = await login('driver'), conductor = await login('conductor');
-    const record = (await request('/admin/bootstrap', admin)).data.records.students.find((item) => item.contact === 'student@iite.indusuni.ac.in');
+    let record = (await request('/admin/bootstrap', admin)).data.records.students.find((item) => item.contact === 'student@iite.indusuni.ac.in');
     assert.ok(record);
     assert.equal((await request(`/admin/students/${record.id}`, admin, { ...record, status: 'pending' }, 'PUT')).status, 200);
     assert.equal((await request('/student/transit', student)).data.route.stops.length, 0);
+    record = (await request('/admin/bootstrap', admin)).data.records.students.find((item) => item.id === record.id);
     assert.equal((await request(`/admin/students/${record.id}`, admin, { ...record, status: 'active' }, 'PUT')).status, 200);
     const complaint = (await request('/student/complaints', student, { category: 'General feedback', subject: 'QA persisted request', description: 'Isolated QA persistence verification.', relatedService: record.routeCode })).data;
     assert.equal((await request(`/admin/complaints/${complaint.id}`, admin, { status: 'resolved', resolution: 'QA resolution', internalNote: 'Private staff note' }, 'PATCH')).status, 200);
@@ -623,6 +734,7 @@ test('approval, complaints, assignment, sessions and trip counts survive a backe
     const saved = (await request('/student/complaints', student)).data.find((item) => item.id === complaint.id);
     assert.equal(saved.status, 'resolved');
     assert.equal(saved.internalNotes, undefined);
+    record = (await request('/admin/bootstrap', admin)).data.records.students.find((item) => item.id === record.id);
     assert.equal((await request(`/admin/students/${record.id}`, admin, { ...record, status: 'rejected' }, 'PUT')).status, 200);
     assert.equal((await request('/auth/session', student)).status, 403);
     void store;
@@ -648,11 +760,12 @@ test('administrator-confirmed coordinates persist across roles and invalid coord
     const admin = await login('admin'), driver = await login('driver');
     const route = (await request('/admin/bootstrap', admin)).data.routes.find((item) => item.code === 'IU-R4');
     route.stops[0].coordinates = [23.051, 72.551];
-    assert.equal((await request(`/admin/routes/${route.id}`, admin, route, 'PUT')).status, 200);
+    const saved = await request(`/admin/routes/${route.id}`, admin, route, 'PUT');
+    assert.equal(saved.status, 200);
     const actual = (await request('/driver/trips/current', driver)).data.operationalStops[0];
     assert.deepEqual(actual.coordinates, [23.051, 72.551]);
-    route.stops[0].coordinates = [null, 72];
-    assert.equal((await request(`/admin/routes/${route.id}`, admin, route, 'PUT')).status, 400);
+    saved.data.stops[0].coordinates = [null, 72];
+    assert.equal((await request(`/admin/routes/${route.id}`, admin, saved.data, 'PUT')).status, 400);
     assert.equal((await request('/admin/stops/not-a-route-stop', admin, { name: 'Ignored stop' }, 'PUT')).status, 400);
 });
 

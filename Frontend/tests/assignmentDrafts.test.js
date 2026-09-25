@@ -11,3 +11,10 @@ test('admin polling preserves unsaved selections and refreshes clean or removed 
     assert.equal(merged.deleted, undefined);
     assert.equal(mergeAssignmentDrafts(routes, merged, new Set()).r1.busId, 'old-bus');
 });
+
+test('dirty assignment forms retain the read version so polling cannot hide a stale edit', () => {
+    const old = { busId: 'bus', driverId: 'driver', conductorId: 'conductor', _version: 'original' };
+    const routes = [{ id: 'route', ...old, _version: 'newer' }];
+    assert.equal(mergeAssignmentDrafts(routes, { route: old }, new Set(['route'])).route._version, 'original');
+    assert.equal(mergeAssignmentDrafts(routes, { route: old }, new Set()).route._version, 'newer');
+});

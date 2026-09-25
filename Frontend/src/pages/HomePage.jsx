@@ -6,12 +6,12 @@ import { PhonePreview } from '../components/PhonePreview';
 import { PublicHeader } from '../components/PublicHeader';
 import { universityContact } from '../services/supportContacts';
 const heroMetrics = [
-    { value: 'Routes', label: 'University pickup points' },
-    { value: '4', label: 'role-based portals' },
-    { value: 'OTP', label: 'verified student signup' },
+    { value: 'Routes', label: 'Campus connections' },
+    { value: '4', label: 'Connected roles' },
+    { value: 'OTP', label: 'Verified signup' },
 ];
 const features = [
-    { icon: LocateFixed, title: 'Live location', text: 'Follow your assigned college bus on an active route map with fresh GPS context.' },
+    { icon: LocateFixed, title: 'Live location', text: 'Follow your assigned bus during its trip, with a timestamp for the latest GPS update.' },
     { icon: Clock3, title: 'Estimated arrival', text: 'See a GPS-based estimate when a reliable location is available. Traffic and signal quality can affect arrival times.' },
     { icon: Users, title: 'Seat availability', text: 'Check available seats as conductors update boarding and deboarding details.' },
     { icon: BellRing, title: 'Transport updates', text: 'Check important delay, cancellation and route-change notices in one place.' },
@@ -25,15 +25,14 @@ const roleCards = [
 const readinessItems = [
     { icon: ServerCog, title: 'Shared transport records', text: 'Approved users see the bus, route and passenger updates recorded by transport staff.' },
     { icon: MailCheck, title: 'Verified student access', text: 'Verify your institute email, then wait for transport approval and a route assignment.' },
-    { icon: MonitorCheck, title: 'Responsive experience', text: 'Student and staff screens work on mobile, while operator screens stay efficient on desktop.' },
-    { icon: ShieldCheck, title: 'Role protection', text: 'Students, drivers, conductors and admins only see the pages meant for their role.' },
+    { icon: MonitorCheck, title: 'Travel with confidence', text: 'Keep your route, stop and latest transport notices close at hand.' },
+    { icon: ShieldCheck, title: 'Controlled access', text: 'Transport information and actions are limited to your role and assignment.' },
 ];
 export function HomePage() {
     return (<div className="page-shell">
       <PublicHeader />
       <main>
         <section className="hero">
-          <div className="hero__glow"/>
           <div className="container hero__inner">
             <div className="hero__copy">
               <div className="hero__identity">
@@ -45,8 +44,9 @@ export function HomePage() {
               </div>
               <div className="hero__message">
                 <div className="campus-pill"><ShieldCheck /> Indus University transport platform</div>
-                <h1>Your College Bus, <span>Live.</span></h1>
-                <p className="hero__lead">A professional campus transport system for students, drivers, conductors and transport operators, with live tracking, verified signup and route operations in one place.</p>
+                <h1>Smart<span>Transit</span></h1>
+                <p className="hero__tagline">Your college bus. A clearer commute.</p>
+                <p className="hero__lead">Track your assigned bus, check available seats and stay informed from pickup to campus and back.</p>
                 <div className="hero__actions">
                   <Link className="button button--primary" to="/track"><MapPin /> Track my bus <ArrowRight /></Link>
                   <Link className="button button--secondary" to="/signup"><MailCheck /> Create account</Link>
@@ -67,7 +67,7 @@ export function HomePage() {
 
         <section className="features section" id="features">
           <div className="container">
-            <div className="section-heading"><span>Everything you need</span><h2>A better way to manage campus transport</h2><p>Clear, timely information for students and a practical operating layer for the transport team.</p></div>
+            <div className="section-heading"><span>Your commute, at a glance</span><h2>A better way to manage campus transport</h2><p>Know where your bus is, check your stop and keep up with transport updates.</p></div>
             <div className="feature-grid">
               {features.map(({ icon: Icon, title, text }, index) => (<article className="feature-card" key={title}><span className={`feature-card__icon feature-card__icon--${index + 1}`}><Icon /></span><h3>{title}</h3><p>{text}</p></article>))}
             </div>
@@ -76,7 +76,7 @@ export function HomePage() {
 
         <section className="platform section" id="operations">
           <div className="container">
-            <div className="section-heading"><span>Complete application</span><h2>One system for every transport role</h2><p>Each user gets a focused interface, so the same application can support daily student use and transport-office operations.</p></div>
+            <div className="section-heading"><span>People & operations</span><h2>One system for every transport role</h2><p>Students and transport staff stay connected through shared routes, trip updates and service notices.</p></div>
             <div className="platform-grid">
               {roleCards.map(({ icon: Icon, title, text }) => (<article className="platform-card" key={title}><span className="platform-card__icon"><Icon /></span><h3>{title}</h3><p>{text}</p></article>))}
             </div>
@@ -89,7 +89,7 @@ export function HomePage() {
               <div className="journey__map"><span className="journey__line"/><i className="journey__stop journey__stop--1"/><i className="journey__stop journey__stop--2"/><i className="journey__stop journey__stop--3"/><span className="journey__bus"><Route /></span></div>
               <div className="arrival-card"><span><Clock3 /></span><div><small>Your selected stop</small><strong>Arrival estimate</strong></div></div>
             </div>
-            <div className="journey__copy"><span className="section-kicker">Built around your day</span><h2>From campus gate to home, stay one step ahead.</h2><p>See your bus progress, next stop and latest update at a glance. SmartTransit keeps the information that matters easy to find.</p><ul><li><ShieldCheck /> Location is shared only during active trips</li><li><BellRing /> Timely alerts when the plan changes</li><li><BusFront /> Indus University routes and stops already mapped</li></ul><Link to="/track" className="text-link">Explore live tracking <ArrowRight /></Link></div>
+            <div className="journey__copy"><span className="section-kicker">Built around your day</span><h2>From campus gate to home, stay one step ahead.</h2><p>See your bus progress, next stop and latest update at a glance. SmartTransit keeps the information that matters easy to find.</p><ul><li><ShieldCheck /> Location is shared only during active trips</li><li><BellRing /> Transport notices when the plan changes</li><li><BusFront /> Your assigned route and pickup or drop-off stop</li></ul><Link to="/track" className="text-link">Explore live tracking <ArrowRight /></Link></div>
           </div>
         </section>
 
@@ -107,7 +107,7 @@ export function HomePage() {
               <h2>Campus transport, connected.</h2>
               <p>Check your assigned route, follow trip updates and contact the transport team from your account.</p>
               <div className="readiness__actions">
-                <Link className="button button--accent" to="/login">Open app portals</Link>
+                <Link className="button button--accent" to="/login">Sign in to SmartTransit</Link>
                 <Link className="button button--ghost" to="/privacy">View privacy details</Link>
               </div>
             </div>

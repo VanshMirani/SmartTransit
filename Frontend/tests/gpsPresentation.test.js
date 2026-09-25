@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { driverGpsDisplay, gpsSharingLabel } from '../src/operations/gpsPresentation.js';
+import { driverGpsDisplay, driverGuidanceStops, gpsSharingLabel } from '../src/operations/gpsPresentation.js';
 import { formatEventTime, formatTime } from '../src/utils/dateLabels.js';
 
 const startedAt = '2026-09-20T07:30:00Z';
@@ -8,6 +8,33 @@ const input = {
     trip: { startedAt, etaSource: 'waiting-for-gps', nextStopEta: 'ETA unavailable', remainingDistance: 'Location unavailable' },
     nextStop: { departureEstimateAt: startedAt }, status: 'waiting', updatedAt: 'Not sharing',
 };
+
+test('sub-1 km/h GPS speed is not rounded into the minimum ETA threshold', () => {
+    for (const speed of [0.01, 0.5, 0.99]) {
+        const display = driverGpsDisplay({ ...input, status: 'sharing', updatedAt: startedAt,
+            trip: { ...input.trip, currentSpeed: speed, etaSource: 'stationary' },
+        });
+        assert.equal(display.speed, '<1 km/h');
+        assert.equal(display.value, 'ETA unavailable');
+    }
+    for (const speed of [-1, NaN, Infinity, null, undefined]) {
+        assert.equal(driverGpsDisplay({ ...input, status: 'sharing', updatedAt: startedAt,
+            trip: { ...input.trip, currentSpeed: speed },
+        }).speed, 'Waiting for GPS');
+    }
+});
+
+test('guidance starts at the actual next stop throughout outbound and return journeys', () => {
+    const stops = Array.from({ length: 9 }, (_, index) => ({ id: `stop-${index}`, status: index < 6 ? 'completed' : index === 6 ? 'current' : 'upcoming' }));
+    assert.deepEqual(driverGuidanceStops(stops, 'stop-0'), stops.slice(0, 4));
+    assert.deepEqual(driverGuidanceStops(stops, 'stop-6'), stops.slice(6));
+    assert.deepEqual(driverGuidanceStops(stops, 'missing'), stops.slice(6));
+    const returning = [...stops].reverse().map((stop) => ({ ...stop, status: 'upcoming' }));
+    assert.deepEqual(driverGuidanceStops(returning, 'stop-7'), returning.slice(1, 5));
+    assert.deepEqual(driverGuidanceStops(returning), returning.slice(0, 4));
+    assert.deepEqual(driverGuidanceStops(stops.map((stop) => ({ ...stop, status: 'completed' }))), []);
+    assert.deepEqual(driverGuidanceStops([]), []);
+});
 
 test('a trip without GPS does not present its departure plan as an arrival prediction', () => {
     const display = driverGpsDisplay(input);

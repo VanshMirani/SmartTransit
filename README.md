@@ -1,16 +1,19 @@
 # SmartTransit
 
-SmartTransit is a responsive college transportation frontend for Indus University. It provides:
+SmartTransit is a college transport tracking and management application for Indus University. It provides:
 
 - a mobile-first student, driver and conductor application;
 - a responsive student website;
 - a desktop-first transport-operator dashboard;
-- realistic Indus University route data behind replaceable service/context boundaries;
-- an included local Node.js API for backend-ready testing;
-- MongoDB-ready production storage for public deployment.
+- route and stop management with shared transport assignments;
+- a Node.js HTTP API for authentication, approvals and transport operations;
+- MongoDB persistence in production and isolated JSON storage for local testing.
 
-The latest local audit, evidence and release checklist are in [docs/QA_AUDIT_2026-09-25.md](./docs/QA_AUDIT_2026-09-25.md). Historical results remain in [docs/QA_AUDIT_REPORT.md](./docs/QA_AUDIT_REPORT.md). Older checklists and [PROJECT_PLAN.md](./PROJECT_PLAN.md) describe earlier milestones, not production certification.
+For submission, use the [presentation notes](FACULTY_PRESENTATION_NOTES.md) and [safe demonstration checklist](DEMO_CHECKLIST.md). The [final submission review](docs/SUBMISSION_REVIEW_2026-09-25.md) records the latest local changes, checks and remaining limitations.
+
+The latest coverage-led local audit is in [docs/QA_AUDIT_REPORT.md](./docs/QA_AUDIT_REPORT.md), with the [coverage inventory](./docs/QA_COVERAGE.md) and [findings/retests](./docs/QA_FINDINGS.md). The earlier [25 September review](./docs/QA_AUDIT_2026-09-25.md) remains historical evidence. Older checklists and [PROJECT_PLAN.md](./PROJECT_PLAN.md) describe earlier milestones, not production certification. New audit-branch fixes are not live until separately approved and deployed.
 The live-site findings and subsequent local remediation status are recorded in [docs/LIVE_REVIEW_REPORT.md](./docs/LIVE_REVIEW_REPORT.md). Local fixes are not proof that the hosted deployment has been updated.
+The subsequent authorized [handover verification](./docs/PRODUCTION_HANDOVER_2026-09-25.md) records encrypted backup/restore evidence, current credential exposure, the two live IU-R9 pin corrections and remaining phone/inbox checks. The [complete stop review list](./docs/STOP_LOCATION_REVIEW.md) distinguishes structurally valid coordinates from confirmed pickup points.
 Faculty-facing explanation notes are available in [FACULTY_PRESENTATION_NOTES.md](./FACULTY_PRESENTATION_NOTES.md).
 Use [DEMO_CHECKLIST.md](./DEMO_CHECKLIST.md) before a live presentation.
 Use [DEPLOYMENT.md](./DEPLOYMENT.md) when you are ready to host the real frontend and backend.
@@ -46,6 +49,7 @@ This starts the API on `http://127.0.0.1:5050/api` when available and the Vite f
 
 For a disposable test environment, use `node Backend/scripts/qa-server.js`. It starts both services with a fresh temporary JSON database, captures test OTPs locally, and does not load deployment environment files or send email. The QA guide explains browser and MongoDB tests. Do not run `reset:data` or `clean:presentation` against existing data without reviewing the scope and taking a backup.
 When the default QA port is busy, choose a free one, for example `QA_PORT=5176 node Backend/scripts/qa-server.js`.
+For an explicitly authorized real-phone test without USB, see [the temporary protected HTTPS phone-test guide](docs/PHONE_GPS_TEST.md). Its isolated launcher uses new random test logins, disables mail and expires after two hours; never expose the regular development server or production data through a test tunnel.
 
 Production verification:
 
@@ -84,7 +88,7 @@ SmartTransit-Complete-Frontend 2/
 
 Use `Frontend/src` when editing screens, styles, routes and UI behavior. Use `Backend` when editing APIs, OTP email delivery, data storage or server tests.
 
-## Backend-ready mode
+## Application Configuration
 
 Development can use explicit browser demonstration mode. Production builds always require the backend: missing or invalid `VITE_API_BASE_URL` shows an unavailable/configuration screen, never demo dashboards. Use `npm run dev:full` for backend development. Set `VITE_USE_BACKEND=true` and `VITE_API_BASE_URL` to the HTTPS API URL for deployment. Every `VITE_*` value is public: never put a real password, OTP signing secret or private provider key there.
 
@@ -126,7 +130,7 @@ Isolated local demonstration credentials are stored in [docs/LOGIN_CREDENTIALS.t
 | Conductor        | `conductor@transport.indusuni.ac.in` | `Conductor@123` | `/conductor`  |
 | Admin / Operator | `admin@transport.indusuni.ac.in`     | `Admin@123`     | `/admin`      |
 
-These published credentials must be restricted to isolated demonstrations. The September 20 report records a successful production login with a published demonstration administrator credential; its current rotation status is unverified. The September 25 audit did not sign in to production or reset any account. An authorized administrator must rotate or disable exposed accounts and revoke affected sessions before rollout. Students register with an allowed university email and OTP, then remain pending until admin approval. Email verification is not transport approval. Password reset verifies an OTP and revokes existing sessions. The browser keeps an opaque bearer token in `sessionStorage`; server-side sessions, expiry, role/status and assignments are authoritative. Staff accounts are issued only by administrators.
+These published credentials must be restricted to isolated demonstrations. In the authorized September 25 handover follow-up, the exposed administrator, student and conductor fixture passwords were rotated and their stored sessions revoked. Live checks reject all three old passwords and accept their new private credentials. Production credentials are outside this repository and must never be added to demonstration documentation. Demo-address accounts still need an owner-approved recovery process. See the handover report for evidence and remaining gates. Students register with an allowed university email and OTP, then remain pending until admin approval. Email verification is not transport approval. Password reset verifies an OTP and revokes existing sessions. The browser keeps an opaque bearer token in `sessionStorage`; server-side sessions, expiry, role/status and assignments are authoritative. Staff accounts are issued only by administrators.
 
 ## Real OTP email setup
 

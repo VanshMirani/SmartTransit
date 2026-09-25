@@ -9,6 +9,14 @@ export function gpsSharingLabel(status, active = true) {
     }[status] || 'GPS Inactive';
 }
 
+export function driverGuidanceStops(stops, nextStopId) {
+    const nextIndex = stops.findIndex((stop) => stop.id === nextStopId);
+    const currentIndex = stops.findIndex((stop) => stop.status === 'current');
+    const firstPending = stops.findIndex((stop) => stop.status !== 'completed');
+    const start = nextIndex >= 0 ? nextIndex : currentIndex >= 0 ? currentIndex : firstPending;
+    return start < 0 ? [] : stops.slice(start, start + 4);
+}
+
 export function driverGpsDisplay({ trip, nextStop, status, updatedAt, error }) {
     const hasAcceptedLocation = Number.isFinite(Date.parse(updatedAt ?? ''));
     const sharing = status === 'sharing' && hasAcceptedLocation;
@@ -22,7 +30,9 @@ export function driverGpsDisplay({ trip, nextStop, status, updatedAt, error }) {
         value: hasArrival ? formatTime(arrival) : 'ETA unavailable',
         note: sharing ? `${hasArrival ? `${trip.nextStopEta} away. ` : ''}${trip.etaNote || 'Waiting for a distance-based estimate.'}` : 'Waiting for a reliable GPS location',
         distance: sharing ? (/\d/.test(trip.remainingDistance ?? '') ? trip.remainingDistance : 'Distance unavailable') : 'Waiting for GPS',
-        speed: sharing && Number.isFinite(trip.currentSpeed) ? `${Math.round(trip.currentSpeed)} km/h` : 'Waiting for GPS',
+        speed: sharing && Number.isFinite(trip.currentSpeed) && trip.currentSpeed >= 0
+            ? (trip.currentSpeed > 0 && trip.currentSpeed < 1 ? '<1 km/h' : `${Math.round(trip.currentSpeed)} km/h`)
+            : 'Waiting for GPS',
         lastAccepted: hasAcceptedLocation ? formatEventTime(updatedAt) : 'No location received yet',
         message: error || (hasAcceptedLocation
             ? 'Waiting for a fresh GPS update. The map retains the last accepted location.'

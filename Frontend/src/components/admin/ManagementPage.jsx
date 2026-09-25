@@ -1,5 +1,5 @@
 import { ArrowDownAZ, ChevronLeft, ChevronRight, Eye, Filter, Pencil, Plus, Search, ToggleLeft, ToggleRight, Trash2, } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAdminData } from "../../admin/AdminDataContext";
 import { AdminFeedback, AdminModal, AdminPageHeading, AdminStatusBadge, } from "./AdminUI";
@@ -264,7 +264,7 @@ export function ManagementPage({ kind }) {
         catch (reason) {
             const message = reason instanceof Error
                 ? reason.message
-                : "The change could not be saved to the backend. Please retry.";
+                : "The change could not be saved. Check your connection and retry.";
             if (kind === "students" && /route|pickup stop/i.test(message)) {
                 setErrors((current) => ({ ...current, assignment: message }));
             }
@@ -282,7 +282,7 @@ export function ManagementPage({ kind }) {
       <AdminPageHeading eyebrow="Fleet & people" title={config.title} description={config.description} actions={<button className="button admin-primary-button" onClick={openAdd}>
             <Plus /> Add {config.singular}
           </button>}/>
-      {feedback && (<AdminFeedback {...feedback} dismiss={() => setFeedback(null)}/>)}
+      {feedback && !editing && (<AdminFeedback {...feedback} dismiss={() => setFeedback(null)}/>)}
       <section className="admin-table-card">
         <div className="admin-table-toolbar">
           <label className="admin-search">
@@ -383,8 +383,8 @@ export function ManagementPage({ kind }) {
           </div>
         </footer>
       </section>
-      {editing && (<AdminModal title={`${editing.id ? "Edit" : "Add"} ${config.singular}`} description="Fields marked with * are required." close={() => setEditing(null)} footer={<>
-              <button className="button button--secondary" onClick={() => setEditing(null)}>
+      {editing && (<AdminModal title={`${editing.id ? "Edit" : "Add"} ${config.singular}`} description="Fields marked with * are required." close={() => { if (!savingRecord) setEditing(null); }} footer={<>
+              <button className="button button--secondary" disabled={savingRecord} onClick={() => setEditing(null)}>
                 Cancel
               </button>
               <button className="button admin-primary-button" onClick={save} disabled={savingRecord}>
@@ -392,6 +392,7 @@ export function ManagementPage({ kind }) {
               </button>
             </>}>
           <form className="admin-record-form" onSubmit={save} noValidate>
+            {feedback && <AdminFeedback {...feedback} dismiss={() => setFeedback(null)}/>}
             {kind === 'students' && <p className="admin-confirm-copy">This creates a transport record, not a login. The student must verify their university email through registration.</p>}
             <AdminField label={config.name} value={editing.name} setValue={(value) => setEditing({ ...editing, name: value })} error={errors.name}/>
             <AdminField label={config.code} value={editing.code} setValue={(value) => setEditing({ ...editing, code: value })} error={errors.code}/>
@@ -541,9 +542,10 @@ function StudentAssignmentFields({ student, setStudent, routes, error, }) {
     </div>);
 }
 function AdminField({ label, value, setValue, error, type = "text", autoComplete, required = true, }) {
+    const errorId = useId();
     return (<label className="admin-form-field">
       <span>{label}{required ? " *" : ""}</span>
-      <input type={type} autoComplete={autoComplete} value={value} onChange={(e) => setValue(e.target.value)} aria-invalid={Boolean(error)}/>
-      {error && <small>{error}</small>}
+      <input type={type} autoComplete={autoComplete} value={value} onChange={(e) => setValue(e.target.value)} aria-invalid={Boolean(error)} aria-describedby={error ? errorId : undefined}/>
+      {error && <small id={errorId}>{error}</small>}
     </label>);
 }

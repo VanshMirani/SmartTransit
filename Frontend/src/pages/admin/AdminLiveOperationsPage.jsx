@@ -41,7 +41,7 @@ export function AdminLiveOperationsPage() {
       <div className="admin-empty">
         <BusFront />
         <strong>No fleet data available</strong>
-        <p>Start the backend or add buses to see live operations.</p>
+        <p>Add a bus and assign its route and staff to begin monitoring trips.</p>
       </div>
     </div>);
     }

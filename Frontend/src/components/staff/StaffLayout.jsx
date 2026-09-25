@@ -8,8 +8,8 @@ const roleConfig = {
         links: [
             { to: '/driver', end: true, icon: Home, label: 'Home' },
             { to: '/driver/checklist', end: false, icon: ClipboardCheck, label: 'Checklist' },
-            { to: '/driver/trip', end: false, icon: Navigation, label: 'Active trip' },
-            { to: '/driver/history', end: false, icon: History, label: 'Trip history' },
+            { to: '/driver/trip', end: false, icon: Navigation, label: 'Active trip', mobileLabel: 'Trip' },
+            { to: '/driver/history', end: false, icon: History, label: 'Trip history', mobileLabel: 'History' },
             { to: '/driver/profile', end: false, icon: UserRound, label: 'Profile' },
         ],
     },
@@ -34,6 +34,6 @@ export function StaffLayout({ role }) {
     <aside ref={navigationRef} id="staff-navigation" className={`staff-drawer ${open ? 'staff-drawer--open' : ''}`}><div className="staff-drawer__title"><span>Navigation</span><button onClick={close} aria-label="Close navigation"><X /></button></div><nav aria-label={`${config.label} navigation`}>{config.links.map(({ to, end, icon: Icon, label }) => <NavLink key={to} to={to} end={end} onClick={() => setOpen(false)}><Icon /><span>{label}</span></NavLink>)}</nav><NavLink className="staff-emergency-link" to={`/${role}/emergency`} onClick={() => setOpen(false)}><AlertTriangle /> Emergency alert</NavLink><button className="staff-logout" onClick={signOut}><LogOut /> Log out</button></aside>
     {open && <button className="staff-scrim" onClick={close} aria-label="Close navigation"/>}
     <main className="staff-content"><Outlet /></main>
-    <nav className="staff-bottom-nav" aria-label={`Mobile ${config.label} navigation`}>{config.links.slice(0, 4).map(({ to, end, icon: Icon, label }) => <NavLink key={to} to={to} end={end}><Icon /><small>{label.replace('Active ', '').replace('Trip ', '')}</small></NavLink>)}</nav>
+    <nav className="staff-bottom-nav" aria-label={`Mobile ${config.label} navigation`}>{config.links.slice(0, 4).map(({ to, end, icon: Icon, label, mobileLabel }) => <NavLink key={to} to={to} end={end}><Icon /><small>{mobileLabel ?? label}</small></NavLink>)}</nav>
   </div>;
 }

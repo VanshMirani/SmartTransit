@@ -5,7 +5,9 @@ import path from 'node:path';
 // Public GETs only. No credentials, account access, or production mutations.
 const site = 'https://smart-transit-lyart.vercel.app';
 const api = 'https://smarttransit-api-0c4n.onrender.com/api';
-const output = path.resolve('docs/qa/2026-09-25-readonly');
+const runName = process.env.QA_RUN_NAME || '2026-09-25-readonly';
+if (!/^[a-zA-Z0-9-]+$/.test(runName)) throw new Error('QA_RUN_NAME must be a simple folder name.');
+const output = path.resolve('docs/qa', runName);
 const headers = ['content-type', 'cache-control', 'strict-transport-security', 'x-content-type-options',
     'referrer-policy', 'permissions-policy', 'content-security-policy', 'content-security-policy-report-only',
     'x-robots-tag', 'access-control-allow-origin'];

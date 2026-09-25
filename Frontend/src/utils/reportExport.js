@@ -8,32 +8,42 @@ function downloadBlob(blob, filename) {
     anchor.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-const csvCell = (value) => `"${String(value).replaceAll('"', '""')}"`;
+function csvCell(value) {
+    const text = String(value ?? '');
+    // Spreadsheet applications can evaluate quoted cells as formulas too.
+    const safe = typeof value === 'string' && /^[\s\uFEFF]*[=+\-@＝＋－＠]/u.test(text) ? `'${text}` : text;
+    return `"${safe.replaceAll('"', '""')}"`;
+}
 export function downloadCsv(filename, headers, rows) {
     const content = [headers, ...rows]
         .map((row) => row.map(csvCell).join(","))
         .join("\r\n");
     downloadBlob(new Blob([`\uFEFF${content}`], { type: "text/csv;charset=utf-8" }), filename);
 }
-const pdfText = (value) => value
+const printableText = (value) => String(value ?? '')
     .normalize("NFKD")
-    .replace(/[^\x20-\x7E]/g, "")
+    .replace(/[^\x20-\x7E]/g, "");
+const pdfText = (value) => value
     .replaceAll("\\", "\\\\")
     .replaceAll("(", "\\(")
     .replaceAll(")", "\\)");
 export function downloadSimplePdf(filename, title, lines) {
-    const visibleLines = lines.slice(0, 40);
-    const content = [
-        `BT /F1 18 Tf 48 794 Td (${pdfText(title)}) Tj ET`,
-        ...visibleLines.map((line, index) => `BT /F1 9 Tf 48 ${768 - index * 17} Td (${pdfText(line).slice(0, 104)}) Tj ET`),
-    ].join("\n");
+    const visibleLines = lines.flatMap((line) => printableText(line).match(/.{1,96}/g) ?? ['']);
+    const pages = Array.from({ length: Math.max(1, Math.ceil(visibleLines.length / 40)) }, (_, index) => visibleLines.slice(index * 40, (index + 1) * 40));
     const objects = [
         "<< /Type /Catalog /Pages 2 0 R >>",
-        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
-        `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+        `<< /Type /Pages /Kids [${pages.map((_, index) => `${4 + index * 2} 0 R`).join(' ')}] /Count ${pages.length} >>`,
         "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
     ];
+    pages.forEach((page, pageIndex) => {
+        const content = [
+            `BT /F1 18 Tf 48 794 Td (${pdfText(printableText(title))}) Tj ET`,
+            ...page.map((line, index) => `BT /F1 9 Tf 48 ${768 - index * 17} Td (${pdfText(line)}) Tj ET`),
+            `BT /F1 9 Tf 48 48 Td (Page ${pageIndex + 1} of ${pages.length}) Tj ET`,
+        ].join('\n');
+        objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + pageIndex * 2} 0 R >>`,
+            `<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
+    });
     let pdf = "%PDF-1.4\n";
     const offsets = [0];
     objects.forEach((object, index) => {

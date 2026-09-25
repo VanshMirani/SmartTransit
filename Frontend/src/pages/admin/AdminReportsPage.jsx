@@ -4,7 +4,7 @@ import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContai
 import { AdminFeedback, AdminPageHeading, } from "../../components/admin/AdminUI";
 import { useCommunications } from "../../communications/CommunicationsContext";
 import { summarizeRoutes } from "../../services/reportData";
-import { recordedReports, transportDate } from "../../services/recordedReports";
+import { dailyPerformance, recordedReports, transportDate } from "../../services/recordedReports";
 import { useAdminData } from "../../admin/AdminDataContext";
 import { downloadCsv, downloadSimplePdf } from "../../utils/reportExport";
 const reportTabs = [
@@ -35,30 +35,7 @@ export function AdminReportsPage() {
     const filteredComplaints = useMemo(() => complaints.filter((complaint) => complaintDate(complaint.createdAt) >= fromDate &&
         complaintDate(complaint.createdAt) <= toDate &&
         (routeFilter === "all" || complaint.routeCode === routeFilter)), [complaints, fromDate, routeFilter, toDate]);
-    const dailyData = useMemo(() => {
-        const dates = new Map();
-        filteredRecords.forEach((record) => {
-            const current = dates.get(record.date) ?? {
-                date: record.date,
-                trips: 0,
-                delayed: 0,
-                onTime: 0,
-                usage: 0,
-            };
-            current.trips += record.trips;
-            current.delayed += record.delayedTrips;
-            current.onTime += record.onTimeTrips;
-            current.usage += record.studentJourneys;
-            dates.set(record.date, current);
-        });
-        return [...dates.values()].map((day) => ({
-            ...day,
-            label: formatDate(day.date),
-            onTimeRate: day.trips
-                ? Math.round((day.onTime / day.trips) * 1000) / 10
-                : 0,
-        }));
-    }, [filteredRecords]);
+    const dailyData = useMemo(() => dailyPerformance(filteredRecords).map((day) => ({ ...day, label: formatDate(day.date) })), [filteredRecords]);
     const metrics = useMemo(() => {
         const trips = filteredRecords.reduce((sum, record) => sum + record.trips, 0);
         const measuredTrips = filteredRecords.reduce((sum, record) => sum + record.measuredTrips, 0);
@@ -333,7 +310,7 @@ function ReportTable({ view, records, complaints, }) {
             <p>Cases linked to the selected route</p>
           </div>
         </header>
-        {complaints.length ? (<div className="admin-table-scroll">
+        {complaints.length ? (<div className="admin-table-scroll" role="region" aria-label="Complaint report table" tabIndex={0}>
             <table>
               <thead>
                 <tr>
@@ -373,7 +350,7 @@ function ReportTable({ view, records, complaints, }) {
             <p>Trips that missed their scheduled arrival</p>
           </div>
         </header>
-        {delayRows.length ? (<div className="admin-table-scroll">
+        {delayRows.length ? (<div className="admin-table-scroll" role="region" aria-label="Delay report table" tabIndex={0}>
             <table>
               <thead>
                 <tr>
@@ -417,7 +394,7 @@ function ReportTable({ view, records, complaints, }) {
           <p>Route-level totals for the selected period</p>
         </div>
       </header>
-      {summaries.length ? (<div className="admin-table-scroll">
+      {summaries.length ? (<div className="admin-table-scroll" role="region" aria-label="Route performance table" tabIndex={0}>
           <table>
             <thead>
               <tr>

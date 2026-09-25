@@ -130,6 +130,8 @@ Keep both allowed-domain values empty for the final deployment; signup will then
 
 - `GET /admin/bootstrap`
   - Response includes `{ records, routes, fleetVehicles, adminActivity, tripHistory }`.
+  - Editable master records/routes include an ephemeral `_version`. Send the version read when opening an edit form back with its save. A stale version returns HTTP 409 and the draft must be reviewed against a fresh record. GPS projections do not change this token; it is not persisted or an authorization credential.
+  - For compatibility, old API clients omitting `_version` retain last-write-wins behavior. Current admin forms preserve it, including dirty assignment drafts. Mandatory preconditions require a coordinated API/client rollout.
 - `PUT /admin/:kind/:id`
   - Writable kinds: `buses`, `drivers`, `conductors`, `students`. Stops are derived from routes; direct stop-directory writes are rejected.
   - Body: full record object.
