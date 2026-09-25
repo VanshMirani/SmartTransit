@@ -3,7 +3,8 @@ import { useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { BrandLogo } from '../../components/Brand';
 import { useAuth } from '../../auth/AuthContext';
-import { demoAccounts, getDemoAccountPassword, roleHome } from '../../services/authService';
+import { demoAccounts, getDemoAccountPassword } from '../../services/authService';
+import { permittedLoginDestination } from '../../utils/navigation';
 const showDemoControls = import.meta.env.DEV &&
     import.meta.env.VITE_USE_BACKEND !== 'true' &&
     import.meta.env.VITE_SHOW_DEMO_CONTROLS === 'true';
@@ -19,7 +20,7 @@ export function LoginPage() {
     const location = useLocation();
     const registration = location.state;
     const registeredEmail = registration?.registeredEmail ?? '';
-    const [email, setEmail] = useState(registeredEmail);
+    const [email, setEmail] = useState(registeredEmail || registration?.resetEmail || '');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
@@ -28,7 +29,7 @@ export function LoginPage() {
     if (checkingSession)
         return <main className="placeholder"><section className="placeholder__card"><p>Checking secure session...</p></section></main>;
     if (user)
-        return <Navigate to={roleHome[user.role]} replace/>;
+        return <Navigate to={permittedLoginDestination(location.state?.from, user.role)} replace/>;
     const fillDemoAccount = (role) => {
         const account = demoAccounts[role];
         setEmail(account.email);
@@ -38,24 +39,27 @@ export function LoginPage() {
     };
     const submit = async (event) => {
         event.preventDefault();
+        if (loading) return;
         const nextErrors = {};
         if (!email.trim())
             nextErrors.email = 'University email is required.';
-        else if (!/^\S+@\S+\.\S+$/.test(email))
+        else if (!/^\S+@\S+\.\S+$/.test(email.trim()))
             nextErrors.email = 'Enter a valid email address.';
         if (!password)
             nextErrors.password = 'Password is required.';
         else if (password.length < 8)
             nextErrors.password = 'Password must contain at least 8 characters.';
         setErrors(nextErrors);
-        if (Object.keys(nextErrors).length)
+        if (Object.keys(nextErrors).length) {
+            event.currentTarget.querySelector(`#${Object.keys(nextErrors)[0]}`)?.focus();
             return;
+        }
         setLoading(true);
         setError('');
         try {
             const session = await login(email, password);
             const requested = location.state?.from;
-            navigate(requested?.startsWith(`/${session.role}`) ? requested : roleHome[session.role], { replace: true });
+            navigate(permittedLoginDestination(requested, session.role), { replace: true });
         }
         catch (reason) {
             setError(reason instanceof Error ? reason.message : 'Unable to sign in. Try again.');
@@ -73,6 +77,7 @@ export function LoginPage() {
         <form className="auth-card" onSubmit={submit} noValidate>
           <div className="auth-heading"><span className="auth-lock"><LockKeyhole /></span><h2>Sign in to SmartTransit</h2><p>Enter your credentials. SmartTransit will open the correct portal for your account.</p></div>
           {registeredEmail && <div className="form-alert form-alert--success" role="status"><CheckCircle2 /><span><strong>Account created</strong>{registration?.registeredName ? `Welcome, ${registration.registeredName}. ` : ''}Sign in to view your approval and route assignment status.</span></div>}
+          {registration?.resetEmail && <div className="form-alert form-alert--success" role="status"><CheckCircle2 /><span><strong>Password reset</strong>Sign in with your new password.</span></div>}
           {error && <div className="form-alert form-alert--error" role="alert"><AlertCircle /><span><strong>Sign in failed</strong>{error}</span></div>}
           <div className="field"><label htmlFor="email">University email</label><div className={`input-wrap ${errors.email ? 'input-wrap--error' : ''}`}><UserRound /><input id="email" type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} aria-invalid={Boolean(errors.email)} aria-describedby={errors.email ? 'email-error' : undefined}/></div>{errors.email && <small id="email-error" className="field-error">{errors.email}</small>}</div>
           <div className="field"><div className="field__label-row"><label htmlFor="password">Password</label><Link to="/forgot-password">Forgot password?</Link></div><div className={`input-wrap ${errors.password ? 'input-wrap--error' : ''}`}><LockKeyhole /><input id="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} aria-invalid={Boolean(errors.password)} aria-describedby={errors.password ? 'password-error' : undefined}/><button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff /> : <Eye />}</button></div>{errors.password && <small id="password-error" className="field-error">{errors.password}</small>}</div>

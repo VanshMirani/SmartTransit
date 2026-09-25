@@ -45,7 +45,7 @@ export function minutesAgo(minutes) {
     return new Date(Date.now() - minutes * 60 * 1000).toISOString();
 }
 export function formatEventTime(value) {
-    return Number.isFinite(Date.parse(value ?? '')) ? formatShortDateTime(value) : value || 'Not available';
+    return Number.isFinite(Date.parse(value ?? '')) ? formatShortDateTime(value) : 'Not available';
 }
 
 export function stopTimeLabel(stop, active = true) {

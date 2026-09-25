@@ -27,13 +27,16 @@ export function ForgotPasswordPage() {
     };
 
     const sendResetOtp = async () => {
+        if (loading) return;
         const email = normalizeEmail(values.email);
         if (!email) {
             setErrors({ email: "Institute email is required." });
+            document.getElementById('reset-email')?.focus();
             return;
         }
         if (!isInstituteEmail(email)) {
             setErrors({ email: "Enter your Indus University email ending with indusuni.ac.in." });
+            document.getElementById('reset-email')?.focus();
             return;
         }
         setLoading(true);
@@ -65,6 +68,7 @@ export function ForgotPasswordPage() {
 
     const submitReset = async (event) => {
         event.preventDefault();
+        if (loading) return;
         const nextErrors = {};
         if (!isValidOtp(values.otp))
             nextErrors.otp = "Enter the 6-digit OTP sent to your email.";
@@ -78,8 +82,11 @@ export function ForgotPasswordPage() {
             nextErrors.confirmPassword = "Passwords do not match.";
         }
         setErrors(nextErrors);
-        if (Object.keys(nextErrors).length)
+        if (Object.keys(nextErrors).length) {
+            const key = Object.keys(nextErrors)[0];
+            document.getElementById(`reset-${key === 'confirmPassword' ? 'confirm-password' : key}`)?.focus();
             return;
+        }
         setLoading(true);
         setServerError("");
         try {
@@ -105,7 +112,7 @@ export function ForgotPasswordPage() {
                 <span><CheckCircle2 /></span>
                 <h1>Password updated</h1>
                 <p>Your SmartTransit password has been changed. Sign in again with your new password.</p>
-                <Link className="button button--primary" to="/login" state={{ registeredEmail: values.email }}>
+                <Link className="button button--primary" to="/login" state={{ resetEmail: values.email }}>
                     <ArrowLeft /> Return to sign in
                 </Link>
             </section>
@@ -138,7 +145,7 @@ export function ForgotPasswordPage() {
 
             {step === "request"
                 ? <form onSubmit={submitEmail} noValidate>
-                    <EmailField value={values.email} error={errors.email} onChange={(value) => update("email", value)} />
+                    <EmailField value={values.email} error={errors.email} readOnly={loading} onChange={(value) => update("email", value)} />
                     <button className="button button--primary auth-submit" type="submit" disabled={loading}>
                         {loading ? <><LoaderCircle className="spin" /> Sending OTP...</> : <><Mail /> Send reset OTP</>}
                     </button>

@@ -4,6 +4,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { useCommunications } from "../../communications/CommunicationsContext";
 import { ComplaintStatusBadge, PageHeading, } from "../../components/student/StudentUI";
 import { useStudentData } from "../../hooks/useStudentData";
+import { formatEventTime } from '../../utils/dateLabels';
 const fallbackAssignedService = "Pending route assignment";
 const blankForm = {
     category: "",
@@ -55,6 +56,7 @@ export function ComplaintsPage() {
     };
     const submit = async (event) => {
         event.preventDefault();
+        if (submitting) return;
         const nextErrors = {};
         if (!form.category)
             nextErrors.category = "Select a complaint category.";
@@ -63,8 +65,10 @@ export function ComplaintsPage() {
         if (form.description.trim().length < 20)
             nextErrors.description = "Please provide at least 20 characters.";
         setErrors(nextErrors);
-        if (Object.keys(nextErrors).length)
+        if (Object.keys(nextErrors).length) {
+            event.currentTarget.querySelector(`#${Object.keys(nextErrors)[0]}`)?.focus();
             return;
+        }
         setSubmitting(true);
         setSubmitError("");
         try {
@@ -77,8 +81,8 @@ export function ComplaintsPage() {
             });
             setFormOpen(false);
         }
-        catch {
-            setSubmitError("Your complaint could not be submitted. Please retry.");
+        catch (error) {
+            setSubmitError(`Submission was not confirmed. ${error.message || 'Please retry with the same details.'}`);
         }
         finally {
             setSubmitting(false);
@@ -136,7 +140,7 @@ export function ComplaintsPage() {
             <div className="field">
               <label htmlFor="category">Category *</label>
               <div className={`select-wrap ${errors.category ? "input-wrap--error" : ""}`}>
-                <select id="category" value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} aria-invalid={Boolean(errors.category)}>
+                <select id="category" value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} aria-invalid={Boolean(errors.category)} aria-describedby={errors.category ? 'category-error' : undefined}>
                   <option value="">Select category</option>
                   <option>Delay</option>
                   <option>Bus condition</option>
@@ -147,7 +151,7 @@ export function ComplaintsPage() {
                 </select>
                 <ChevronDown />
               </div>
-              {errors.category && (<small className="field-error">{errors.category}</small>)}
+              {errors.category && (<small id="category-error" className="field-error">{errors.category}</small>)}
             </div>
             <div className="field">
               <label htmlFor="service">Related bus or route *</label>
@@ -164,17 +168,17 @@ export function ComplaintsPage() {
               <label htmlFor="subject">Subject *</label>
               <div className={`input-wrap ${errors.subject ? "input-wrap--error" : ""}`}>
                 <MessageSquareText />
-                <input id="subject" value={form.subject} onChange={(event) => setForm({ ...form, subject: event.target.value })} placeholder="Briefly describe the issue" maxLength={80} aria-invalid={Boolean(errors.subject)}/>
+                <input id="subject" value={form.subject} onChange={(event) => setForm({ ...form, subject: event.target.value })} placeholder="Briefly describe the issue" maxLength={80} aria-invalid={Boolean(errors.subject)} aria-describedby={errors.subject ? 'subject-error' : undefined}/>
               </div>
-              {errors.subject && (<small className="field-error">{errors.subject}</small>)}
+              {errors.subject && (<small id="subject-error" className="field-error">{errors.subject}</small>)}
             </div>
             <div className="field form-grid__full">
               <div className="field__label-row">
                 <label htmlFor="description">Description *</label>
                 <small>{form.description.length}/500</small>
               </div>
-              <textarea id="description" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="Tell us what happened, including the stop and approximate time…" maxLength={500} aria-invalid={Boolean(errors.description)}/>
-              {errors.description && (<small className="field-error">{errors.description}</small>)}
+              <textarea id="description" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="Tell us what happened, including the stop and approximate time…" maxLength={500} aria-invalid={Boolean(errors.description)} aria-describedby={errors.description ? 'description-error' : undefined}/>
+              {errors.description && (<small id="description-error" className="field-error">{errors.description}</small>)}
             </div>
           </div>
           <div className="form-actions">
@@ -221,7 +225,7 @@ export function ComplaintsPage() {
                       {complaint.id} · {complaint.category}
                     </small>
                     <strong>{complaint.subject}</strong>
-                    <em>Submitted {complaint.createdAt}</em>
+                    <em>Submitted {formatEventTime(complaint.createdAt)}</em>
                   </span>
                   <ComplaintStatusBadge status={complaint.status}/>
                   <ChevronDown className={expanded === complaint.id ? "rotate" : ""}/>
@@ -231,7 +235,7 @@ export function ComplaintsPage() {
                     <div>
                       <span>
                         <strong>Last updated</strong>
-                        {complaint.updatedAt}
+                        {formatEventTime(complaint.updatedAt)}
                       </span>
                       <span>
                         <strong>Related service</strong>
@@ -242,7 +246,7 @@ export function ComplaintsPage() {
                       {complaint.timeline.map((event) => (<span key={event.id}>
                           <i />
                           <b>{event.title}</b>
-                          <small>{event.timestamp}</small>
+                          <small>{formatEventTime(event.timestamp)}</small>
                         </span>))}
                     </div>
                     {complaint.resolution ? (<section>

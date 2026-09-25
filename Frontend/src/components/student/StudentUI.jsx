@@ -104,7 +104,7 @@ export function BusOverviewCard({ bus, routeName, stopName, eta, tripActive = fa
         <span data-gps-live={gpsLive}>
           <i /> {gpsLabel}
         </span>
-        <span>Seats updated {bus.seatsUpdatedAt}</span>
+        <span>Last seat update: {formatEventTime(bus.seatsUpdatedAt)}</span>
       </div>
     </article>);
 }
@@ -128,7 +128,7 @@ export function NotificationCard({ notification, }) {
       <div>
         <div className="notification-card__heading">
           <span>{label}</span>
-          <time>{notification.createdAt}</time>
+          <time>{formatEventTime(notification.createdAt)}</time>
         </div>
         <h3>{notification.title}</h3>
         <p>{notification.message}</p>

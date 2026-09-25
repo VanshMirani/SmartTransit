@@ -79,8 +79,11 @@ export const authService = {
                 method: "POST",
                 body: { email: normalizeEmail(email), password },
             });
-            saveBackendToken(payload?.token ?? payload?.accessToken);
             const user = publicBackendUser(payload);
+            const token = payload?.token ?? payload?.accessToken;
+            if (typeof token !== 'string' || !token.trim())
+                throw new Error('The transport service returned an invalid session response.');
+            saveBackendToken(token);
             sessionStorage.setItem(SESSION_KEY, JSON.stringify(user));
             return user;
         }

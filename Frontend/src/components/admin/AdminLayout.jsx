@@ -1,5 +1,6 @@
 import { AlertTriangle, Bell, BusFront, ChevronDown, ClipboardList, FileBarChart, FlaskConical, Gauge, LayoutDashboard, LogOut, MapPinned, Menu, Route, Search, Settings, Users, X, } from "lucide-react";
 import { useState } from "react";
+import { useNavigationMenu } from '../../hooks/useNavigationMenu';
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import { useCommunications } from "../../communications/CommunicationsContext";
@@ -35,7 +36,7 @@ const links = [
     { to: "/admin/settings", end: false, icon: Settings, label: "Settings" },
 ];
 export function AdminLayout() {
-    const [open, setOpen] = useState(false);
+    const { open, setOpen, close, triggerRef, navigationRef } = useNavigationMenu();
     const [globalQuery, setGlobalQuery] = useState("");
     const { user, logout, sessionError } = useAuth();
     const { campaigns, complaints } = useCommunications();
@@ -50,13 +51,13 @@ export function AdminLayout() {
         navigate(`/admin/search?q=${encodeURIComponent(query)}`);
     };
     return (<div className="admin-app">
-      <aside className={`admin-sidebar ${open ? "admin-sidebar--open" : ""}`}>
+      <aside ref={navigationRef} id="admin-navigation" className={`admin-sidebar ${open ? "admin-sidebar--open" : ""}`}>
         <div className="admin-sidebar__brand">
-          <BusFront />
+          <NavLink className="sidebar-home-link" to="/admin" aria-label="SmartTransit home" onClick={() => setOpen(false)}><BusFront />
           <span>
             Smart<strong>Transit</strong>
-          </span>
-          <button onClick={() => setOpen(false)} aria-label="Close navigation">
+          </span></NavLink>
+          <button onClick={close} aria-label="Close navigation">
             <X />
           </button>
         </div>
@@ -82,10 +83,10 @@ export function AdminLayout() {
           <LogOut /> <span>Log out</span>
         </button>
       </aside>
-      {open && (<button className="admin-scrim" onClick={() => setOpen(false)} aria-label="Close navigation"/>)}
+      {open && (<button className="admin-scrim" onClick={close} aria-label="Close navigation"/>)}
       <div className="admin-main">
         <header className="admin-topbar">
-          <button className="admin-menu" onClick={() => setOpen(true)} aria-label="Open navigation">
+          <button ref={triggerRef} className="admin-menu" onClick={() => setOpen(true)} aria-label="Open navigation" aria-expanded={open} aria-controls="admin-navigation">
             <Menu />
           </button>
           <form className="admin-global-search" onSubmit={submitGlobalSearch} role="search">

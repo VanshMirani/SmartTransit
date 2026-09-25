@@ -17,8 +17,8 @@
   --gray-200: #dce5ec;
   --gray-500: #5d7382;
   --gray-700: #405767;
-  --green-600: #178c64;
-  --red-600: #d24545;
+  --green-600: #137653;
+  --red-600: #c83e3e;
   --font-body: "DM Sans", system-ui, sans-serif;
   --font-heading: "Manrope", system-ui, sans-serif;
   --shadow-sm: 0 4px 16px rgba(7, 29, 47, 0.08);
@@ -37,7 +37,6 @@
 }
 html {
   scroll-behavior: smooth;
-  overflow-x: hidden;
 }
 body {
   margin: 0;
@@ -81,8 +80,11 @@ button {
   letter-spacing: 0;
 }
 .brand > span:last-child > span {
-  color: var(--teal-500);
+  color: var(--teal-600);
 }
+.brand--light > span:last-child > span { color: var(--teal-500); }
+.sidebar-home-link { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+.sidebar-home-link > svg { flex-shrink: 0; color: var(--teal-500); }
 .brand--light {
   color: white;
 }
@@ -4510,6 +4512,7 @@ button {
   font-size: 0.67rem;
   font-style: normal;
 }
+.staff-assignment-card__route small { color: #a9bdca; }
 .trip-direction-control {
   grid-column: 1 / -1;
   padding: 0 22px 22px;

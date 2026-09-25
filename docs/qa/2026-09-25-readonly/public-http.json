@@ -1,0 +1,206 @@
+{
+  "checkedAt": "2026-09-25T09:25:34.653Z",
+  "note": "SPA unknown paths return HTTP 200; this is distinct from the rendered 404 screen.",
+  "results": [
+    {
+      "url": "https://smart-transit-lyart.vercel.app",
+      "status": 200,
+      "expected": 200,
+      "headers": {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "public, max-age=0, must-revalidate",
+        "strict-transport-security": "max-age=63072000; includeSubDomains; preload",
+        "x-content-type-options": null,
+        "referrer-policy": null,
+        "permissions-policy": null,
+        "content-security-policy": null,
+        "content-security-policy-report-only": null,
+        "x-robots-tag": null,
+        "access-control-allow-origin": "*"
+      },
+      "socialImage": "/og-image.svg"
+    },
+    {
+      "url": "https://smart-transit-lyart.vercel.app/login",
+      "status": 200,
+      "expected": 200,
+      "headers": {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "public, max-age=0, must-revalidate",
+        "strict-transport-security": "max-age=63072000; includeSubDomains; preload",
+        "x-content-type-options": null,
+        "referrer-policy": null,
+        "permissions-policy": null,
+        "content-security-policy": null,
+        "content-security-policy-report-only": null,
+        "x-robots-tag": null,
+        "access-control-allow-origin": "*"
+      }
+    },
+    {
+      "url": "https://smart-transit-lyart.vercel.app/student/track",
+      "status": 200,
+      "expected": 200,
+      "headers": {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "public, max-age=0, must-revalidate",
+        "strict-transport-security": "max-age=63072000; includeSubDomains; preload",
+        "x-content-type-options": null,
+        "referrer-policy": null,
+        "permissions-policy": null,
+        "content-security-policy": null,
+        "content-security-policy-report-only": null,
+        "x-robots-tag": null,
+        "access-control-allow-origin": "*"
+      }
+    },
+    {
+      "url": "https://smart-transit-lyart.vercel.app/qa-not-a-real-page",
+      "status": 200,
+      "expected": 200,
+      "headers": {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "public, max-age=0, must-revalidate",
+        "strict-transport-security": "max-age=63072000; includeSubDomains; preload",
+        "x-content-type-options": null,
+        "referrer-policy": null,
+        "permissions-policy": null,
+        "content-security-policy": null,
+        "content-security-policy-report-only": null,
+        "x-robots-tag": null,
+        "access-control-allow-origin": "*"
+      }
+    },
+    {
+      "url": "https://smart-transit-lyart.vercel.app/favicon.svg",
+      "status": 200,
+      "expected": 200,
+      "headers": {
+        "content-type": "image/svg+xml",
+        "cache-control": "public, max-age=0, must-revalidate",
+        "strict-transport-security": "max-age=63072000; includeSubDomains; preload",
+        "x-content-type-options": null,
+        "referrer-policy": null,
+        "permissions-policy": null,
+        "content-security-policy": null,
+        "content-security-policy-report-only": null,
+        "x-robots-tag": null,
+        "access-control-allow-origin": "*"
+      }
+    },
+    {
+      "url": "https://smart-transit-lyart.vercel.app/site.webmanifest",
+      "status": 200,
+      "expected": 200,
+      "headers": {
+        "content-type": "application/manifest+json; charset=utf-8",
+        "cache-control": "public, max-age=0, must-revalidate",
+        "strict-transport-security": "max-age=63072000; includeSubDomains; preload",
+        "x-content-type-options": null,
+        "referrer-policy": null,
+        "permissions-policy": null,
+        "content-security-policy": null,
+        "content-security-policy-report-only": null,
+        "x-robots-tag": null,
+        "access-control-allow-origin": "*"
+      },
+      "manifest": {
+        "name": "SmartTransit",
+        "start_url": "/",
+        "icons": [
+          {
+            "src": "/favicon.svg",
+            "sizes": "64x64",
+            "type": "image/svg+xml",
+            "purpose": "any maskable"
+          }
+        ]
+      }
+    },
+    {
+      "url": "https://smart-transit-lyart.vercel.app/brand/smarttransit-indus-logo.jpeg",
+      "status": 200,
+      "expected": 200,
+      "headers": {
+        "content-type": "image/jpeg",
+        "cache-control": "public, max-age=0, must-revalidate",
+        "strict-transport-security": "max-age=63072000; includeSubDomains; preload",
+        "x-content-type-options": null,
+        "referrer-policy": null,
+        "permissions-policy": null,
+        "content-security-policy": null,
+        "content-security-policy-report-only": null,
+        "x-robots-tag": null,
+        "access-control-allow-origin": "*"
+      }
+    },
+    {
+      "url": "https://smarttransit-api-0c4n.onrender.com/api/health",
+      "status": 200,
+      "expected": 200,
+      "headers": {
+        "content-type": "application/json",
+        "cache-control": null,
+        "strict-transport-security": null,
+        "x-content-type-options": null,
+        "referrer-policy": null,
+        "permissions-policy": null,
+        "content-security-policy": null,
+        "content-security-policy-report-only": null,
+        "x-robots-tag": null,
+        "access-control-allow-origin": "https://smart-transit-lyart.vercel.app"
+      }
+    },
+    {
+      "url": "https://smarttransit-api-0c4n.onrender.com/api/auth/session",
+      "status": 401,
+      "expected": 401,
+      "headers": {
+        "content-type": "application/json",
+        "cache-control": null,
+        "strict-transport-security": null,
+        "x-content-type-options": null,
+        "referrer-policy": null,
+        "permissions-policy": null,
+        "content-security-policy": null,
+        "content-security-policy-report-only": null,
+        "x-robots-tag": null,
+        "access-control-allow-origin": "https://smart-transit-lyart.vercel.app"
+      }
+    },
+    {
+      "url": "https://smarttransit-api-0c4n.onrender.com/api/student/transit",
+      "status": 401,
+      "expected": 401,
+      "headers": {
+        "content-type": "application/json",
+        "cache-control": null,
+        "strict-transport-security": null,
+        "x-content-type-options": null,
+        "referrer-policy": null,
+        "permissions-policy": null,
+        "content-security-policy": null,
+        "content-security-policy-report-only": null,
+        "x-robots-tag": null,
+        "access-control-allow-origin": "https://smart-transit-lyart.vercel.app"
+      }
+    },
+    {
+      "url": "https://smarttransit-api-0c4n.onrender.com/api/admin/bootstrap",
+      "status": 401,
+      "expected": 401,
+      "headers": {
+        "content-type": "application/json",
+        "cache-control": null,
+        "strict-transport-security": null,
+        "x-content-type-options": null,
+        "referrer-policy": null,
+        "permissions-policy": null,
+        "content-security-policy": null,
+        "content-security-policy-report-only": null,
+        "x-robots-tag": null,
+        "access-control-allow-origin": "https://smart-transit-lyart.vercel.app"
+      }
+    }
+  ]
+}

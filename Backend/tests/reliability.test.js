@@ -47,6 +47,53 @@ async function fixture(t, options = {}) {
     return { request, rawRequest, login, store, filename, restart };
 }
 
+test('complaints validate content and concurrent lost-response retries create one timestamped record', async (t) => {
+    const { request, login, store, restart } = await fixture(t);
+    const student = await login('student');
+    const input = { requestId: 'qa-complaint-retry', category: 'Delay', subject: 'Late pickup today', description: 'The bus arrived later than the displayed estimate.', relatedService: 'Route IU-R4 only' };
+    for (const body of [{}, { ...input, category: 'invented' }, { ...input, subject: '' }, { ...input, description: 'x'.repeat(501) }, { ...input, relatedService: {} }, { ...input, requestId: {} }]) {
+        assert.equal((await request('/student/complaints', student, body)).status, 400);
+    }
+    const first = await request('/student/complaints', student, input);
+    assert.equal(first.status, 201, first.data.message);
+    const retries = await Promise.all([request('/student/complaints', student, input), request('/student/complaints', student, input)]);
+    assert.ok(retries.every((item) => item.data.id === first.data.id));
+    assert.match(first.data.createdAt, /^\d{4}-\d{2}-\d{2}T/);
+    assert.equal(first.data.updatedAt, first.data.createdAt);
+    assert.equal(first.data.tripId, 'Not linked', 'No invented active trip reference');
+    assert.equal((await request('/student/complaints', student, { ...input, subject: 'Changed content' })).status, 400);
+    assert.equal((await store.get()).communications.complaints.filter((item) => item.requestId === input.requestId).length, 1);
+    await restart();
+    assert.equal((await request('/student/complaints', student, input)).data.id, first.data.id);
+    const admin = await login('admin');
+    const update = { requestId: 'qa-complaint-update', status: 'resolved', resolution: 'Reviewed locally', internalNote: 'Staff-only test note' };
+    for (let attempt = 0; attempt < 2; attempt += 1)
+        assert.equal((await request(`/admin/complaints/${first.data.id}`, admin, update, 'PATCH')).status, 200);
+    const publicRetry = (await request('/student/complaints', student, input)).data;
+    assert.equal(publicRetry.timeline.filter((item) => item.title === 'Complaint updated').length, 1);
+    assert.doesNotMatch(JSON.stringify(publicRetry), /Staff-only test note/);
+    assert.equal((await request(`/admin/complaints/${first.data.id}`, admin, { ...update, resolution: 'Changed' }, 'PATCH')).status, 400);
+});
+
+test('implausible GPS jumps do not overwrite accepted location or stop progress', async (t) => {
+    const { request, login } = await fixture(t);
+    const driver = await login('driver');
+    const trip = (await request('/driver/trips/current', driver)).data.activeStaffTrip;
+    await request(`/driver/trips/${trip.id}/start`, driver, {});
+    const location = { latitude: 23.05, longitude: 72.53, accuracy: 12, timestamp: new Date(Date.now() - 2000).toISOString() };
+    const endpoint = `/driver/trips/${trip.id}/location`;
+    assert.equal((await request(endpoint, driver, location)).status, 201);
+    const before = (await request('/driver/trips/current', driver)).data;
+    const jump = await request(endpoint, driver, { ...location, latitude: 24.05, timestamp: new Date().toISOString() });
+    assert.equal(jump.status, 400);
+    assert.match(jump.data.message, /jump|movement|reliable/i);
+    const after = (await request('/driver/trips/current', driver)).data;
+    assert.deepEqual(after.activeStaffTrip.currentCoordinates, before.activeStaffTrip.currentCoordinates);
+    assert.equal(after.operationalCurrentStopId, before.operationalCurrentStopId);
+    const jitter = await request(endpoint, driver, { ...location, latitude: 23.05001, timestamp: new Date().toISOString() });
+    assert.equal(jitter.status, 201, jitter.data.message);
+});
+
 test('notification retries publish once and reject reused IDs with different content', async (t) => {
     const { request, login, store } = await fixture(t);
     const admin = await login('admin');
@@ -269,6 +316,7 @@ for (const action of ['GPS upload', 'seat update']) {
 }
 
 test('distance and stop arrivals use accepted GPS even away from the schematic route, in both directions', async (t) => {
+    t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
     const { request, login } = await fixture(t);
     const driver = await login('driver'), conductor = await login('conductor');
     const student = await login('student'), admin = await login('admin');
@@ -314,6 +362,8 @@ test('distance and stop arrivals use accepted GPS even away from the schematic r
         assert.equal(fleet.nextStopEta, slow.activeStaffTrip.nextStopEta);
         assert.equal(fleet.distanceToNextStopKm, slow.activeStaffTrip.distanceToNextStopKm);
         assert.equal(fleet.estimatedArrivalAt, slow.operationalStops.at(-1).estimatedArrivalAt);
+        // Movement takes time: the quality filter must not accept kilometre jumps in milliseconds.
+        t.mock.timers.tick(10 * 60 * 1000);
         const closer = await upload(6, (latitude + first.coordinates[0]) / 2);
         assert.ok(closer.activeStaffTrip.distanceToNextStopKm < slow.activeStaffTrip.distanceToNextStopKm);
         assert.ok(Date.parse(closer.operationalStops[0].estimatedArrivalAt) < Date.parse(slow.operationalStops[0].estimatedArrivalAt));
@@ -400,6 +450,23 @@ test('seat updates are atomic, idempotent and authoritative, including a lost-re
     const refreshed = (await request('/conductor/trips/current', conductor)).data;
     assert.equal(refreshed.activeStaffTrip.occupiedSeats, 5);
     assert.equal(refreshed.seatUpdates[0].timestamp, beforeRead.timestamp);
+});
+
+test('student seat freshness comes from the assigned bus recorded update, not a legacy relative label', async (t) => {
+    const { request, login } = await fixture(t);
+    const driver = await login('driver'), conductor = await login('conductor'), student = await login('student');
+    const trip = (await request('/driver/trips/current', driver)).data.activeStaffTrip;
+    await request(`/driver/trips/${trip.id}/start`, driver, {});
+    assert.equal((await request('/student/transit', student)).data.bus.seatsUpdatedAt, null);
+    const stops = (await request('/conductor/trips/current', conductor)).data.operationalStops;
+    const input = { id: 'seat-time', stopId: stops[0].id, boarded: 3, deboarded: 0 };
+    const saved = await request(`/conductor/trips/${trip.id}/seat-updates`, conductor, input);
+    assert.equal(saved.status, 201);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+        const bus = (await request('/student/transit', student)).data.bus;
+        assert.equal(bus.occupiedSeats, 3);
+        assert.equal(bus.seatsUpdatedAt, saved.data.update.timestamp);
+    }
 });
 
 test('signup rejects expired, reused and brute-forced OTPs and cannot self-approve or provision staff', async (t) => {
@@ -539,7 +606,7 @@ test('approval, complaints, assignment, sessions and trip counts survive a backe
     assert.equal((await request(`/admin/students/${record.id}`, admin, { ...record, status: 'pending' }, 'PUT')).status, 200);
     assert.equal((await request('/student/transit', student)).data.route.stops.length, 0);
     assert.equal((await request(`/admin/students/${record.id}`, admin, { ...record, status: 'active' }, 'PUT')).status, 200);
-    const complaint = (await request('/student/complaints', student, { category: 'Service', subject: 'QA persisted request', description: 'Isolated QA', relatedService: record.routeCode })).data;
+    const complaint = (await request('/student/complaints', student, { category: 'General feedback', subject: 'QA persisted request', description: 'Isolated QA persistence verification.', relatedService: record.routeCode })).data;
     assert.equal((await request(`/admin/complaints/${complaint.id}`, admin, { status: 'resolved', resolution: 'QA resolution', internalNote: 'Private staff note' }, 'PATCH')).status, 200);
     const current = (await request('/driver/trips/current', driver)).data;
     const tripId = current.activeStaffTrip.id;

@@ -18,6 +18,8 @@ export function CommunicationsProvider({ children }) {
     const [complaints, setComplaints] = useState(backendConfig.enabled ? [] : initialComplaintCases);
     const [loadError, setLoadError] = useState('');
     const noticeRequest = useRef(null);
+    const complaintRequest = useRef(null);
+    const complaintUpdateRequest = useRef(null);
     useEffect(() => {
         if (!backendConfig.enabled) {
             return;
@@ -106,8 +108,11 @@ export function CommunicationsProvider({ children }) {
         },
         createComplaint: async (input) => {
             if (backendConfig.enabled) {
-                const complaint = await apiRequest("/student/complaints", { method: "POST", body: input });
-                setComplaints((items) => [complaint, ...items]);
+                const signature = JSON.stringify([userId, input.category, input.subject, input.description, input.relatedService]);
+                if (complaintRequest.current?.signature !== signature) complaintRequest.current = { signature, requestId: crypto.randomUUID() };
+                const complaint = await apiRequest("/student/complaints", { method: "POST", body: { ...input, requestId: complaintRequest.current.requestId } });
+                complaintRequest.current = null;
+                setComplaints((items) => [complaint, ...items.filter((item) => item.id !== complaint.id)]);
                 return complaint;
             }
 
@@ -142,7 +147,10 @@ export function CommunicationsProvider({ children }) {
         },
         updateComplaint: async (input) => {
             if (backendConfig.enabled) {
-                const updated = await apiRequest(`/admin/complaints/${input.id}`, { method: "PATCH", body: input });
+                const signature = JSON.stringify([userId, input.id, input.status, input.assignedTo, input.resolution, input.internalNote]);
+                if (complaintUpdateRequest.current?.signature !== signature) complaintUpdateRequest.current = { signature, requestId: crypto.randomUUID() };
+                const updated = await apiRequest(`/admin/complaints/${input.id}`, { method: "PATCH", body: { ...input, requestId: complaintUpdateRequest.current.requestId } });
+                complaintUpdateRequest.current = null;
                 setComplaints((items) => items.map((item) => item.id === updated.id ? updated : item));
                 return updated;
             }

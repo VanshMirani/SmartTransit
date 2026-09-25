@@ -6,7 +6,7 @@ export function ProtectedRoute({ roles, children }) {
     if (checkingSession)
         return <main className="placeholder"><section className="placeholder__card"><p>Checking secure session...</p></section></main>;
     if (!user)
-        return <Navigate to="/login" replace state={{ from: location.pathname }}/>;
+        return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}${location.hash}` }}/>;
     if (!verified)
         return <main className="placeholder"><section className="placeholder__card" role="alert"><h1>Unable to verify your session</h1><p>{sessionError}</p><button className="button button--primary" onClick={revalidate}>Retry connection</button></section></main>;
     if (!roles.includes(user.role))

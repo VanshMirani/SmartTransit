@@ -2,6 +2,8 @@
 
 Date: 5 September 2026 (Asia/Kolkata)
 
+Latest review: [25 September 2026 local audit](QA_AUDIT_2026-09-25.md). It supersedes historical readiness statements below and preserves earlier evidence. Production checks for that review were read-only. The owner subsequently approved publishing the audit branch to GitHub, but not merging or deploying it.
+
 ## Existing Route Pin Save Follow-Up (20 September 2026)
 
 User report: editing an existing route's stop locations on the map and saving appears to do nothing. The exact affected production route/trip was not identified, so no existing production coordinates or trip state were changed.

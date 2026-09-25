@@ -1,5 +1,6 @@
 import { BusFront, CheckCircle2, Clock3, Filter, MessageSquareText, Route, Search, UserRound, Users, X, } from "lucide-react";
 import { useMemo, useState } from "react";
+import { formatEventTime } from '../../utils/dateLabels';
 import { useCommunications } from "../../communications/CommunicationsContext";
 import { AdminFeedback, AdminPageHeading, AdminStatusBadge, } from "../../components/admin/AdminUI";
 const teams = [
@@ -187,7 +188,7 @@ export function AdminComplaintsPage() {
                             {item.id} · {item.category}
                           </small>
                           <strong>{item.subject}</strong>
-                          <span>{item.createdAt}</span>
+                          <span>{formatEventTime(item.createdAt)}</span>
                         </button>
                       </td>
                       <td>
@@ -256,7 +257,7 @@ export function AdminComplaintsPage() {
                   <span>
                     <strong>{event.title}</strong>
                     <small>{event.detail}</small>
-                    <time>{event.timestamp}</time>
+                    <time>{formatEventTime(event.timestamp)}</time>
                   </span>
                 </div>))}
             </section>
@@ -285,7 +286,7 @@ export function AdminComplaintsPage() {
                 {selected.internalNotes.map((note) => (<article key={note.id}>
                     <strong>{note.author}</strong>
                     <span>{note.message}</span>
-                    <small>{note.createdAt}</small>
+                    <small>{formatEventTime(note.createdAt)}</small>
                   </article>))}
               </section>)}
             <label className="admin-form-field">

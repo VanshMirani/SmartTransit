@@ -54,8 +54,9 @@ export function AuthProvider({ children }) {
         sessionError: sessionError || (failedResources.length ? 'Connection interrupted. Some data could not be refreshed or saved. Last loaded information may be out of date. Retry the failed action after reconnecting.' : ''),
         verified, revalidate,
         login: async (email, password) => {
-            epoch.current += 1;
+            const generation = ++epoch.current;
             const session = await authService.login(email, password);
+            if (generation !== epoch.current) throw new Error('Sign-in was cancelled because the session changed.');
             setUser(session);
             setVerified(true);
             setSessionError('');

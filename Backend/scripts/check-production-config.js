@@ -1,5 +1,7 @@
 import { loadEnvFile } from "../env.js";
 import { getMissingMailSettings } from "../emailService.js";
+import { productionBackendErrors } from '../productionConfiguration.js';
+import { resolveBackendConfiguration } from '../../Frontend/src/services/backendConfiguration.js';
 
 loadEnvFile();
 
@@ -14,6 +16,11 @@ const required = [
 
 const missing = required.filter((key) => !process.env[key]?.trim());
 missing.push(...getMissingMailSettings());
+missing.push(...productionBackendErrors(process.env));
+if (resolveBackendConfiguration({ ...process.env, PROD: true }).configurationError)
+    missing.push('VITE_API_BASE_URL must be a valid HTTPS API URL without embedded credentials, query or fragment');
+if (Object.keys(process.env).some((name) => /^VITE_.*(?:PASSWORD|SECRET|PRIVATE_KEY|API_KEY|TOKEN)$/i.test(name) && process.env[name]?.trim()))
+    missing.push('Remove credentials from frontend-exposed VITE_* variables');
 
 if (process.env.VITE_USE_BACKEND !== "true") {
     missing.push("VITE_USE_BACKEND must be true");

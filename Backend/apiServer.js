@@ -8,6 +8,7 @@ import { hashPassword, verifyPassword } from "./passwords.js";
 import { captureStopOffsets, stopsWithDepartureEstimates } from './tripTiming.js';
 import { deleteManagedRecord, validateManagedRecord, validateManagedRoute } from './adminRecords.js';
 import { createGpsSimulator } from './gpsSimulation.js';
+import { productionBackendErrors } from './productionConfiguration.js';
 
 const signupOtpExpiryMinutes = 10;
 const passwordResetOtpExpiryMinutes = 10;
@@ -24,6 +25,8 @@ const localAllowedOrigin = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(
 
 const jsonHeaders = {
     "Content-Type": "application/json",
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
     "Access-Control-Allow-Origin": allowedOrigin,
     "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type,Authorization",
@@ -134,10 +137,6 @@ async function requireUser(request, store) {
 
 function requireRole(user, roles) {
     return user && roles.includes(user.role);
-}
-
-function findRouteFromService(service) {
-    return indusRoutes.find((route) => String(service ?? "").includes(route.code));
 }
 
 function routeCodeFromAssignment(assignment) {
@@ -409,17 +408,21 @@ function studentCodeFromEmail(email) {
     return email.split("@")[0].toUpperCase();
 }
 
-function buildComplaint(input, user) {
-    const route = findRouteFromService(input.relatedService);
-    const label = new Intl.DateTimeFormat("en-IN", {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-    }).format(new Date());
+function publicComplaint({ internalNotes, ...complaint }) {
+    void internalNotes;
+    return { ...complaint, timeline: complaint.timeline.map(({ requestId, actorId, signature, ...event }) => {
+        void requestId; void actorId; void signature;
+        return event;
+    }) };
+}
+
+function buildComplaint(input, user, data) {
+    const route = findRouteByCode(data, routeCodeFromAssignment(input.relatedService));
+    const tripState = route && routeTripStateForRoute(data, route.code);
+    const label = new Date().toISOString();
     return {
-        id: `CMP-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`,
+        id: `CMP-${randomUUID()}`,
+        requestId: input.requestId,
         studentId: user.id,
         studentName: user.name,
         studentEmail: user.email,
@@ -429,7 +432,7 @@ function buildComplaint(input, user) {
         relatedService: input.relatedService,
         routeCode: route?.code ?? "Not linked",
         busNumber: route?.primaryBusNumber ?? "Not linked",
-        tripId: route ? `TRIP-CURRENT-${route.code}` : "Not linked",
+        tripId: tripState?.tripStatus === 'active' ? tripState.activeStaffTrip.id : "Not linked",
         status: "new",
         assignedTo: "Unassigned",
         createdAt: label,
@@ -1569,6 +1572,13 @@ function storeDriverLocation(data, user, tripId, locationInput) {
     const previousLocation = liveLocations[tripId];
     if (previousLocation && Date.parse(previousLocation.reportedAt ?? previousLocation.updatedAt) >= Date.parse(updatedAt))
         return { error: 'This GPS fix is older than the last accepted location.' };
+    if (previousLocation) {
+        const hours = (Date.parse(updatedAt) - Date.parse(previousLocation.reportedAt ?? previousLocation.updatedAt)) / 3600000;
+        const uncertaintyKm = ((previousLocation.accuracy ?? 250) + locationInput.accuracy) / 1000;
+        const distanceKm = directDistanceKmBetween(previousLocation.coordinates, locationInput.coordinates);
+        if (Number.isFinite(distanceKm) && distanceKm > 160 * hours + uncertaintyKm)
+            return { error: 'GPS movement is implausible. Wait for a reliable location fix and retry.' };
+    }
     const location = {
         tripId,
         routeCode: trip.routeCode,
@@ -2047,6 +2057,7 @@ function buildStudentTransitData(data, user) {
         registration: busRegistrationForRoute(data, assignedRoute),
         capacity: fleetBus?.capacity ?? data.studentTransitData.bus.capacity,
         occupiedSeats: fleetBus?.occupancy ?? data.studentTransitData.bus.occupiedSeats,
+        seatsUpdatedAt: Number.isFinite(Date.parse(fleetBus?.seatsUpdatedAt ?? '')) ? fleetBus.seatsUpdatedAt : null,
         status: fleetBus?.status === "delayed" ? "delayed" : data.studentTransitData.bus.status,
         speed: fleetBus?.speed ?? data.studentTransitData.bus.speed,
         gpsUpdatedAt: fleetBus?.gpsUpdated ?? data.studentTransitData.bus.gpsUpdatedAt,
@@ -2092,11 +2103,15 @@ function communicationsForUser(data, user) {
             .filter((item) => user.notificationPreferences?.[item.type === 'delay' ? 'delay' : item.type === 'route-change' ? 'route' : 'general'] !== false)
             .map((item) => ({ ...item, unread: !(data.communications.readByUser?.[user.id] ?? []).includes(item.id) })),
         campaigns: [],
-        complaints: data.communications.complaints.filter((complaint) => complaint.studentId === user.id).map(({ internalNotes, ...complaint }) => { void internalNotes; return complaint; }),
+        complaints: data.communications.complaints.filter((complaint) => complaint.studentId === user.id).map(publicComplaint),
     };
 }
 
 export function createApiServer(store, options = {}) {
+    if (process.env.NODE_ENV === 'production') {
+        const errors = productionBackendErrors(process.env);
+        if (errors.length) throw new Error(`Production configuration is invalid: ${errors.join('; ')}`);
+    }
     const simulator = createGpsSimulator({ project(route, trip, location) {
         const data = { operations: { activeStaffTrip: trip, tripStatus: 'active', liveLocations: { [trip.id]: location } } };
         const context = buildLiveEtaContext(data, route, trip, location);
@@ -2522,7 +2537,7 @@ export function createApiServer(store, options = {}) {
                 }
                 const data = await store.get();
                 send(response, 200, data.communications.complaints.filter((complaint) => complaint.studentId === user.id)
-                    .map(({ internalNotes, ...complaint }) => { void internalNotes; return complaint; }));
+                    .map(publicComplaint));
                 return;
             }
 
@@ -2532,12 +2547,27 @@ export function createApiServer(store, options = {}) {
                     return;
                 }
                 const body = await readBody(request);
+                const categories = ['Delay', 'Bus condition', 'Driver or staff behaviour', 'Route or stop', 'Safety concern', 'General feedback'];
+                if (!categories.includes(body.category) ||
+                    typeof body.subject !== 'string' || body.subject.trim().length < 5 || body.subject.length > 80 ||
+                    typeof body.description !== 'string' || body.description.trim().length < 20 || body.description.length > 500 ||
+                    typeof body.relatedService !== 'string' || !body.relatedService.trim() || body.relatedService.length > 200 ||
+                    (body.requestId !== undefined && (typeof body.requestId !== 'string' || !body.requestId.trim() || body.requestId.length > 128))) {
+                    badRequest(response, 'Select a category and service, enter a subject (5-80 characters) and description (20-500 characters).'); return;
+                }
                 const complaint = await store.update((data) => {
-                    const next = buildComplaint(body, user);
+                    const existing = body.requestId && data.communications.complaints.find((item) => item.requestId === body.requestId && item.studentId === user.id);
+                    if (existing) {
+                        if (['category', 'subject', 'description', 'relatedService'].some((field) => existing[field] !== body[field]))
+                            return { error: 'This complaint request was already used with different details.' };
+                        return existing;
+                    }
+                    const next = buildComplaint(body, user, data);
                     data.communications.complaints.unshift(next);
                     return next;
                 });
-                send(response, 201, complaint);
+                if (complaint.error) { badRequest(response, complaint.error); return; }
+                send(response, 201, publicComplaint(complaint));
                 return;
             }
 
@@ -2651,6 +2681,7 @@ export function createApiServer(store, options = {}) {
                 }
                 const body = await readBody(request);
                 if (!['new', 'in-progress', 'resolved'].includes(body.status) ||
+                    (body.requestId !== undefined && (typeof body.requestId !== 'string' || !body.requestId.trim() || body.requestId.length > 128)) ||
                     ['assignedTo', 'resolution', 'internalNote'].some((key) => body[key] !== undefined && (typeof body[key] !== 'string' || body[key].length > 2000)) ||
                     (body.status === 'resolved' && !body.resolution?.trim())) {
                     badRequest(response, 'Choose a valid complaint status and provide a resolution before resolving it.'); return;
@@ -2659,9 +2690,12 @@ export function createApiServer(store, options = {}) {
                     const complaint = data.communications.complaints.find((item) => item.id === complaintMatch[1]);
                     if (!complaint)
                         return null;
+                    const signature = JSON.stringify([body.status, body.assignedTo ?? '', body.resolution?.trim() ?? '', body.internalNote?.trim() ?? '']);
+                    const previous = body.requestId && complaint.timeline.find((item) => item.requestId === body.requestId && item.actorId === user.id);
+                    if (previous) return previous.signature === signature ? complaint : { error: 'This update request was already used with different details.' };
                     const label = currentShortDateTime();
                     complaint.status = body.status;
-                    complaint.assignedTo = body.assignedTo;
+                    complaint.assignedTo = body.assignedTo ?? complaint.assignedTo;
                     complaint.resolution = body.resolution?.trim() || complaint.resolution;
                     complaint.updatedAt = label;
                     if (body.internalNote?.trim()) {
@@ -2673,7 +2707,10 @@ export function createApiServer(store, options = {}) {
                         });
                     }
                     complaint.timeline.push({
-                        id: `evt-${Date.now()}`,
+                        id: `evt-${randomUUID()}`,
+                        requestId: body.requestId,
+                        actorId: user.id,
+                        signature,
                         title: "Complaint updated",
                         detail: `Status changed to ${body.status}.`,
                         timestamp: label,
@@ -2684,6 +2721,7 @@ export function createApiServer(store, options = {}) {
                     notFound(response);
                     return;
                 }
+                if (updated.error) { badRequest(response, updated.error); return; }
                 send(response, 200, updated);
                 return;
             }

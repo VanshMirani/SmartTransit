@@ -2,6 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { currentGreeting, formatEventTime, stopTimeLabel, stopTimeSource } from '../src/utils/dateLabels.js';
 
+test('recorded events use a real timestamp, never a permanently fresh legacy label', () => {
+    for (const value of [undefined, null, '', '2 min ago', 'Just now', 'Yesterday, 7:00 PM', 'invalid'])
+        assert.equal(formatEventTime(value), 'Not available');
+    assert.match(formatEventTime('2026-09-25T08:00:00Z'), /25 Sept?, 1:30 pm/i);
+});
+
 test('greetings follow transport local time rather than a fixed morning label', () => {
     assert.equal(currentGreeting('2026-09-05T02:00:00Z'), 'Good morning');
     assert.equal(currentGreeting('2026-09-05T08:00:00Z'), 'Good afternoon');

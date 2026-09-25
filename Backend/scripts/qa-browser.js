@@ -18,6 +18,8 @@ if (runName && !/^[a-zA-Z0-9-]+$/.test(runName)) throw new Error('QA_RUN_NAME mu
 const output = path.resolve('docs/qa', runName);
 await mkdir(output, { recursive: true });
 const results = [], errors = [], limitations = [], consoleIssues = [], networkIssues = [];
+const accessibility = [];
+const widths = process.env.QA_FULL_MATRIX ? [320, 360, 390, 430, 768, 1024, 1440] : null;
 let scenario = 'setup';
 const contexts = [];
 const check = async (name, action) => {
@@ -63,7 +65,7 @@ async function login(page, role, email, password) {
     await page.getByLabel('University email').fill(email || (role === 'student' ? 'student@iite.indusuni.ac.in' : `${role}@transport.indusuni.ac.in`));
     await page.getByLabel('Password', { exact: true }).fill(password || `${role[0].toUpperCase()}${role.slice(1)}@123`);
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-    await page.waitForURL(`**/${role}`);
+    await page.waitForURL((url) => url.pathname === `/${role}` || url.pathname.startsWith(`/${role}/`));
     await page.locator('h1:visible, h2:visible').first().waitFor();
 }
 async function api(page, route, body, method = body ? 'POST' : 'GET') {
@@ -83,6 +85,10 @@ async function api(page, route, body, method = body ? 'POST' : 'GET') {
     }, { route, body, method, apiBase });
 }
 async function snapshot(page, filename) {
+    await page.waitForFunction(() => {
+        const headings = [...document.querySelectorAll('main h1, main h2')].filter((element) => element.getClientRects().length);
+        return headings.some((element) => !/^(Loading|Checking)\b/i.test(element.textContent.trim()));
+    });
     await page.evaluate(() => document.fonts.ready);
     if (await page.locator('.leaflet-container').count()) {
         await page.waitForFunction(() => {
@@ -102,6 +108,14 @@ async function snapshot(page, filename) {
     await page.screenshot({ path: path.join(output, filename), fullPage: true });
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 2);
     assert.equal(overflow, false, `Page overflow at ${page.url()}`);
+    if (process.env.QA_AXE_PATH && [320, 1440].includes(page.viewportSize().width)) {
+        await page.addScriptTag({ path: process.env.QA_AXE_PATH });
+        const result = await page.evaluate(async () => {
+            const { violations, incomplete } = await window.axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'] } });
+            return { violations, incomplete: incomplete.map(({ id, impact }) => ({ id, impact })) };
+        });
+        accessibility.push({ path: new URL(page.url()).pathname, width: page.viewportSize().width, ...result });
+    }
 }
 async function startTrip(page) {
     await page.goto(`${base}/driver/checklist`);
@@ -115,7 +129,7 @@ async function startTrip(page) {
 try {
     const publicPage = await pageFor(null);
     await check('Public desktop and mobile pages render without horizontal overflow', async () => {
-        for (const width of [1440, 768, 390, 320]) {
+        for (const width of widths || [1440, 768, 390, 320]) {
             await publicPage.setViewportSize({ width, height: 900 });
             for (const route of ['/', '/login', '/signup', '/forgot-password', '/privacy', '/help']) {
                 await publicPage.goto(`${base}${route}`);
@@ -157,7 +171,16 @@ try {
         await publicPage.waitForURL('**/help');
     });
     await check('Failed sign-in has readable recovery guidance and preserves input', async () => {
+        await publicPage.goto(`${base}/signup`);
+        await publicPage.locator('button[type="submit"]').click();
+        assert.equal(await publicPage.evaluate(() => document.activeElement.id), 'signup-name');
+        await publicPage.goto(`${base}/forgot-password`);
+        await publicPage.locator('button[type="submit"]').click();
+        assert.equal(await publicPage.evaluate(() => document.activeElement.id), 'reset-email');
         await publicPage.goto(`${base}/login`);
+        assert.equal(await publicPage.title(), 'Sign in | SmartTransit');
+        await publicPage.getByRole('button', { name: 'Sign in', exact: true }).click();
+        assert.equal(await publicPage.evaluate(() => document.activeElement.id), 'email');
         await publicPage.getByLabel('University email').fill('review@example.invalid');
         await publicPage.getByLabel('Password', { exact: true }).fill('Fictional-Review!9');
         await publicPage.route('**/auth/login', (route) => route.abort());
@@ -168,6 +191,39 @@ try {
         await publicPage.unroute('**/auth/login');
     });
     const driver = await pageFor('driver'), conductor = await pageFor('conductor'), admin = await pageFor('admin'), student = await pageFor('student');
+    await check('Direct links preserve safe destinations, unauthorized pages stay protected, and invalid URLs show 404', async () => {
+        const page = await pageFor(null);
+        await page.goto(`${base}/student/alerts?review=local`);
+        await page.waitForURL('**/login');
+        await page.getByLabel('University email').fill('  student@iite.indusuni.ac.in  ');
+        await page.getByLabel('Password', { exact: true }).fill('Student@123');
+        await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+        await page.waitForURL('**/student/alerts?review=local');
+        await page.reload();
+        await page.locator('h1').waitFor();
+        assert.equal(await page.title(), 'Transport alerts | SmartTransit');
+        await page.goto(`${base}/admin/buses`);
+        await page.waitForURL('**/unauthorized');
+        assert.equal((await api(page, '/admin/bootstrap')).status, 403);
+        await page.goto(`${base}/qa-no-such-page`);
+        await page.getByRole('heading').first().waitFor();
+        assert.equal(await page.title(), 'Page not found | SmartTransit');
+        await snapshot(page, 'not-found.png');
+        await page.context().close();
+    });
+    await check('Public and all role menus close with Escape and return keyboard focus', async () => {
+        for (const [role, page] of [['', publicPage], ['driver', driver], ['conductor', conductor], ['admin', admin], ['student', student]]) {
+            await page.setViewportSize({ width: 320, height: 740 });
+            await page.goto(`${base}/${role}`);
+            const trigger = role ? page.getByRole('button', { name: 'Open navigation', exact: true }) : page.locator('.menu-button');
+            await trigger.click();
+            assert.equal(await trigger.getAttribute('aria-expanded'), 'true');
+            await page.keyboard.press('Escape');
+            assert.equal(await trigger.getAttribute('aria-expanded'), 'false');
+            assert.equal(await trigger.evaluate((element) => element === document.activeElement), true);
+            await page.setViewportSize({ width: 1440, height: 1000 });
+        }
+    });
     if (base.startsWith('https:')) {
         await check('A failed dashboard download offers recovery and reload restores the page', async () => {
             const page = await pageFor('student');
@@ -450,6 +506,9 @@ try {
             await reset.getByRole('button', { name: 'Reset password', exact: true }).click();
             await reset.getByRole('heading', { name: 'Password updated', exact: true }).waitFor();
             await snapshot(reset, 'password-reset-complete.png');
+            await reset.getByRole('link', { name: 'Return to sign in', exact: true }).click();
+            await reset.getByText('Sign in with your new password.', { exact: false }).waitFor();
+            assert.equal(await reset.getByText('Account created', { exact: true }).count(), 0);
             await applicant.reload();
             await applicant.waitForURL('**/login');
             await login(reset, 'student', 'qa.audit@iite.indusuni.ac.in', 'AuditChanged@456');
@@ -462,7 +521,25 @@ try {
         await student.getByRole('combobox', { name: 'Category *', exact: true }).selectOption('General feedback');
         await student.getByLabel('Subject *', { exact: true }).fill('QA transport request');
         await student.getByLabel('Description *', { exact: true }).fill('Isolated browser audit complaint.');
+        const complaintRequests = [];
+        await student.route('**/student/complaints', async (interception) => {
+            if (interception.request().method() !== 'POST') return interception.continue();
+            complaintRequests.push(interception.request().postDataJSON());
+            if (complaintRequests.length === 1) {
+                await interception.fetch();
+                return interception.abort();
+            }
+            return interception.continue();
+        });
         await student.getByRole('button', { name: 'Submit complaint', exact: true }).click();
+        await student.getByText(/Submission was not confirmed/).waitFor();
+        assert.equal(await student.getByLabel('Subject *', { exact: true }).inputValue(), 'QA transport request');
+        assert.equal(await student.getByText('Complaint submitted successfully', { exact: true }).count(), 0);
+        await student.getByRole('button', { name: 'Submit complaint', exact: true }).click();
+        await student.getByText('Complaint submitted successfully', { exact: true }).waitFor();
+        assert.equal(complaintRequests[0].requestId, complaintRequests[1].requestId);
+        await student.unroute('**/student/complaints');
+        assert.equal((await api(student, '/student/complaints')).data.filter((item) => item.subject === 'QA transport request').length, 1);
         await student.getByText('QA transport request', { exact: true }).waitFor();
         const saved = { ok: true, data: (await api(student, '/student/complaints')).data.find((item) => item.subject === 'QA transport request') };
         assert.equal(saved.ok, true);
@@ -507,10 +584,10 @@ try {
             student: [student, ['', 'track', 'routes', 'alerts', 'complaints', 'profile', 'help']],
             driver: [driver, ['', 'checklist', 'trip', 'emergency', 'history', 'profile']],
             conductor: [conductor, ['', 'trip', 'emergency', 'history', 'profile']],
-            admin: [admin, ['', 'live', 'buses', 'routes', 'stops', 'drivers', 'conductors', 'students', 'assignments', 'notifications', 'complaints', 'reports', 'settings', 'settings/states', 'search']],
+            admin: [admin, ['', 'live', 'simulator', 'buses', 'routes', 'stops', 'drivers', 'conductors', 'students', 'assignments', 'notifications', 'complaints', 'reports', 'settings', 'settings/states', 'search']],
         };
         for (const [role, [page, paths]] of Object.entries(pages)) {
-            for (const width of [1440, 390]) {
+            for (const width of widths || [1440, 390]) {
                 await page.setViewportSize({ width, height: 900 });
                 for (const route of paths) {
                     await page.goto(`${base}/${role}${route ? `/${route}` : ''}`);
@@ -521,6 +598,7 @@ try {
                         const returning = transit.route.direction === 'return';
                         const active = transit.bus.tripActive;
                         if (!route) {
+                            await page.getByText(`Last seat update: ${formatEventTime(transit.bus.seatsUpdatedAt)}`, { exact: true }).waitFor();
                             const stop = transit.route.stops.find((item) => item.id === transit.route.selectedStopId);
                             await page.getByText(active ? stopTimeSource(stop) : returning ? 'Scheduled drop-off' : 'Scheduled pickup', { exact: true }).first().waitFor();
                             assert.equal(await page.getByText('Traffic update', { exact: true }).count(), 0);
@@ -544,6 +622,7 @@ try {
     });
     await check('Mobile role navigation, browser back, and GPS cleanup on logout', async () => {
         for (const [role, page] of [['student', student], ['driver', driver], ['conductor', conductor], ['admin', admin]]) {
+            await page.setViewportSize({ width: 390, height: 900 });
             await page.goto(`${base}/${role}`);
             await page.getByRole('button', { name: 'Open navigation', exact: true }).click();
             const nav = page.getByRole('navigation', { name: `${role === 'admin' ? 'Admin' : role[0].toUpperCase() + role.slice(1)} navigation`, exact: true });
@@ -560,6 +639,11 @@ try {
         assert.equal(await driver.evaluate(() => window.__qaWatcherCount()), 0);
     });
     await check('Rapid map navigation leaves no delayed browser exceptions', async () => {
+        if (process.env.QA_PAGES_ONLY) {
+            const tripDriver = await pageFor('driver');
+            await startTrip(tripDriver);
+            await tripDriver.context().close();
+        }
         await student.setViewportSize({ width: 390, height: 900 });
         for (let attempt = 0; attempt < 3; attempt += 1) {
             await student.goto(`${base}/student`);
@@ -576,6 +660,12 @@ try {
 finally {
     for (const context of contexts) await context.close();
     await writeFile(path.join(output, process.env.QA_PAGES_ONLY ? 'browser-pages-results.json' : 'browser-results.json'), JSON.stringify({ results, pageErrors: errors, limitations, consoleIssues, networkIssues }, null, 2));
+    if (process.env.QA_AXE_PATH) await writeFile(path.join(output, 'accessibility.json'), JSON.stringify(accessibility, null, 2));
     await browser.close();
 }
 assert.deepEqual(errors, [], 'Browser errors occurred during navigation or teardown');
+assert.deepEqual(
+    accessibility.filter((scan) => scan.violations.length > 0),
+    [],
+    'Automated accessibility violations occurred; inspect accessibility.json',
+);

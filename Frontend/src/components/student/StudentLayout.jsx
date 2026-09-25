@@ -1,5 +1,5 @@
 import { Bell, BusFront, CircleHelp, Home, LogOut, MapPinned, Menu, MessageSquareText, Route, UserRound, X, } from "lucide-react";
-import { useState } from "react";
+import { useNavigationMenu } from '../../hooks/useNavigationMenu';
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 import { useCommunications } from "../../communications/CommunicationsContext";
@@ -11,7 +11,7 @@ const mainLinks = [
     { to: "/student/profile", icon: UserRound, label: "Profile" },
 ];
 export function StudentLayout() {
-    const [menuOpen, setMenuOpen] = useState(false);
+    const { open: menuOpen, setOpen: setMenuOpen, close, triggerRef, navigationRef } = useNavigationMenu();
     const { user, logout, sessionError } = useAuth();
     const { unreadCount } = useCommunications();
     const navigate = useNavigate();
@@ -20,13 +20,13 @@ export function StudentLayout() {
         navigate("/login", { replace: true });
     };
     return (<div className="student-app">
-      <aside className={`student-sidebar ${menuOpen ? "student-sidebar--open" : ""}`}>
+      <aside ref={navigationRef} id="student-navigation" className={`student-sidebar ${menuOpen ? "student-sidebar--open" : ""}`}>
         <div className="student-sidebar__brand">
-          <BusFront />
+          <NavLink className="sidebar-home-link" to="/student" aria-label="SmartTransit home" onClick={() => setMenuOpen(false)}><BusFront />
           <span>
             Smart<strong>Transit</strong>
-          </span>
-          <button onClick={() => setMenuOpen(false)} aria-label="Close navigation">
+          </span></NavLink>
+          <button onClick={close} aria-label="Close navigation">
             <X />
           </button>
         </div>
@@ -56,10 +56,10 @@ export function StudentLayout() {
           </button>
         </div>
       </aside>
-      {menuOpen && (<button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMenuOpen(false)}/>)}
+      {menuOpen && (<button className="sidebar-scrim" aria-label="Close navigation" onClick={close}/>)}
       <div className="student-main">
         <header className="student-topbar">
-          <button className="student-menu" onClick={() => setMenuOpen(true)} aria-label="Open navigation">
+          <button ref={triggerRef} className="student-menu" onClick={() => setMenuOpen(true)} aria-label="Open navigation" aria-expanded={menuOpen} aria-controls="student-navigation">
             <Menu />
           </button>
           <div className="student-topbar__brand">

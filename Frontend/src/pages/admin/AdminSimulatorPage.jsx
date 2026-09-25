@@ -99,7 +99,7 @@ export function AdminSimulatorPage() {
           </MapContainer>}
           <p>Last simulation update: {formatEventTime(scenario?.location?.updatedAt)}</p>
         </section>
-        <section className="simulation-stops" aria-label="Simulated stop arrivals"><h2>Stop arrivals</h2>{stops.map((stop, index) => <article key={stop.id}><span>{index + 1}</span><div><strong>{stop.name}</strong><small>{scenario?.status === 'completed' ? 'Journey complete' : active ? error ? 'ETA unavailable' : stopTimeLabel(stop, true) : 'Not started'}</small></div></article>)}</section>
+        <section className="simulation-stops" aria-label="Simulated stop arrivals" tabIndex={0}><h2>Stop arrivals</h2>{stops.map((stop, index) => <article key={stop.id}><span>{index + 1}</span><div><strong>{stop.name}</strong><small>{scenario?.status === 'completed' ? 'Journey complete' : active ? error ? 'ETA unavailable' : stopTimeLabel(stop, true) : 'Not started'}</small></div></article>)}</section>
       </div>
     </div>;
 }

@@ -1,7 +1,7 @@
 import { Component, Suspense } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 
-class PageLoadBoundary extends Component {
+export class PageLoadBoundary extends Component {
     state = { failed: false };
 
     static getDerivedStateFromError() {
@@ -14,7 +14,7 @@ class PageLoadBoundary extends Component {
               <h1>This page could not be loaded</h1>
               <p>Check your connection and reload the page. Your saved transport records have not been changed.</p>
               <button className="button button--primary" onClick={() => window.location.reload()}>Reload page</button>
-              <Link className="text-link" to="/help">Get help</Link>
+              <a className="text-link" href="/help">Get help</a>
             </section>;
         return this.props.children;
     }

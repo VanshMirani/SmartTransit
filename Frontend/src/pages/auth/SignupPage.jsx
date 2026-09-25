@@ -45,10 +45,13 @@ export function SignupPage() {
         setServerError("");
     };
     const sendOtp = async () => {
+        if (loading) return;
         const nextErrors = getVisibleSignupErrors(values);
         setErrors(nextErrors);
-        if (Object.keys(nextErrors).length)
+        if (Object.keys(nextErrors).length) {
+            focusSignupError(nextErrors);
             return;
+        }
         setLoading(true);
         setServerError("");
         try {
@@ -68,14 +71,17 @@ export function SignupPage() {
     };
     const submit = async (event) => {
         event.preventDefault();
+        if (loading) return;
         if (!otpSent) {
             await sendOtp();
             return;
         }
         const nextErrors = getVisibleSignupErrors(values, { requireOtp: true });
         setErrors(nextErrors);
-        if (Object.keys(nextErrors).length)
+        if (Object.keys(nextErrors).length) {
+            focusSignupError(nextErrors);
             return;
+        }
         setLoading(true);
         setServerError("");
         try {
@@ -168,7 +174,7 @@ export function SignupPage() {
             <label htmlFor="signup-email">Institute email</label>
             <div className={`input-wrap ${errors.email ? "input-wrap--error" : ""}`}>
               <Mail />
-              <input id="signup-email" type="email" autoComplete="email" value={values.email} onChange={(event) => update("email", event.target.value)} aria-invalid={Boolean(errors.email)} aria-describedby={errors.email ? "signup-email-error" : undefined} placeholder="you@indusuni.ac.in"/>
+              <input id="signup-email" type="email" autoComplete="email" disabled={loading} value={values.email} onChange={(event) => update("email", event.target.value)} aria-invalid={Boolean(errors.email)} aria-describedby={errors.email ? "signup-email-error" : undefined} placeholder="you@indusuni.ac.in"/>
             </div>
             {errors.email && <small id="signup-email-error" className="field-error">{errors.email}</small>}
           </div>
@@ -227,6 +233,12 @@ export function SignupPage() {
       <Link className="auth-back" to="/">← Back to public website</Link>
     </main>);
 }
+function focusSignupError(errors) {
+    const key = Object.keys(errors)[0];
+    const field = { fullName: 'name', acceptedTerms: 'terms', confirmPassword: 'confirm-password' }[key] ?? key;
+    document.getElementById(`signup-${field}`)?.focus();
+}
+
 function PasswordField({ id, label, value, error, autoComplete, onChange }) {
     const [visible, setVisible] = useState(false);
     const errorId = `${id}-error`;

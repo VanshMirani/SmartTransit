@@ -274,7 +274,7 @@ export function AdminReportsPage() {
                 <p>Daily trips, delays and on-time rate</p>
               </div>
             </div>
-            <div className="report-chart" aria-label="Daily operating performance chart">
+            <div className="report-chart" role="group" aria-label="Daily operating performance chart">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={dailyData} margin={{ left: -18, right: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e4ebf1"/>
@@ -296,7 +296,7 @@ export function AdminReportsPage() {
                 <p>Conductor boardings recorded each day</p>
               </div>
             </div>
-            <div className="report-chart" aria-label="Student route usage chart">
+            <div className="report-chart" role="group" aria-label="Student route usage chart">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={dailyData} margin={{ left: -10, right: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e4ebf1"/>

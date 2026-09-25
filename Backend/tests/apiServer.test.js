@@ -323,7 +323,9 @@ test("driver dashboard uses the signed-in driver's assigned route and bus", asyn
     }
 });
 
-test("custom admin route assignments appear correctly for new driver and conductor accounts", async () => {
+test("custom admin route assignments appear correctly for new driver and conductor accounts", async (t) => {
+    t.mock.timers.enable({ apis: ["Date"], now: Date.now() });
+    const nextGpsTime = () => { t.mock.timers.tick(10 * 60 * 1000); return new Date().toISOString(); };
     const app = await startTestServer();
     try {
         const adminLogin = await fetch(`${app.baseUrl}/auth/login`, {
@@ -590,7 +592,7 @@ test("custom admin route assignments appear correctly for new driver and conduct
                 longitude: route.stops[1].coordinates[1],
                 accuracy: 12,
                 speedMetersPerSecond: 8,
-                timestamp: new Date().toISOString(),
+                timestamp: nextGpsTime(),
             }),
         });
         assert.equal(prematureGps.status, 201);
@@ -606,7 +608,7 @@ test("custom admin route assignments appear correctly for new driver and conduct
                 longitude: route.stops[0].coordinates[1],
                 accuracy: 12,
                 speedMetersPerSecond: 8,
-                timestamp: new Date().toISOString(),
+                timestamp: nextGpsTime(),
             }),
         });
         assert.equal(firstStopGps.status, 201);
@@ -622,7 +624,7 @@ test("custom admin route assignments appear correctly for new driver and conduct
                 longitude: route.stops[1].coordinates[1],
                 accuracy: 12,
                 speedMetersPerSecond: 8,
-                timestamp: new Date().toISOString(),
+                timestamp: nextGpsTime(),
             }),
         });
         assert.equal(secondStopGps.status, 201);
@@ -1066,7 +1068,9 @@ test("route stop changes stay aligned across student, staff, and admin dashboard
     }
 });
 
-test("student pickup stop does not override the GPS-based bus next stop", async () => {
+test("student pickup stop does not override the GPS-based bus next stop", async (t) => {
+    t.mock.timers.enable({ apis: ["Date"], now: Date.now() });
+    const nextGpsTime = () => { t.mock.timers.tick(10 * 60 * 1000); return new Date().toISOString(); };
     const app = await startTestServer();
     try {
         const loginAs = async (email, password) => {
@@ -1121,7 +1125,7 @@ test("student pickup stop does not override the GPS-based bus next stop", async 
                 longitude: firstRouteStop.coordinates[1],
                 accuracy: 12,
                 speedMetersPerSecond: 8,
-                timestamp: new Date().toISOString(),
+                timestamp: nextGpsTime(),
             }),
         });
         assert.equal(firstStopLocation.status, 201);
@@ -1134,7 +1138,7 @@ test("student pickup stop does not override the GPS-based bus next stop", async 
                 longitude: busNextStop.coordinates[1],
                 accuracy: 12,
                 speedMetersPerSecond: 8,
-                timestamp: new Date().toISOString(),
+                timestamp: nextGpsTime(),
             }),
         });
         assert.equal(locationUpdate.status, 201);
@@ -1157,7 +1161,9 @@ test("student pickup stop does not override the GPS-based bus next stop", async 
     }
 });
 
-test("driver phone GPS updates student and admin live tracking", async () => {
+test("driver phone GPS updates student and admin live tracking", async (t) => {
+    t.mock.timers.enable({ apis: ["Date"], now: Date.now() });
+    const nextGpsTime = () => { t.mock.timers.tick(10 * 60 * 1000); return new Date().toISOString(); };
     const app = await startTestServer();
     try {
         const driverLogin = await fetch(`${app.baseUrl}/auth/login`, {
@@ -1199,7 +1205,7 @@ test("driver phone GPS updates student and admin live tracking", async () => {
                 accuracy: 14.4,
                 speedMetersPerSecond: 9.8,
                 heading: 82,
-                timestamp: new Date().toISOString(),
+                timestamp: nextGpsTime(),
             }),
         });
         assert.equal(firstStopLocation.status, 201);
@@ -1213,7 +1219,7 @@ test("driver phone GPS updates student and admin live tracking", async () => {
                 accuracy: 14.4,
                 speedMetersPerSecond: 9.8,
                 heading: 82,
-                timestamp: new Date().toISOString(),
+                timestamp: nextGpsTime(),
             }),
         });
         assert.equal(locationUpdate.status, 201);
@@ -1402,7 +1408,9 @@ test("conductor seat update changes occupancy without advancing GPS-based route 
     }
 });
 
-test("return trip reverses stops and supports deboarding seat updates", async () => {
+test("return trip reverses stops and supports deboarding seat updates", async (t) => {
+    t.mock.timers.enable({ apis: ["Date"], now: Date.now() });
+    const nextGpsTime = () => { t.mock.timers.tick(10 * 60 * 1000); return new Date().toISOString(); };
     const app = await startTestServer();
     try {
         const loginAs = async (email, password) => {
@@ -1452,7 +1460,7 @@ test("return trip reverses stops and supports deboarding seat updates", async ()
                 longitude: campusStop.coordinates[1],
                 accuracy: 12,
                 speedMetersPerSecond: 8.4,
-                timestamp: new Date().toISOString(),
+                timestamp: nextGpsTime(),
             }),
         });
         assert.equal(campusLocation.status, 201);
@@ -1481,7 +1489,7 @@ test("return trip reverses stops and supports deboarding seat updates", async ()
                 longitude: firstDropStop.coordinates[1],
                 accuracy: 12,
                 speedMetersPerSecond: 8.4,
-                timestamp: new Date().toISOString(),
+                timestamp: nextGpsTime(),
             }),
         });
         assert.equal(locationUpdate.status, 201);

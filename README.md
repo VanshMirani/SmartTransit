@@ -9,7 +9,7 @@ SmartTransit is a responsive college transportation frontend for Indus Universit
 - an included local Node.js API for backend-ready testing;
 - MongoDB-ready production storage for public deployment.
 
-Current verified results and remaining limitations are in [docs/QA_AUDIT_REPORT.md](./docs/QA_AUDIT_REPORT.md). Older checklists and [PROJECT_PLAN.md](./PROJECT_PLAN.md) describe earlier milestones, not production certification.
+The latest local audit, evidence and release checklist are in [docs/QA_AUDIT_2026-09-25.md](./docs/QA_AUDIT_2026-09-25.md). Historical results remain in [docs/QA_AUDIT_REPORT.md](./docs/QA_AUDIT_REPORT.md). Older checklists and [PROJECT_PLAN.md](./PROJECT_PLAN.md) describe earlier milestones, not production certification.
 The live-site findings and subsequent local remediation status are recorded in [docs/LIVE_REVIEW_REPORT.md](./docs/LIVE_REVIEW_REPORT.md). Local fixes are not proof that the hosted deployment has been updated.
 Faculty-facing explanation notes are available in [FACULTY_PRESENTATION_NOTES.md](./FACULTY_PRESENTATION_NOTES.md).
 Use [DEMO_CHECKLIST.md](./DEMO_CHECKLIST.md) before a live presentation.
@@ -27,7 +27,7 @@ Use [DEPLOYMENT.md](./DEPLOYMENT.md) when you are ready to host the real fronten
 
 ## Run locally
 
-Requirements: Node.js 20 or newer and npm.
+The September 25 audit was run with Node.js 24.19.0 and npm. The deployment blueprint still pins Node 20; review and approve runtime alignment before deployment. Do not treat the permissive package engine range as a tested browser/runtime support matrix.
 
 ```bash
 npm install
@@ -126,7 +126,7 @@ Isolated local demonstration credentials are stored in [docs/LOGIN_CREDENTIALS.t
 | Conductor        | `conductor@transport.indusuni.ac.in` | `Conductor@123` | `/conductor`  |
 | Admin / Operator | `admin@transport.indusuni.ac.in`     | `Admin@123`     | `/admin`      |
 
-These published credentials must be restricted to isolated demonstrations. They were not tried against production during the audit. If any still work there, an authorized administrator must rotate or disable them before rollout; this audit does not reset accounts. Students register with an allowed university email and OTP, then remain pending until admin approval. Email verification is not transport approval. Password reset verifies an OTP and revokes existing sessions. The browser keeps an opaque bearer token in `sessionStorage`; server-side sessions, expiry, role/status and assignments are authoritative. Staff accounts are issued only by administrators.
+These published credentials must be restricted to isolated demonstrations. The September 20 report records a successful production login with a published demonstration administrator credential; its current rotation status is unverified. The September 25 audit did not sign in to production or reset any account. An authorized administrator must rotate or disable exposed accounts and revoke affected sessions before rollout. Students register with an allowed university email and OTP, then remain pending until admin approval. Email verification is not transport approval. Password reset verifies an OTP and revokes existing sessions. The browser keeps an opaque bearer token in `sessionStorage`; server-side sessions, expiry, role/status and assignments are authoritative. Staff accounts are issued only by administrators.
 
 ## Real OTP email setup
 
