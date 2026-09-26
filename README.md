@@ -5,6 +5,12 @@ Transport tracking and management for Indus University.
 - Website: https://smart-transit-lyart.vercel.app/
 - Repository: https://github.com/VanshMirani/SmartTransit
 
+## Project Team
+
+- Vansh Mirani
+- Riicha Rupareliya
+- Rajveer Singh Gill
+
 ## Features
 
 - Students: approved route assignments, bus tracking, seat availability, notices and complaints.
