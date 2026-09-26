@@ -1,68 +1,35 @@
-import assert from "node:assert/strict";
-import test from "node:test";
-import { cleanPresentationData, createSeedData } from "../seedData.js";
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { createSeedData } from '../seedData.js';
+import { verifyPassword } from '../passwords.js';
 
-test("presentation cleanup keeps essential accounts and removes noisy sample data", () => {
+test('isolated development fixtures provide four roles with hashed passwords and no sessions', () => {
     const data = createSeedData();
-    data.users.push({
-        id: "stu-extra",
-        name: "Extra Student",
-        email: "extra.student@iite.indusuni.ac.in",
-        role: "student",
-        status: "pending",
-        initials: "ES",
-    });
-    data.sessions["old-token"] = { userId: "stu-2023" };
-    data.operations.liveLocations[data.operations.activeStaffTrip.id] = {
-        coordinates: [23.02, 72.5],
-        updatedAt: new Date().toISOString(),
-    };
-
-    const cleaned = cleanPresentationData(data);
-    const emails = cleaned.users.map((user) => user.email).sort();
-
-    assert.deepEqual(emails, [
-        "admin@transport.indusuni.ac.in",
-        "conductor@transport.indusuni.ac.in",
-        "driver@transport.indusuni.ac.in",
-        "student@iite.indusuni.ac.in",
-    ]);
-    assert.equal(cleaned.admin.records.students.length, 1);
-    assert.equal(cleaned.admin.records.students[0].contact, "student@iite.indusuni.ac.in");
-    assert.equal(Object.keys(cleaned.sessions).length, 0);
-    assert.equal(cleaned.operations.tripStatus, "not-started");
-    assert.equal(cleaned.operations.seatUpdates.length, 0);
-    assert.equal(Object.keys(cleaned.operations.liveLocations).length, 0);
-    assert.ok(cleaned.communications.notifications.length <= 2);
-    assert.ok(cleaned.communications.complaints.length <= 2);
+    assert.deepEqual(data.users.map((user) => user.role).sort(), ['admin', 'conductor', 'driver', 'student']);
+    for (const user of data.users) {
+        assert.equal(Object.hasOwn(user, 'password'), false);
+        assert.match(user.passwordHash, /^scrypt:/);
+        const password = user.role[0].toUpperCase() + user.role.slice(1) + '@123';
+        assert.equal(verifyPassword(password, user), true);
+    }
+    assert.deepEqual(data.sessions, {});
+    assert.deepEqual(data.signupOtps, {});
+    assert.deepEqual(data.passwordResetOtps, {});
+    assert.equal(data.operations.tripStatus, 'not-started');
+    assert.deepEqual(data.operations.liveLocations, {});
 });
 
-test("presentation cleanup can preserve a selected student account", () => {
-    const data = createSeedData();
-    data.users.push({
-        id: "stu-kept",
-        name: "Kept Student",
-        email: "kept.student@iite.indusuni.ac.in",
-        role: "student",
-        status: "pending",
-        initials: "KS",
-    });
-    data.admin.records.students.push({
-        id: "student-kept",
-        name: "Kept Student",
-        code: "IU23CSE9999",
-        detail: "Computer Science - Semester 7",
-        contact: "kept.student@iite.indusuni.ac.in",
-        routeCode: "",
-        stopId: "",
-        assignment: "Unassigned",
-        status: "pending",
-    });
-
-    const cleaned = cleanPresentationData(data, {
-        keepEmails: ["kept.student@iite.indusuni.ac.in"],
-    });
-
-    assert.ok(cleaned.users.some((user) => user.email === "kept.student@iite.indusuni.ac.in"));
-    assert.ok(cleaned.admin.records.students.some((record) => record.contact === "kept.student@iite.indusuni.ac.in"));
+test('new development state does not share mutable records with another store', () => {
+    const first = createSeedData();
+    const originalName = first.users[0].name;
+    const originalStop = first.admin.routes[0].stops[0].name;
+    first.users[0].name = 'Changed in the first isolated store';
+    first.admin.routes[0].stops[0].name = 'Changed stop';
+    first.sessions['local-session'] = { userId: first.users[0].id };
+    first.operations.liveLocations['local-trip'] = { coordinates: [0, 0] };
+    const second = createSeedData();
+    assert.equal(second.users[0].name, originalName);
+    assert.equal(second.admin.routes[0].stops[0].name, originalStop);
+    assert.deepEqual(second.sessions, {});
+    assert.deepEqual(second.operations.liveLocations, {});
 });

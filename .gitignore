@@ -1,4 +1,13 @@
 .env
+.env.*
+!.env.example
+!.env.production.example
 Frontend/dist/
 node_modules/
 Backend/data/smarttransit-db.json
+Backend/data/*.json.*
+LOGIN_CREDENTIALS.txt
+docs/LOGIN_CREDENTIALS.txt
+*.log
+.DS_Store
+docs/qa/
