@@ -2,9 +2,19 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createServer } from 'vite';
+
+test('mobile route actions wrap instead of clipping the delete control', () => {
+    const css = readFileSync('Frontend/src/styles.css', 'utf8');
+    const actionRules = [...css.matchAll(/\.route-detail-workspace > header > div:last-child\s*\{([^}]+)\}/g)];
+    const buttonRules = [...css.matchAll(/\.route-detail-workspace > header \.button\s*\{([^}]+)\}/g)];
+    assert.match(actionRules.at(-1)[1], /flex-wrap:\s*wrap/);
+    assert.match(buttonRules.at(-1)[1], /flex:\s*1 1 auto/);
+    assert.match(buttonRules.at(-1)[1], /min-width:\s*0/);
+});
 
 // Offline component rendering only. No browser, map tiles, hosted API or credentials are used.
 test('route-save errors and active-trip restrictions remain visible inside the open editor', async (t) => {

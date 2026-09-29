@@ -8954,9 +8954,11 @@ button {
   }
   .route-detail-workspace > header > div:last-child {
     width: 100%;
+    flex-wrap: wrap;
   }
   .route-detail-workspace > header .button {
-    flex: 1;
+    flex: 1 1 auto;
+    min-width: 0;
   }
   .route-detail-grid {
     padding: 10px;
