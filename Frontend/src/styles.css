@@ -3434,6 +3434,7 @@ button {
 .profile-primary,
 .profile-side {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: 16px;
 }
@@ -3453,12 +3454,17 @@ button {
 .profile-card__identity > span {
   width: 64px;
   height: 64px;
+  flex-shrink: 0;
   display: grid;
   place-items: center;
   border-radius: 20px;
   color: white;
   background: var(--teal-700);
   font: 800 1.2rem var(--font-heading);
+}
+.profile-card__identity > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .profile-card__identity h2 {
   margin: 0;
@@ -3480,6 +3486,7 @@ button {
 }
 .profile-details > div {
   padding: 12px;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 9px;
